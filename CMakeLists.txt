@@ -32,13 +32,12 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(cmake/mold-linker.cmake)
 
-set(QMDILIB_BUILD_EXAMPLES OFF)
-set(QMDILIB_TESTS OFF)
-set(QMDILIB_USE_CMAKEFORMAT OFF)
-set(QUTEPART_TESTS OFF)
-set(QUTEPART_USE_CMAKEFORMAT OFF)
-set(QHEXVIEW_ENABLE_DIALOGS ON)
-set(COMMAND_PALLETE_ENABLE_TESTS OFF)
+set(QMDILIB_BUILD_EXAMPLES off)
+set(QMDILIB_TESTS off)
+set(DISABLE_QUTEPART_TESTS on)
+set(QHEXVIEW_ENABLE_DIALOGS on)
+set(LSP_USE_SANITIZERS off)
+option(QTEDIT4_WORK_OFFLINE "Making this off will force using CPM, if set on, first run get-code.sh" ON)
 
 option(CODEPOINTER_WORK_OFFLINE OFF)
 option(CODEPOINTER_BUNDLE_ICON_THEME "Download and install the Breeze icon theme (needed when no system icon theme is present, e.g. bare Linux installs or Windows)" ON)
@@ -61,6 +60,8 @@ if (CODEPOINTER_WORK_OFFLINE)
     add_subdirectory("lib/QJsonModel")
     add_subdirectory("lib/QSimpleUpdater")
     add_subdirectory("lib/QHexView")
+    add_subdirectory("lib/lsp-framework/")
+    # add_subdirectory("lib/lsp-cpp")
 else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
@@ -161,6 +162,8 @@ set(codepointer_sources
     src/plugins/ProjectManager/kitdefinitionmodel.cpp
     src/plugins/ProjectManager/kitdetector.h
     src/plugins/ProjectManager/kitdetector.cpp
+    src/plugins/ProjectManager/LspClientImpl.h
+    src/plugins/ProjectManager/LspClientImpl.cpp
     src/plugins/ProjectManager/ProjectBuildConfig.cpp
     src/plugins/ProjectManager/ProjectBuildConfig.h
     src/plugins/ProjectManager/ProjectIssuesWidget.h
@@ -267,6 +270,7 @@ target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent 
     QHexView
     QSimpleUpdater
     QJsonModelStatic
+    lsp
 )
 set_target_properties(codepointer PROPERTIES OUTPUT_NAME ${CODEPOINTER_BINARY})
 
