@@ -8,11 +8,13 @@
 
 #pragma once
 
-#include "iplugin.h"
-#include "kitdefinitions.h"
-#include <QAbstractItemModel>
+#include <QAbstractListModel>
 #include <QFileSystemWatcher>
 #include <QProcess>
+
+#include "iplugin.h"
+#include "kitdefinitions.h"
+
 
 class ProjectIssuesWidget;
 class FoldersModel;
