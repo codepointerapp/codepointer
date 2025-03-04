@@ -8,11 +8,11 @@
 
 #pragma once
 
-#include "iplugin.h"
-#include "kitdefinitions.h"
-#include <QAbstractItemModel>
 #include <QFileSystemWatcher>
 #include <QProcess>
+
+#include "iplugin.h"
+#include "kitdefinitions.h"
 
 class QSocketNotifier;
 
