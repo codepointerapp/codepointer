@@ -46,6 +46,7 @@
 #include <QTreeView>
 #include <QtConcurrent>
 
+#include <QToolTip>
 #include <pluginmanager.h>
 #include <qmdiserver.h>
 
