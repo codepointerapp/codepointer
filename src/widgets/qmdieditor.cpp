@@ -1081,6 +1081,8 @@ void qmdiEditor::goTo(int x, int y) {
     }
 }
 
+QString qmdiEditor::getContent() const { return textEditor->toPlainText(); }
+
 QString qmdiEditor::getSelectedText() const
 {
     auto cursor = textEditor->textCursor();
@@ -1220,8 +1222,11 @@ QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QStr
                 auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
 
                 if (!name.isEmpty()) {
-                    QString sourceName = "TreeSitter";
-                    if (type == "tag" || type.isEmpty()) sourceName = "CTags";
+                    QString sourceName = tag[GlobalArguments::Source].toString();
+                    if (sourceName.isEmpty()) {
+                        sourceName = "TreeSitter";
+                        if (type == "tag" || type.isEmpty()) sourceName = "CTags";
+                    }
 
                     QString sourceInfo = sourceName;
                     if (!fileName.isEmpty()) {

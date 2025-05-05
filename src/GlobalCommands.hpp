@@ -74,6 +74,7 @@ inline constexpr const char *Raw = "Raw";
 inline constexpr const char *Tags = "Tags";
 inline constexpr const char *Tooltip = "Tooltip";
 inline constexpr const char *Symbol = "Symbol";
+inline constexpr const char *Source = "Source";
 inline constexpr const char *PreviousWord = "PreviousWord";
 inline constexpr const char *Separator = "Separator";
 inline constexpr const char *Content = "Content";

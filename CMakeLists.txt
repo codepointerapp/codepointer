@@ -77,6 +77,7 @@ else()
     if (CODEPOINTER_BUNDLE_ICON_THEME)
         download_breeze_icons(6.4.0)
     endif()
+    CPMAddPackage("gh:leon-bckl/lsp-framework#master")
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
@@ -162,8 +163,6 @@ set(codepointer_sources
     src/plugins/ProjectManager/kitdefinitionmodel.cpp
     src/plugins/ProjectManager/kitdetector.h
     src/plugins/ProjectManager/kitdetector.cpp
-    src/plugins/ProjectManager/LspClientImpl.h
-    src/plugins/ProjectManager/LspClientImpl.cpp
     src/plugins/ProjectManager/ProjectBuildConfig.cpp
     src/plugins/ProjectManager/ProjectBuildConfig.h
     src/plugins/ProjectManager/ProjectIssuesWidget.h
@@ -208,6 +207,18 @@ set(codepointer_sources
     src/plugins/Terminal/TerminalPlugin.hpp
     src/AnsiToHTML.cpp
     src/AnsiToHTML.hpp
+
+    src/plugins/LSP/LspClientImpl.cpp
+    src/plugins/LSP/LspClientImpl.hpp
+<<<<<<< HEAD
+
+=======
+    src/plugins/LSP/LspPlugin.cpp
+    src/plugins/LSP/LspPlugin.hpp
+    src/plugins/LSP/LspDebugWidget.cpp
+    src/plugins/LSP/LspDebugWidget.hpp
+
+>>>>>>> b0fc46ee (wip - lsp)
     src/main.cpp
     ${CMAKE_BINARY_DIR}/codepointer.qrc
 )

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QAbstractItemModel>
 #include <QFileSystemWatcher>
 #include <QProcess>
 

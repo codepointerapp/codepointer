@@ -94,6 +94,13 @@ class qmdiEditor : public QWidget, public qmdiClient {
     }
 
     QString getSelectedText() const;
+    /// Full buffer contents - what the user sees, not what is on disk.
+    QString getContent() const;
+    /// When set, the completion provider is the only source of suggestions -
+    /// keywords and words scraped from the buffer are suppressed.
+    inline void setCompletionExclusive(bool exclusive) {
+        textEditor->setCustomCompletionsExclusive(exclusive);
+    }
 
   public slots:
     void on_fileChanged(const QString &filename);
