@@ -58,8 +58,6 @@ if (CODEPOINTER_WORK_OFFLINE)
     add_subdirectory("lib/QSimpleUpdater")
     add_subdirectory("lib/QHexView")
     add_subdirectory("lib/lsp-framework/")
-    # add_subdirectory("lib/lsp-cpp")
-    # add_subdirectory("lib/Proto3PO/")
 else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
@@ -72,6 +70,9 @@ else()
     CPMAddPackage("gh:dridk/QJsonModel#f5fa5988c0ee52fff39a42973c964d5480951f86")
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#8e7017f7fbdc2b4b1a26ed1eef9ebcba6a50639c")
     CPMAddPackage("gh:Dax89/QHexView#beadd087413a46e7ed97afbab9dab1323ab1d033")
+    CPMAddPackage("gh:Dax89/QHexView#5fe6d9851ecfae0acf26d1659ee3cb579d03202f")
+    CPMAddPackage("gh:leon-bckl/lsp-framework#master")
+    
     download_breeze_icons(6.4.0)
 endif()
 
@@ -156,8 +157,6 @@ set(codepointer_sources
     src/plugins/ProjectManager/kitdefinitionmodel.cpp
     src/plugins/ProjectManager/kitdetector.h
     src/plugins/ProjectManager/kitdetector.cpp
-    src/plugins/ProjectManager/LspClientImpl.h
-    src/plugins/ProjectManager/LspClientImpl.cpp
     src/plugins/ProjectManager/ProjectBuildConfig.cpp
     src/plugins/ProjectManager/ProjectBuildConfig.h
     src/plugins/ProjectManager/ProjectIssuesWidget.h
@@ -202,6 +201,10 @@ set(codepointer_sources
     src/plugins/Terminal/TerminalPlugin.hpp
     src/AnsiToHTML.cpp
     src/AnsiToHTML.hpp
+    
+    src/plugins/LSP/LspClientImpl.cpp
+    src/plugins/LSP/LspClientImpl.hpp
+    
     src/main.cpp
     ${CMAKE_BINARY_DIR}/codepointer.qrc
 )
@@ -250,7 +253,6 @@ target_include_directories(codepointer PUBLIC
     src/plugins/TreeSitter/tree-sitter/lib/include
     src
 )
-<<<<<<< HEAD
 target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent Qt6::Network Qt6::Svg Qt6::Xml
     qmdilib
     qutepart
@@ -260,20 +262,9 @@ target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent 
     QHexView
     QSimpleUpdater
     QJsonModelStatic
-)
-set_target_properties(codepointer PROPERTIES OUTPUT_NAME ${CODEPOINTER_BINARY})
-=======
-target_link_libraries(qtedit4 PUBLIC Qt6::Core Qt6::Widgets Qt6::PrintSupport Qt6::Svg Qt6::Xml Qt6::Network
-    qmdilib 
-    qutepart 
-    CommandPaletteWidget 
-    Pal::ImageViewer 
-    QHexView 
-    QSimpleUpdater 
-    QJsonModelStatic
     lsp
 )
->>>>>>> 87c9383 (POC: we can have a LSP connection)
+set_target_properties(codepointer PROPERTIES OUTPUT_NAME ${CODEPOINTER_BINARY})
 
 if(MSVC)
    # if we don't do this - file will be under Debug/Relase subdir

@@ -10,7 +10,7 @@
 
 // #include <lsp/io/standardio.h>
 
-#include "LspClientImpl.h"
+#include "LspClientImpl.hpp"
 
 LspClientImpl::LspClientImpl(const std::string &documentRoot) : m_documentRoot(documentRoot) {
     startClangd();
@@ -176,6 +176,7 @@ void LspClientImpl::stopClangd() {
 }
 
 void LspClientImpl::initializeLspServer() {
+#if 0
     auto &dispatcher = m_messageHandler->messageDispatcher();
 
     auto initializeParams = lsp::requests::Initialize::Params{};
@@ -189,7 +190,6 @@ void LspClientImpl::initializeLspServer() {
         [](const lsp::Error &error) {
             // TODO
         });
-
     dispatcher.sendRequest<lsp::requests::TextDocument_Diagnostic>(
         lsp::requests::TextDocument_Diagnostic::Params{/* parameters */},
         [](lsp::requests::TextDocument_Diagnostic::Result &&result) {
@@ -198,6 +198,27 @@ void LspClientImpl::initializeLspServer() {
         [](const lsp::Error &error) {
             //...
         });
+#endif
+    auto initializeParams = lsp::requests::Initialize::Params{};
+    initializeParams.rootUri = "file://" + m_documentRoot;
+    initializeParams.capabilities = {};
+
+    auto [id, result] =
+        m_messageHandler->sendRequest<lsp::requests::Initialize>(std::move(initializeParams));
+
+    if (auto strPtr = std::get_if<lsp::json::String>(&id)) {
+        std::cout << "String ID: " << *strPtr << "\n";
+    } else if (auto intPtr = std::get_if<lsp::json::Integer>(&id)) {
+        std::cout << "Integer ID: " << *intPtr << "\n";
+    } else if (std::holds_alternative<lsp::json::Null>(id)) {
+        std::cout << "ID is null\n";
+    }
+    // std::cerr << result.result;
+
+#if 0
+    auto [id, result] = m_messageHandler->sendRequest<lsp::requests::TextDocument_Diagnostic>(
+        lsp::requests::TextDocument_Diagnostic::Params{/* parameters */});
+#endif
 }
 
 void LspClientImpl::shutdownLspServer() {
