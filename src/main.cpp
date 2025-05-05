@@ -135,8 +135,8 @@ int main(int argc, char *argv[]) {
     pluginManager.addPlugin(textEditorPlugin);
     pluginManager.addPlugin(helpPlugin);
     pluginManager.addPlugin(new CodeFormatPlugin);
-    pluginManager.addPlugin(new TreeSitterPlugin);
-    pluginManager.addPlugin(new CTagsPlugin);
+    // pluginManager.addPlugin(new TreeSitterPlugin);
+    // pluginManager.addPlugin(new CTagsPlugin);
     pluginManager.addPlugin(new FileSystemBrowserPlugin);
     pluginManager.addPlugin(new ProjectManagerPlugin);
     pluginManager.addPlugin(new TerminalPlugin);
