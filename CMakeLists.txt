@@ -71,6 +71,9 @@ else()
     CPMAddPackage("gh:dridk/QJsonModel#f5fa5988c0ee52fff39a42973c964d5480951f86")
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#8e7017f7fbdc2b4b1a26ed1eef9ebcba6a50639c")
     CPMAddPackage("gh:Dax89/QHexView#beadd087413a46e7ed97afbab9dab1323ab1d033")
+    CPMAddPackage("gh:Dax89/QHexView#5fe6d9851ecfae0acf26d1659ee3cb579d03202f")
+    CPMAddPackage("gh:leon-bckl/lsp-framework#master")
+    
     download_breeze_icons(6.4.0)
 endif()
 
@@ -157,8 +160,6 @@ set(codepointer_sources
     src/plugins/ProjectManager/kitdefinitionmodel.cpp
     src/plugins/ProjectManager/kitdetector.h
     src/plugins/ProjectManager/kitdetector.cpp
-    src/plugins/ProjectManager/LspClientImpl.h
-    src/plugins/ProjectManager/LspClientImpl.cpp
     src/plugins/ProjectManager/ProjectBuildConfig.cpp
     src/plugins/ProjectManager/ProjectBuildConfig.h
     src/plugins/ProjectManager/ProjectIssuesWidget.h
@@ -203,6 +204,10 @@ set(codepointer_sources
     src/plugins/Terminal/TerminalPlugin.hpp
     src/AnsiToHTML.cpp
     src/AnsiToHTML.hpp
+    
+    src/plugins/LSP/LspClientImpl.cpp
+    src/plugins/LSP/LspClientImpl.hpp
+    
     src/main.cpp
     ${CMAKE_BINARY_DIR}/codepointer.qrc
 )
