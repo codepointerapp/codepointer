@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Only the keys macOS actually needs. The absence of NSPrincipalClass is
+    deliberate: Qt sets it when it generates its own plist, and setting it here
+    would override that with a guess.
+  -->
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <!-- Filled in by CMake from the target's OUTPUT_NAME, so the dev/ce/official
+       suffix is carried automatically. Left out of the template on purpose. -->
+  <key>CFBundleIdentifier</key>
+  <string>@CODEPOINTER_BUNDLE_ID@</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>@CODEPOINTER_APP_NAME@</string>
+  <key>CFBundleDisplayName</key>
+  <string>@CODEPOINTER_APP_NAME@</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@CODEPOINTER_VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@CODEPOINTER_VERSION@</string>
+  <!-- The build flavour, so a dev build is distinguishable in Finder. -->
+  <key>CFBundleGetInfoString</key>
+  <string>@CODEPOINTER_APP_NAME@ (@CODEPOINTER_VERSION@, @CODEPOINTER_BUILD_FLAVOUR@)</string>
+@CODEPOINTER_ICNS_KEY@
+  <!-- Qt draws on a Retina display without this; without it the window is
+       rendered at 1x and upscaled. -->
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>

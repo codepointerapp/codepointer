@@ -24,15 +24,25 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.set-version.outputs.version }}
+      mac_version: ${{ steps.set-version.outputs.mac_version }}
     steps:
       - name: Set version tag or commit SHA
         id: set-version
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "version=${GITHUB_REF##refs/tags/}" >> $GITHUB_OUTPUT
+            tag="${GITHUB_REF##refs/tags/}"
           else
-            echo "version=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+            tag="${GITHUB_SHA::7}"
           fi
+          echo "version=${tag}" >> $GITHUB_OUTPUT
+          mac_version="0.0.0"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            candidate="${tag#v}"
+            if [[ "${candidate}" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+              mac_version="${candidate}"
+            fi
+          fi
+          echo "mac_version=${mac_version}" >> $GITHUB_OUTPUT
 
   flatpak:
     name: Build Flatpak (x86_64)
@@ -138,6 +148,9 @@ jobs:
       - name: Install missing packages (linux)
         if: matrix.config.os == 'ubuntu-22.04'
         run: sudo apt install -y libcups2-dev
+      - name: Install librsvg (macOS)
+        if: matrix.config.os == 'macos-latest'
+        run: brew install librsvg
       - name: Setup MSVC (Windows)
         if: matrix.config.cxx == 'cl'
         uses: step-security/msvc-dev-cmd@v1.13.1
@@ -150,6 +163,7 @@ jobs:
           -DCMAKE_C_COMPILER=${{ matrix.config.cc }}
           -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }}
           -DBUILD_VERSION=OFFICIAL
+          -DCODEPOINTER_VERSION=${{ needs.version.outputs.mac_version }}
       - name: Build
         run: cmake --build build/${{ matrix.config.build_dir }} --parallel --verbose
       - name: Install
@@ -224,6 +238,68 @@ jobs:
         with:
           name: ${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.exe
           path: dist/${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.exe
+
+      - name: Report architecture (macOS)
+        id: macarch
+        if: matrix.config.os == 'macos-latest'
+        run: echo "arch=$(uname -m)" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Bundle Qt frameworks into the app (macOS)
+        if: matrix.config.os == 'macos-latest'
+        env:
+          MACDEPLOYQT: ${{ env.QT_ROOT_DIR }}/bin/macdeployqt
+        run: |
+          APP="dist/${{ matrix.config.build_dir }}/usr/${{ env.APP_NAME }}.app"
+          if [ ! -d "$APP" ]; then
+            echo "Expected an app bundle at $APP, found:"; ls -la dist/${{ matrix.config.build_dir }}/usr
+            exit 1
+          fi
+          # install-qt-action does not always put the Qt bin directory on PATH, so
+          # fall back to where it installed Qt.
+          DEPLOY="$(command -v macdeployqt || echo "$MACDEPLOYQT")"
+          if [ ! -x "$DEPLOY" ]; then
+            echo "macdeployqt not found"; exit 1
+          fi
+          # Copy Qt frameworks and the platform plugins inside the bundle, so the
+          # result runs on a machine with no Qt installed. There is no
+          # -no-translations here: that is a windeployqt option, and macdeployqt
+          # rejects it as unknown. Translations are a few hundred KB.
+          "$DEPLOY" "$APP" -verbose=1
+        shell: bash
+
+      - name: Sign ad-hoc (macOS)
+        if: matrix.config.os == 'macos-latest'
+        # Ad-hoc, not a real identity. macdeployqt already ad-hoc signs what it
+        # deploys, so this re-signs the finished bundle and then verifies it, which
+        # turns "the signature is broken" into a CI failure instead of a surprise on
+        # a user's machine. Notarisation would need a Developer ID certificate and
+        # an Apple account, neither of which exists here.
+        run: |
+          APP="dist/${{ matrix.config.build_dir }}/usr/${{ env.APP_NAME }}.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+        shell: bash
+
+      - name: Create DMG (macOS)
+        if: matrix.config.os == 'macos-latest'
+        run: |
+          APP="dist/${{ matrix.config.build_dir }}/usr/${{ env.APP_NAME }}.app"
+          STAGE="$(mktemp -d)"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          DMG="${{ env.APP_NAME }}-${{ needs.version.outputs.mac_version }}-${{ steps.macarch.outputs.arch }}.dmg"
+          hdiutil create -volname "${{ env.APP_NAME }}" -srcfolder "$STAGE" \
+            -ov -format UDZO "build/$DMG"
+          rm -rf "$STAGE"
+        shell: bash
+
+      - name: Upload DMG (macOS)
+        if: matrix.config.os == 'macos-latest'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ env.APP_NAME }}-${{ needs.version.outputs.mac_version }}-${{ steps.macarch.outputs.arch }}.dmg
+          path: build/${{ env.APP_NAME }}-${{ needs.version.outputs.mac_version }}-*.dmg
 
   create-release:
     name: Draft GitHub Release

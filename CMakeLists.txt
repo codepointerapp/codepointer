@@ -19,6 +19,20 @@ else()
     set(BUILD_APP_NAME "codepointer")
 endif()
 
+# Marketing version for the macOS bundle. Deliberately separate from BUILD_VERSION,
+# which selects a flavour (DEV/CE/OFFICIAL) and not a release number.
+set(CODEPOINTER_VERSION "0.0.0" CACHE STRING "Version reported by the macOS bundle")
+
+# Apple requires CFBundleShortVersionString to be dot-separated integers. CI
+# derives its value from a git tag or, failing that, a short SHA - neither of
+# which is a legal version, so a malformed one is replaced rather than shipped:
+# the bundle still installs, it just reports 0.0.0.
+if(NOT CODEPOINTER_VERSION MATCHES "^[0-9]+(\\.[0-9]+)*$")
+    message(WARNING "CODEPOINTER_VERSION='${CODEPOINTER_VERSION}' is not a legal macOS "
+                    "version (expected numbers separated by dots); using 0.0.0")
+    set(CODEPOINTER_VERSION "0.0.0")
+endif()
+
 set(CODEPOINTER_APP_NAME "${BUILD_APP_NAME}")
 set(CODEPOINTER_BINARY "codepointer${APP_SUFFIX}")
 set(CODEPOINTER_ICON "${ICON_NAME}")
@@ -217,8 +231,15 @@ configure_file(codepointer.qrc.in ${CMAKE_BINARY_DIR}/codepointer.qrc)
 configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop)
 configure_file(org.codepointer.codepointer.appdata.xml.in
     ${CMAKE_BINARY_DIR}/org.codepointer.${CODEPOINTER_APP_NAME}.appdata.xml @ONLY)
-add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
-    indenters.json)
+# MACOSX_BUNDLE is what produces a .app. Without it macOS gets a bare executable
+# in bin/, which no installer can wrap - the CI macdeployqt step expects a bundle.
+if(APPLE)
+    add_executable(codepointer WIN32 MACOSX_BUNDLE ${codepointer_sources} codepointer.rc
+        indenters.json)
+else()
+    add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
+        indenters.json)
+endif()
 
 # NOTE: this used to read `if (!MINGW)`. CMake has no `!` operator - it treated
 # "!MINGW" as the name of an undefined variable, so the branch never ran and LTO
@@ -270,6 +291,58 @@ target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent 
 )
 set_target_properties(codepointer PROPERTIES OUTPUT_NAME ${CODEPOINTER_BINARY})
 
+if(APPLE)
+    # The icon is generated rather than committed: .icns is a format only macOS
+    # tooling produces, and generating it from the SVG means there is one master
+    # asset. Built at build time rather than configure time so that editing the
+    # SVG regenerates it without re-running cmake.
+    #
+    # The SVG is the source, not the .ico, because the .ico stops at 256px and an
+    # icns wants 512 and 1024 - upsampled from 256 those are visibly soft in the
+    # Dock. cmake/make-icns.sh renders each size natively when librsvg is
+    # available and falls back to the .ico when it is not, so a machine without
+    # either still gets an icon instead of a broken build.
+    set(CODEPOINTER_ICNS "${CMAKE_BINARY_DIR}/${CODEPOINTER_ICON}.icns")
+    set(CODEPOINTER_ICNS_KEY "")
+    find_program(CODEPOINTER_RSVG rsvg-convert)
+    find_program(CODEPOINTER_SIPS sips)
+    set(_icns_svg "${CMAKE_SOURCE_DIR}/${CODEPOINTER_ICON}.svg")
+    set(_icns_ico "${CMAKE_SOURCE_DIR}/${CODEPOINTER_ICON}.ico")
+    set(_icns_script "${CMAKE_CURRENT_SOURCE_DIR}/cmake/make-icns.sh")
+
+    if((CODEPOINTER_RSVG OR CODEPOINTER_SIPS) AND EXISTS "${_icns_svg}")
+        add_custom_command(
+            OUTPUT "${CODEPOINTER_ICNS}"
+            COMMAND "${_icns_script}" "${_icns_svg}" "${_icns_ico}" "${CODEPOINTER_ICNS}"
+            DEPENDS "${_icns_svg}" "${_icns_script}"
+            COMMENT "Generating ${CODEPOINTER_ICON}.icns"
+            VERBATIM)
+        # The bundle copies the icon while it is built, and cmake has no way to know
+        # that depends on this output, so the dependency is stated.
+        add_custom_target(codepointer_icns ALL DEPENDS "${CODEPOINTER_ICNS}")
+        add_dependencies(codepointer codepointer_icns)
+        set(CODEPOINTER_ICNS_KEY
+            "  <key>CFBundleIconFile</key>\n  <string>${CODEPOINTER_ICON}</string>")
+        if(CODEPOINTER_RSVG)
+            message(STATUS "macOS bundle icon: from the SVG at every size (librsvg)")
+        else()
+            message(STATUS "macOS bundle icon: from the .ico, 256px ceiling "
+                           "(install librsvg for the SVG)")
+        endif()
+    else()
+        message(STATUS "macOS bundle icon: no rasteriser and no sips, using the generic icon")
+    endif()
+
+    configure_file(codepointer-Info.plist.in ${CMAKE_BINARY_DIR}/Info.plist @ONLY)
+    set_target_properties(codepointer PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/Info.plist
+        MACOSX_BUNDLE_BUNDLE_NAME ${CODEPOINTER_APP_NAME}
+        MACOSX_BUNDLE_GUI_IDENTIFIER org.codepointer.${CODEPOINTER_APP_NAME}
+        MACOSX_BUNDLE_BUNDLE_VERSION ${CODEPOINTER_VERSION}
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${CODEPOINTER_VERSION})
+endif()
+
 if(MSVC)
    # if we don't do this - file will be under Debug/Relase subdir
    set_target_properties(codepointer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}$<0:>)
@@ -279,21 +352,43 @@ if(MSVC)
        src/plugins/TreeSitter/tree-sitter/lib/src/lib.c
        PROPERTIES COMPILE_FLAGS "/W0"
    )
-else()
+elseif(NOT APPLE)
   set_target_properties(codepointer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
   target_compile_options(codepointer PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-install(TARGETS codepointer
-        RUNTIME DESTINATION bin)
+if(APPLE)
+    # BUNDLE DESTINATION, not RUNTIME: for a MACOSX_BUNDLE target the executable
+    # belongs inside Contents/MacOS and CMake decides that, so there is no RUNTIME
+    # destination to give.
+    install(TARGETS codepointer
+            BUNDLE DESTINATION .)
+else()
+    install(TARGETS codepointer
+            RUNTIME DESTINATION bin)
+endif()
 
+# The app looks for its bundled icons at applicationDirPath() + "/../share/icons"
+# (src/main.cpp), which in a bundle resolves inside Contents/. Installed to the
+# prefix root instead, they would sit outside the .app and never be found - and
+# macOS has no freedesktop theme to fall back on, so the app would lose its icons
+# entirely rather than merely look untidy.
 if (NOT CODEPOINTER_WORK_OFFLINE AND CODEPOINTER_BUNDLE_ICON_THEME)
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/share/
-            DESTINATION share/
-            DIRECTORY_PERMISSIONS
-                OWNER_READ OWNER_WRITE OWNER_EXECUTE
-                GROUP_READ GROUP_EXECUTE
-                WORLD_READ WORLD_EXECUTE)
+    if(APPLE)
+        install(DIRECTORY ${CMAKE_BINARY_DIR}/share/
+                DESTINATION ${CODEPOINTER_BINARY}.app/Contents/share
+                DIRECTORY_PERMISSIONS
+                    OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                    GROUP_READ GROUP_EXECUTE
+                    WORLD_READ WORLD_EXECUTE)
+    else()
+        install(DIRECTORY ${CMAKE_BINARY_DIR}/share/
+                DESTINATION share/
+                DIRECTORY_PERMISSIONS
+                    OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                    GROUP_READ GROUP_EXECUTE
+                    WORLD_READ WORLD_EXECUTE)
+    endif()
 endif()
 
 if (WIN32)
