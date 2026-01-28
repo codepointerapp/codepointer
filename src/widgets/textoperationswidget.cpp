@@ -78,7 +78,7 @@ void TextOperationsWidget::setAdapter(TextOperationsAdapter *adapter) {
 }
 
 void TextOperationsWidget::initSearchWidget() {
-// ... existing initSearchWidget ...
+    // ... existing initSearchWidget ...
     searchWidget = new QWidget(this);
     searchWidget->setObjectName("searchWidget");
     searchFormUi = new Ui::searchForm();
@@ -149,17 +149,19 @@ void TextOperationsWidget::setSearchHistory(SharedHistoryModel *model) {
 
 void TextOperationsWidget::searchNext() {
     issueSearch(searchFormUi->searchText->text(), false,
-                getSearchFlags() & ~TextOperationsAdapter::FindBackward, searchFormUi->searchText, true);
+                getSearchFlags() & ~TextOperationsAdapter::FindBackward, searchFormUi->searchText,
+                true);
 }
 
 void TextOperationsWidget::searchPrevious() {
     issueSearch(searchFormUi->searchText->text(), false,
-                getSearchFlags() | TextOperationsAdapter::FindBackward, searchFormUi->searchText, true);
+                getSearchFlags() | TextOperationsAdapter::FindBackward, searchFormUi->searchText,
+                true);
 }
 
 void TextOperationsWidget::updateSearchInput() {
-    issueSearch(searchFormUi->searchText->text(), true, getSearchFlags(),
-                searchFormUi->searchText, true);
+    issueSearch(searchFormUi->searchText->text(), true, getSearchFlags(), searchFormUi->searchText,
+                true);
 }
 
 void TextOperationsWidget::updateReplaceInput() {
@@ -168,7 +170,7 @@ void TextOperationsWidget::updateReplaceInput() {
 }
 
 bool TextOperationsWidget::eventFilter(QObject *obj, QEvent *event) {
-// ... keep eventFilter as is for now, it mostly handles keys ...
+    // ... keep eventFilter as is for now, it mostly handles keys ...
     if (obj != editor && obj != this) {
         return false;
     }
@@ -327,11 +329,12 @@ void TextOperationsWidget::replaceOldText_returnPressed() {
 }
 
 void TextOperationsWidget::replaceAll_clicked() {
-    if (!m_adapter) return;
+    if (!m_adapter) {
+        return;
+    }
 
-    auto replaceCount = m_adapter->replaceAll(replaceFormUi->searchText->text(),
-                                               replaceFormUi->replaceText->text(),
-                                               getReplaceFlags());
+    auto replaceCount = m_adapter->replaceAll(
+        replaceFormUi->searchText->text(), replaceFormUi->replaceText->text(), getReplaceFlags());
     QMessageBox::information(nullptr, tr("Replace all"),
                              tr("%1 replacement(s) made").arg(replaceCount));
 }

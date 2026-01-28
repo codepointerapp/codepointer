@@ -2,8 +2,8 @@
 
 #include "hexviewer_plg.h"
 #include "hextextoperationsadapter.h"
-#include "widgets/textoperationswidget.h"
 #include "qclipboard.h"
+#include "widgets/textoperationswidget.h"
 #include <QApplication>
 #include <QFileInfo>
 #include <QHexView/model/buffer/qmemorybuffer.h>
@@ -78,8 +78,10 @@ class qmdiHexViewer : public QWidget, public qmdiClient {
         actionPastBinary->setShortcut(QKeySequence::Paste);
         actionPastAsHex->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V));
 
-        connect(actionFind, &QAction::triggered, operationsWidget, &TextOperationsWidget::showSearch);
-        connect(actionReplace, &QAction::triggered, operationsWidget, &TextOperationsWidget::showReplace);
+        connect(actionFind, &QAction::triggered, operationsWidget,
+                &TextOperationsWidget::showSearch);
+        connect(actionReplace, &QAction::triggered, operationsWidget,
+                &TextOperationsWidget::showReplace);
 
         toolbars[tr("main")]->addAction(actionFind);
         toolbars[tr("main")]->addAction(actionReplace);
@@ -152,7 +154,7 @@ QStringList HexViewrPlugin::myExtensions() {
 }
 
 int HexViewrPlugin::canOpenFile(const QString &fileName) {
-    static const QStringList extensions = { ".bin", ".img", "blob", ".so",   ".AppImage",
+    static const QStringList extensions = {".bin", ".img", "blob", ".so",   ".AppImage",
                                            ".a",   ".exe", ".dll", ".dlib", ".pdf"};
 
     auto uri = QUrl(fileName);

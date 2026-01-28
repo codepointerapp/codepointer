@@ -2,57 +2,58 @@
 
 #include "qttextoperationsadapter.h"
 #include <QPlainTextEdit>
+#include <QTextBlock>
 #include <QTextDocument>
 #include <QTextEdit>
-#include <QTextBlock>
 
 QtTextOperationsAdapter::QtTextOperationsAdapter(QWidget *editor, QObject *parent)
     : TextOperationsAdapter(parent), m_editor(editor) {}
 
-QString QtTextOperationsAdapter::selectedText() const {
-    return getTextCursor().selectedText();
-}
+QString QtTextOperationsAdapter::selectedText() const { return getTextCursor().selectedText(); }
 
 bool QtTextOperationsAdapter::find(const QString &text, FindFlags flags, bool moveCursor) {
     auto c = findInternal(text, getTextCursor(), flags);
     if (!c.isNull()) {
-        if (moveCursor) setTextCursor(c);
+        if (moveCursor) {
+            setTextCursor(c);
+        }
         return true;
     }
     return false;
 }
 
-bool QtTextOperationsAdapter::findIncremental(const QString &text, FindFlags flags, bool moveCursor) {
+bool QtTextOperationsAdapter::findIncremental(const QString &text, FindFlags flags,
+                                              bool moveCursor) {
     auto c = findInternal(text, m_searchCursor, flags);
     if (!c.isNull()) {
-        if (moveCursor) setTextCursor(c);
+        if (moveCursor) {
+            setTextCursor(c);
+        }
         return true;
     }
     return false;
 }
 
-void QtTextOperationsAdapter::saveSearchStartPosition() {
-    m_searchCursor = getTextCursor();
-}
+void QtTextOperationsAdapter::saveSearchStartPosition() { m_searchCursor = getTextCursor(); }
 
-bool QtTextOperationsAdapter::canReplace() const {
-    return getTextDocument() != nullptr;
-}
+bool QtTextOperationsAdapter::canReplace() const { return getTextDocument() != nullptr; }
 
 void QtTextOperationsAdapter::replace(const QString &searchText, const QString &replaceText,
                                       FindFlags flags) {
     auto doc = getTextDocument();
-    if (!doc) return;
+    if (!doc) {
+        return;
+    }
 
     QTextCursor cursor = getTextCursor();
-    
+
     // If we have a selection and it matches, replace it
     if (cursor.hasSelection()) {
         QString selected = cursor.selectedText();
-        bool match = (flags.testFlag(FindCaseSensitively)) 
-            ? (selected == searchText) 
-            : (selected.compare(searchText, Qt::CaseInsensitive) == 0);
-            
+        bool match = (flags.testFlag(FindCaseSensitively))
+                         ? (selected == searchText)
+                         : (selected.compare(searchText, Qt::CaseInsensitive) == 0);
+
         if (match) {
             cursor.beginEditBlock();
             cursor.insertText(replaceText);
@@ -63,9 +64,11 @@ void QtTextOperationsAdapter::replace(const QString &searchText, const QString &
 }
 
 int QtTextOperationsAdapter::replaceAll(const QString &searchText, const QString &replaceText,
-                                         FindFlags flags) {
+                                        FindFlags flags) {
     auto doc = getTextDocument();
-    if (!doc) return 0;
+    if (!doc) {
+        return 0;
+    }
 
     int count = 0;
     auto qflags = (QTextDocument::FindFlags)(int)flags;
@@ -81,13 +84,13 @@ int QtTextOperationsAdapter::replaceAll(const QString &searchText, const QString
     return count;
 }
 
-bool QtTextOperationsAdapter::canGotoLine() const {
-    return getTextDocument() != nullptr;
-}
+bool QtTextOperationsAdapter::canGotoLine() const { return getTextDocument() != nullptr; }
 
 void QtTextOperationsAdapter::gotoLine(int line) {
     auto doc = getTextDocument();
-    if (!doc) return;
+    if (!doc) {
+        return;
+    }
 
     auto block = doc->findBlockByNumber(line - 1);
     setTextCursor(QTextCursor(block));
@@ -98,9 +101,7 @@ int QtTextOperationsAdapter::lineCount() const {
     return doc ? doc->blockCount() : 0;
 }
 
-int QtTextOperationsAdapter::currentLine() const {
-    return getTextCursor().blockNumber() + 1;
-}
+int QtTextOperationsAdapter::currentLine() const { return getTextCursor().blockNumber() + 1; }
 
 QTextCursor QtTextOperationsAdapter::getTextCursor() const {
     if (auto textEdit = qobject_cast<QTextEdit *>(m_editor)) {
@@ -131,12 +132,20 @@ QTextDocument *QtTextOperationsAdapter::getTextDocument() const {
 QTextCursor QtTextOperationsAdapter::findInternal(const QString &text, QTextCursor startCursor,
                                                   FindFlags flags) {
     auto doc = getTextDocument();
-    if (!doc) return QTextCursor();
+    if (!doc) {
+        return QTextCursor();
+    }
 
     QTextDocument::FindFlags qflags;
-    if (flags.testFlag(FindBackward)) qflags |= QTextDocument::FindBackward;
-    if (flags.testFlag(FindCaseSensitively)) qflags |= QTextDocument::FindCaseSensitively;
-    if (flags.testFlag(FindWholeWords)) qflags |= QTextDocument::FindWholeWords;
+    if (flags.testFlag(FindBackward)) {
+        qflags |= QTextDocument::FindBackward;
+    }
+    if (flags.testFlag(FindCaseSensitively)) {
+        qflags |= QTextDocument::FindCaseSensitively;
+    }
+    if (flags.testFlag(FindWholeWords)) {
+        qflags |= QTextDocument::FindWholeWords;
+    }
 
     auto c = doc->find(text, startCursor, qflags);
 
