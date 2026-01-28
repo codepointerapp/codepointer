@@ -1,25 +1,36 @@
-/**
- * \file imageviewer_plg
- * \brief Definition of
- * \author Diego Iastrubni diegoiast@gmail.com
- * License MIT
- * \see class name
- */
+// SPDX-License-Identifier: MIT
 
 #include "hexviewer_plg.h"
+#include "hextextoperationsadapter.h"
+#include "widgets/textoperationswidget.h"
 #include "qclipboard.h"
 #include <QApplication>
 #include <QFileInfo>
-#include <QHexView/dialogs/hexfinddialog.h>
 #include <QHexView/model/buffer/qmemorybuffer.h>
 #include <QHexView/qhexview.h>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QVBoxLayout>
 
-class qmdiHexViewer : public QHexView, public qmdiClient {
+class qmdiHexViewer : public QWidget, public qmdiClient {
+    Q_OBJECT
   public:
     QString thisFileName;
-    qmdiHexViewer(QWidget *p, const QString &fileName) : QHexView(p), qmdiClient() {
+    QHexView *hexView;
+    TextOperationsWidget *operationsWidget;
+
+    qmdiHexViewer(QWidget *p, const QString &fileName) : QWidget(p), qmdiClient() {
+        hexView = new QHexView(this);
+        operationsWidget = new TextOperationsWidget(this, hexView);
+        operationsWidget->setAdapter(new HexTextOperationsAdapter(hexView, operationsWidget));
+        operationsWidget->hide();
+
+        auto layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+        layout->addWidget(hexView);
+        layout->addWidget(operationsWidget);
+
         auto actionCopyFileName = new QAction(tr("Copy filename to clipboard"), this);
         auto actionCopyFilePath = new QAction(tr("Copy full path to clipboard"), this);
         connect(actionCopyFileName, &QAction::triggered, this, [this]() {
@@ -32,13 +43,17 @@ class qmdiHexViewer : public QHexView, public qmdiClient {
         });
 
         auto fi = QFileInfo(fileName);
-        auto document = QHexDocument::fromMappedFile(fileName, this);
-        this->setDocument(document);
+        auto document = QHexDocument::fromMappedFile(fileName, hexView);
+        hexView->setDocument(document);
         this->mdiClientName = fi.fileName();
         this->thisFileName = fileName;
+
+        hexView->setContextMenuPolicy(Qt::ActionsContextMenu);
         this->contextMenu.addSeparator();
         this->contextMenu.addAction(actionCopyFileName);
         this->contextMenu.addAction(actionCopyFilePath);
+        this->contextMenu.addActionsToWidget(hexView);
+
         setupActions();
     }
 
@@ -63,18 +78,8 @@ class qmdiHexViewer : public QHexView, public qmdiClient {
         actionPastBinary->setShortcut(QKeySequence::Paste);
         actionPastAsHex->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V));
 
-        connect(actionFind, &QAction::triggered, this, [this]() {
-            auto d = new HexFindDialog(HexFindDialog::Type::Find, this);
-            if (auto l = d->findChild<QLineEdit *>("qhexview_lefind")) {
-                l->setFocus();
-            }
-            d->exec();
-        });
-
-        connect(actionReplace, &QAction::triggered, this, [this]() {
-            auto d = new HexFindDialog(HexFindDialog::Type::Replace, this);
-            d->exec();
-        });
+        connect(actionFind, &QAction::triggered, operationsWidget, &TextOperationsWidget::showSearch);
+        connect(actionReplace, &QAction::triggered, operationsWidget, &TextOperationsWidget::showReplace);
 
         toolbars[tr("main")]->addAction(actionFind);
         toolbars[tr("main")]->addAction(actionReplace);
@@ -87,7 +92,7 @@ class qmdiHexViewer : public QHexView, public qmdiClient {
     }
 
     virtual bool canCloseClient(CloseReason) override {
-        if (!this->hexDocument()->isModified()) {
+        if (!hexView->hexDocument()->isModified()) {
             return true;
         }
 
@@ -107,7 +112,7 @@ class qmdiHexViewer : public QHexView, public qmdiClient {
             return false;
         }
 
-        this->hexDocument()->clearModified();
+        hexView->hexDocument()->clearModified();
         return true;
     }
 
@@ -124,7 +129,7 @@ class qmdiHexViewer : public QHexView, public qmdiClient {
             return false;
         }
 
-        bool success = hexDocument()->saveTo(&file);
+        bool success = hexView->hexDocument()->saveTo(&file);
         file.close();
         return success;
     }
@@ -143,18 +148,15 @@ HexViewrPlugin::~HexViewrPlugin() {}
 
 QStringList HexViewrPlugin::myExtensions() {
     QStringList s;
-    // s << tr("Images", "ImageViewrPlugin::myExtensions") + " (*.jpg *.jpeg *.bmp *.png *.pcx
-    // *.ico)";
     return s;
 }
 
 int HexViewrPlugin::canOpenFile(const QString &fileName) {
-    static const QStringList extensions = {".bin", ".img", "blob", ".so",   ".AppImage",
+    static const QStringList extensions = { ".bin", ".img", "blob", ".so",   ".AppImage",
                                            ".a",   ".exe", ".dll", ".dlib", ".pdf"};
 
     auto uri = QUrl(fileName);
     auto scheme = uri.scheme();
-    // > 1? this can be a windows drive
     if (!scheme.isEmpty() && scheme != "file" && scheme.size() > 1) {
         return -1;
     }
@@ -176,3 +178,5 @@ qmdiClient *HexViewrPlugin::openFile(const QString &fileName, int, int, int) {
     mdiServer->addClient(viewer);
     return viewer;
 }
+
+#include "hexviewer_plg.moc"

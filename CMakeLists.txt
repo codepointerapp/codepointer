@@ -133,6 +133,8 @@ set(codepointer_sources
     src/plugins/imageviewer/imageviewer_plg.h
     src/plugins/hexviewer/hexviewer_plg.cpp
     src/plugins/hexviewer/hexviewer_plg.h
+    src/plugins/hexviewer/hextextoperationsadapter.cpp
+    src/plugins/hexviewer/hextextoperationsadapter.h
     src/plugins/ProjectManager/BuildRunOutput.ui
     src/plugins/ProjectManager/CompilerOutputDecoders.cpp
     src/plugins/ProjectManager/CompilerOutputDecoders.h
