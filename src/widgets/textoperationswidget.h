@@ -12,9 +12,9 @@
 #include <QObject>
 #include <QStackedWidget>
 #include <QString>
-#include <QTextCursor>
-#include <QTextDocument>
 #include <QTimer>
+
+#include "textoperationsadapter.h"
 
 class QWidget;
 class QLineEdit;
@@ -37,12 +37,12 @@ class TextOperationsWidget : public QStackedWidget {
     void initGotoLineWidget();
     void setSearchHistory(SharedHistoryModel *model);
 
-    QFlags<QTextDocument::FindFlag> getSearchFlags();
-    QFlags<QTextDocument::FindFlag> getReplaceFlags();
+    void setAdapter(TextOperationsAdapter *adapter);
+    TextOperationsAdapter *adapter() const { return m_adapter; }
 
-    QTextCursor getTextCursor();
-    void setTextCursor(QTextCursor c);
-    QTextDocument *getTextDocument();
+    TextOperationsAdapter::FindFlags getSearchFlags();
+    TextOperationsAdapter::FindFlags getReplaceFlags();
+
     void setTextFont(const QFont &newFont);
 
     QSize sizeHint() const override;
@@ -65,12 +65,12 @@ class TextOperationsWidget : public QStackedWidget {
 
   protected:
     virtual bool eventFilter(QObject *obj, QEvent *event) override;
-    bool issueSearch(const QString &text, QTextCursor newCursor,
-                     QFlags<QTextDocument::FindFlag> findOptions, QLineEdit *lineEdit,
+    bool issueSearch(const QString &text, bool incremental,
+                     TextOperationsAdapter::FindFlags findOptions, QLineEdit *lineEdit,
                      bool moveCursor);
 
     QWidget *editor;
-    QTextCursor searchCursor;
+    TextOperationsAdapter *m_adapter = nullptr;
     QTimer replaceTimer;
     QTimer searchTimer;
     QColor searchFoundBackgroundColor;

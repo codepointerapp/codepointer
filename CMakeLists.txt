@@ -101,6 +101,9 @@ set(codepointer_sources
     src/widgets/searchform.ui
     src/widgets/textoperationswidget.cpp
     src/widgets/textoperationswidget.h
+    src/widgets/textoperationsadapter.h
+    src/widgets/qttextoperationsadapter.cpp
+    src/widgets/qttextoperationsadapter.h
     src/widgets/textpreview.cpp
     src/widgets/textpreview.h
     src/widgets/xmltreemodel.cpp
