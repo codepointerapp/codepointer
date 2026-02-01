@@ -925,6 +925,21 @@ bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
             showContextMenu(menuEvent->pos(), menuEvent->globalPos());
             return true;
         }
+
+        if (event->type() == QEvent::MouseButtonDblClick) {
+            auto mouseEvent = static_cast<QMouseEvent *>(event);
+            auto pos = mouseEvent->position().toPoint();
+            auto cursor = textEditor->cursorForPosition(pos);
+            auto block  = cursor.block();
+            if (block.isValid()) {
+                auto blockNumber = block.blockNumber();
+                auto text = block.text();
+                if (patchMappings.contains(blockNumber)) {
+                    auto l = patchMappings[blockNumber];
+                    qDebug() << "Should open " << l.file << "line: " << l.newLine;
+                }
+            }
+        }
     }
     return QWidget::eventFilter(watched, event);
 }
@@ -1382,6 +1397,7 @@ void qmdiEditor::loadContent(bool useBackup) {
 
     updateClientName();
     setState(savedState);
+    updateInternalMappings();
 }
 
 void qmdiEditor::chooseHighliter(const QString &newText) {
@@ -1409,6 +1425,104 @@ void qmdiEditor::findText(const QString &text) {
 
     // c.movePosition(findOptions.testFlag(QTextDocument::FindBackward) ? QTextCursor::End
     textEditor->setTextCursor(c);
+}
+
+void qmdiEditor::updateInternalMappings() {
+    patchMappings.clear();
+    if (!mdiClientName.endsWith(".diff",Qt::CaseInsensitive) && mdiClientName.endsWith(".patch", Qt::CaseInsensitive)) {
+        return;
+    }
+
+    auto extractFileName = [](QString& line) -> QString {
+        auto pos = line.indexOf(' ');
+        if (pos < 0) {
+            return {};
+        }
+    
+        // /dev/null = file add/delete
+        auto path = line.mid(pos + 1);
+        if (path == "/dev/null") {
+            return {};
+        }
+    
+        // Strip leading a/ or b/
+        if (path.size() >= 2 &&(path[0] == 'a' || path[0] == 'b') &&path[1] == '/') {
+            path.remove(0,2);
+        }
+        return path;
+    };
+    
+    auto parse_hunk_header = [](const QString& line) -> std::pair<int, int>
+    {
+        // Example: "@@ -12,7 +34,9 @@"
+        auto old_start = 0;
+        auto new_start = 0;
+        auto i = line.indexOf('-');
+        if (i < 0) {
+            return {0, 0};
+        }
+    
+        // parse old_start, skip '-'
+        ++i;
+        while (i < line.size() && line[i].isDigit()) {
+            old_start = old_start * 10 + (line[i].digitValue());
+            ++i;
+        }
+    
+        i = line.indexOf('+', i);
+        if (i < 0) {
+            return {0, 0};
+        }
+        // skip '+'
+        ++i; 
+    
+        while (i < line.size() && line[i].isDigit()) {
+            new_start = new_start * 10 + line[i].digitValue();
+            ++i;
+        }
+        return {old_start, new_start};
+    };
+
+    auto current_file = QString();
+    auto old_line = 0;
+    auto new_line = 0;
+    auto in_hunk = false;
+    auto lines = textEditor->lines();
+    for (auto it = lines.begin(); it != lines.end(); ++it) {
+        auto line = *it;
+        auto text = line.text();
+        
+        if (text.startsWith("+++ ")) {
+            current_file = extractFileName(text);
+            continue;
+        }
+        
+        if (text.startsWith("@@")) {
+            auto [old_start, new_start] = parse_hunk_header(text);
+            old_line = old_start;
+            new_line = new_start;
+            in_hunk = true;
+            continue;
+        }
+        
+        if (!in_hunk) {
+            continue;
+        }
+
+        auto i = line.lineNumber();
+        if (text.startsWith(' ')) {
+            patchMappings[i] = {current_file,old_line,new_line};
+            old_line += 1;
+            new_line += 1;
+        } else if (text.startsWith('-')) {
+            patchMappings[i] = {current_file,old_line,-1};
+            old_line += 1;
+        } else if (text.startsWith('+')) {
+            patchMappings[i] = {current_file,-1,new_line};
+            new_line += 1;
+        }
+    }
+
 }
 
 /**

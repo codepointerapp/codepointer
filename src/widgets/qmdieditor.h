@@ -11,6 +11,7 @@
 #include <QFuture>
 #include <QStyledItemDelegate>
 #include <QToolButton>
+#include <QMap>
 
 // needed only for CommandArgs
 #include <pluginmanager.h>
@@ -119,6 +120,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void chooseHighliter(const QString &newText);
     void chooseIndenter(const QAction *action);
     void findText(const QString &text);
+    void updateInternalMappings();
 
   private slots:
     void updateFileDetails();
@@ -191,6 +193,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
   protected:
     virtual void focusInEvent(QFocusEvent *event) override;
     virtual bool eventFilter(QObject *watched, QEvent *event) override;
+    
     void handleTabSelected();
     void handleTabDeselected();
     void handleWordTooltip(const QPoint &localPosition, const QPoint &globalPosition);
@@ -263,6 +266,15 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QAction *actionCopyFilePath = nullptr;
     QAction *actionToggleHeader = nullptr;
     QAction *actionTogglePreview = nullptr;
+    
+    struct diffLineNumber {
+        QString file;
+        int oldLine = -1;
+        int newLine = -1;
+    };
+    // When loading a path/diff file - this maps between lines
+    // and the file and offset inside it.
+    QMap<int, diffLineNumber> patchMappings;
 
     QTimer *autoSaveTimer = nullptr;
     QString uid;
