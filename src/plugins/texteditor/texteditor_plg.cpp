@@ -315,6 +315,7 @@ QFuture<CommandArgs> TextEditorPlugin::handleCommandAsync(const QString &command
     auto content = args[GlobalArguments::Content].toString();
     auto isReadOnly = args[GlobalArguments::ReadOnly].toBool();
     auto shouldFold = args[GlobalArguments::FoldTopLevel].toBool();
+    auto sourceDir = args[GlobalArguments::SourceDirectory].toString();
     auto ok = false;
     auto clientPosition = args[GlobalArguments::Position].toInt(&ok);
     if (!ok) {
@@ -334,7 +335,7 @@ QFuture<CommandArgs> TextEditorPlugin::handleCommandAsync(const QString &command
     editor->setHistoryModel(historyModel);
     editor->setPlainText(content);
     editor->setReadOnly(isReadOnly);
-    editor->updateInternalMappings();
+    editor->updateInternalMappings(sourceDir);
     applySettings(editor);
     mdiServer->addClient(editor, clientPosition);
     if (shouldFold) {

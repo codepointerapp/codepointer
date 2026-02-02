@@ -121,7 +121,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void chooseHighliter(const QString &newText);
     void chooseIndenter(const QAction *action);
     void findText(const QString &text);
-    void updateInternalMappings();
+    void updateInternalMappings(const QString &baseDir);
 
   private slots:
     void updateFileDetails();
@@ -235,6 +235,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
         static constexpr const char *SEL_POSITION = "sel-position";
         static constexpr const char *UUID = "uuid";
         static constexpr const char *READ_ONLY = "read-only";
+        static constexpr const char *BASE_DIR = "basedir";
     };
 
     QString fileName;
@@ -277,14 +278,17 @@ class qmdiEditor : public QWidget, public qmdiClient {
     // and the file and offset inside it.
     QMap<int, diffLineNumber> patchMappings;
 
-    struct diffLineNumber {
-        QString file;
-        int oldLine = -1;
-        int newLine = -1;
-    };
-    // When loading a path/diff file - this maps between lines
-    // and the file and offset inside it.
-    QMap<int, diffLineNumber> patchMappings;
+    struct {
+        struct diffLineNumber {
+            QString file;
+            int oldLine = -1;
+            int newLine = -1;
+        };
+        // When loading a path/diff file - this maps between lines
+        // and the file and offset inside it.
+        QMap<int, diffLineNumber> mappings;
+        QString baseDir;
+    } diffMetadata;
 
     QTimer *autoSaveTimer = nullptr;
     QString uid;

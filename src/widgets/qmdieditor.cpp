@@ -505,6 +505,7 @@ qmdiClientState qmdiEditor::getState() const {
     state[StateConstants::ROW] = row;
     state[StateConstants::ZOOM] = zoom;
     state[StateConstants::READ_ONLY] = textEditor->isReadOnly();
+    state[StateConstants::BASE_DIR] = diffMetadata.baseDir;
 
     if (!uid.isEmpty()) {
         state[StateConstants::UUID] = uid;
@@ -562,6 +563,7 @@ void qmdiEditor::setState(const qmdiClientState &state) {
     if (state.contains(StateConstants::READ_ONLY)) {
         textEditor->setReadOnly(state[StateConstants::READ_ONLY].toBool());
     }
+    diffMetadata.baseDir = state[StateConstants::BASE_DIR].toString();
 }
 
 void qmdiEditor::on_client_unmerged(qmdiHost *host) {
@@ -934,9 +936,19 @@ bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
             if (block.isValid()) {
                 auto blockNumber = block.blockNumber();
                 auto text = block.text();
-                if (patchMappings.contains(blockNumber)) {
-                    auto l = patchMappings[blockNumber];
-                    qDebug() << "Should open " << l.file << "line: " << l.newLine;
+                if (diffMetadata.mappings.contains(blockNumber)) {
+                    auto l = diffMetadata.mappings[blockNumber];
+                    auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+                    if (pluginManager) {
+                        // Lines start on the editor from 0
+                        if (l.newLine >= 0) {
+                            pluginManager->openFile(l.file, l.newLine - 1);
+                        } else {
+                            pluginManager->openFile(l.file, l.oldLine - 1);
+                        }
+                    } else {
+                        qDebug() << "qmdiEditor::eventFilter - cannot open file from diff/patch";
+                    }
                 }
             }
         }
@@ -1397,7 +1409,7 @@ void qmdiEditor::loadContent(bool useBackup) {
 
     updateClientName();
     setState(savedState);
-    updateInternalMappings();
+    updateInternalMappings(savedState[StateConstants::BASE_DIR].toString());
 }
 
 void qmdiEditor::chooseHighliter(const QString &newText) {
@@ -1427,8 +1439,10 @@ void qmdiEditor::findText(const QString &text) {
     textEditor->setTextCursor(c);
 }
 
-void qmdiEditor::updateInternalMappings() {
-    patchMappings.clear();
+void qmdiEditor::updateInternalMappings(const QString& baseDir) {
+    diffMetadata.mappings.clear();
+    diffMetadata.baseDir = baseDir;
+
     if (!mdiClientName.endsWith(".diff",Qt::CaseInsensitive) && mdiClientName.endsWith(".patch", Qt::CaseInsensitive)) {
         return;
     }
@@ -1511,18 +1525,17 @@ void qmdiEditor::updateInternalMappings() {
 
         auto i = line.lineNumber();
         if (text.startsWith(' ')) {
-            patchMappings[i] = {current_file,old_line,new_line};
+            diffMetadata.mappings[i] = {baseDir + "/" + current_file,old_line,new_line};
             old_line += 1;
             new_line += 1;
         } else if (text.startsWith('-')) {
-            patchMappings[i] = {current_file,old_line,-1};
+            diffMetadata.mappings[i] = {baseDir + "/" + current_file,old_line,-1};
             old_line += 1;
         } else if (text.startsWith('+')) {
-            patchMappings[i] = {current_file,-1,new_line};
+            diffMetadata.mappings[i] = {baseDir + "/" + current_file,-1,new_line};
             new_line += 1;
         }
     }
-
 }
 
 /**
