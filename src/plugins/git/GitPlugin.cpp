@@ -198,11 +198,13 @@ void GitPlugin::diffFileHandler() {
         return;
     }
     auto position = manager->getMdiServer()->getClientIndex(client);
+    repoRoot = detectRepoRoot(repoRoot);
     CommandArgs args = {
         {GlobalArguments::FileName, QString("%1.diff").arg(client->mdiClientName)},
         {GlobalArguments::Content, diff},
         {GlobalArguments::ReadOnly, true},
         {GlobalArguments::Position, position},
+        {GlobalArguments::SourceDirectory, repoRoot},
     };
     manager->handleCommandAsync(GlobalCommands::DisplayText, args);
 }
@@ -283,6 +285,7 @@ void GitPlugin::diffBranchHandler() {
         {GlobalArguments::Content, diff},
         {GlobalArguments::ReadOnly, true},
         {GlobalArguments::FoldTopLevel, true},
+        {GlobalArguments::SourceDirectory, repoRoot},
     };
     manager->handleCommandAsync(GlobalCommands::DisplayText, args);
 }
@@ -384,6 +387,7 @@ void GitPlugin::on_gitCommitClicked(const QModelIndex &mi) {
                         {GlobalArguments::FileName, displayName},
                         {GlobalArguments::Content, diff},
                         {GlobalArguments::ReadOnly, true},
+                        {GlobalArguments::SourceDirectory, getConfig().getGitLastDir()},
                     };
                     manager->handleCommandAsync(GlobalCommands::DisplayText, args);
                 });
@@ -417,6 +421,7 @@ void GitPlugin::on_gitCommitDoubleClicked(const QModelIndex &mi) {
         {GlobalArguments::Content, *fullCommit.raw},
         {GlobalArguments::ReadOnly, true},
         {GlobalArguments::FoldTopLevel, true},
+        {GlobalArguments::SourceDirectory, getConfig().getGitLastDir()},
     };
     manager->handleCommandAsync(GlobalCommands::DisplayText, args);
 }
