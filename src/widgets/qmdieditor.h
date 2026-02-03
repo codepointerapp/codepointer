@@ -12,7 +12,6 @@
 #include <QMap>
 #include <QStyledItemDelegate>
 #include <QToolButton>
-#include <QMap>
 
 // needed only for CommandArgs
 #include <pluginmanager.h>
@@ -268,7 +267,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QAction *actionCopyFilePath = nullptr;
     QAction *actionToggleHeader = nullptr;
     QAction *actionTogglePreview = nullptr;
-    
+
     struct diffLineNumber {
         QString file;
         int oldLine = -1;
