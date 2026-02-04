@@ -20,6 +20,7 @@
 #include "GlobalCommands.hpp"
 #include "iplugin.h"
 #include "plugins/git/CreateGitBranch.hpp"
+#include "plugins/git/CommitForm.hpp"
 #include "ui_GitCommands.h"
 #include "ui_GitCommit.h"
 #include "widgets/AutoShrinkLabel.hpp"
@@ -121,6 +122,7 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     revert->setToolTip(tr("Revert existing commits"));
     revert->setShortcut(QKeySequence("Ctrl+G, U"));
     commit->setToolTip(tr("Record changes to the repository"));
+    commit->setShortcut(QKeySequence("Ctrl+G, C"));
     stash->setToolTip(tr("tash away changes to dirty working directory"));
     branches->setToolTip(tr("List, create, or delete branches"));
 
@@ -128,6 +130,7 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     connect(logProject, &QAction::triggered, this, &GitPlugin::logProjectHandler);
     connect(diffFile, &QAction::triggered, this, &GitPlugin::diffFileHandler);
     connect(revert, &QAction::triggered, this, &GitPlugin::revertFileHandler);
+    connect(commit, &QAction::triggered, this, &GitPlugin::commitHandler);
 
     auto menuName = "&Git";
     host->menus.addActionGroup(menuName, "&Project");
@@ -247,7 +250,7 @@ void GitPlugin::refreshBranchesHandler() {
     form->branchListCombo->clear();
     auto activeIndex = -1;
     auto delegate = static_cast<BoldItemDelegate *>(form->branchListCombo->itemDelegate());
-    for (auto const &line : branches) {
+    for (auto const &line : std::as_const(branches)) {
         auto isActive = line.startsWith('*');
         auto branchName = line.mid(2).trimmed();
         if (branchName.isEmpty()) {
@@ -322,6 +325,29 @@ void GitPlugin::deleteBranchHandler() {
     }
 }
 
+void GitPlugin::commitHandler() {
+    auto manager = getManager();
+    auto client = manager->getMdiServer()->getCurrentClient();
+    auto filename = client->mdiClientFileName();
+    if (filename.isEmpty()) {
+        // TODO - query the current project and use it for commits
+        qDebug() << "Cannot commit on an empty file" << filename;
+        return;
+    }
+
+    auto repoRoot = QFileInfo(filename).absolutePath();
+    repoRoot = detectRepoRoot(repoRoot);
+    qDebug() << "Current client" << filename << "at dir" << repoRoot;
+    if (repoRoot.isEmpty()) {
+        qDebug() << "Filename is not in any git repo" << filename;
+        return;
+    }
+    // qDebug() << "Will commit in repo" << repoRoot;
+
+    auto commitForm = new CommitForm(repoRoot, this, manager);
+    mdiServer->addClient(commitForm);
+}
+
 void GitPlugin::logHandler(GitLog log, const QString &filename) {
     auto repoRoot = QFileInfo(filename).absolutePath();
     repoRoot = detectRepoRoot(repoRoot);
@@ -383,7 +409,7 @@ void GitPlugin::on_gitCommitClicked(const QModelIndex &mi) {
                     auto diff = runGit({"-C", getConfig().getGitLastDir(), "show",
                                         widget->currentSha1, "--", filename});
                     auto shortSha1 = shortGitSha1(widget->currentSha1);
-                    auto displayName = QString("%1-%2.diff").arg(shortSha1).arg(filename);
+                    auto displayName = QString("%1-%2.diff").arg(shortSha1, filename);
                     CommandArgs args = {
                         {GlobalArguments::FileName, displayName},
                         {GlobalArguments::Content, diff},

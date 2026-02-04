@@ -174,6 +174,9 @@ set(codepointer_sources
     src/plugins/git/GitCommit.ui
     src/plugins/git/GitPlugin.cpp
     src/plugins/git/GitPlugin.hpp
+    src/plugins/git/CommitForm.cpp
+    src/plugins/git/CommitForm.hpp
+    src/plugins/git/CommitForm.ui
     src/plugins/Terminal/TerminalPlugin.cpp
     src/plugins/Terminal/TerminalPlugin.hpp
     src/AnsiToHTML.cpp
@@ -187,12 +190,7 @@ file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.ico" DESTINATION "${CMAKE_BINARY_DIR
 
 configure_file(codepointer.qrc.in ${CMAKE_BINARY_DIR}/codepointer.qrc)
 configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop)
-
-if (WIN32)
-    add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc)
-else()
-    add_executable(codepointer ${codepointer_sources})
-endif()
+add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc)
 
 if (!MINGW)
     set_property(TARGET codepointerPROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)

@@ -16,7 +16,7 @@ APP_VERSION="0.1.1"
 QT_VERSION="6.10.1"
 
 NAME="${APP_NAME}-v${APP_VERSION}${NAME_SUFFIX}-x86_64"
-QTDIR="${HOME}/qt/${QT_VERSION}/gcc_64"
+QTDIR="/usr/lib/qt6"
 export matrix_config_build_dir=ubuntu-gcc
 export PATH=$QTDIR/bin:$PATH
 export LD_LIBRARY_PATH=$QTDIR/lib:$LD_LIBRARY_PATH
