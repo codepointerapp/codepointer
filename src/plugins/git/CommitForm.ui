@@ -22,6 +22,13 @@
      <widget class="QWidget" name="layoutWidget">
       <layout class="QVBoxLayout" name="messageLayout">
        <item>
+        <widget class="QLabel" name="commitLogLabel">
+         <property name="text">
+          <string>Label</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QPlainTextEdit" name="commitMessage">
          <property name="tabChangesFocus">
           <bool>true</bool>
@@ -36,7 +43,7 @@
          <item>
           <widget class="QPushButton" name="commitButton">
            <property name="text">
-            <string>Commit</string>
+            <string>&amp;Commit</string>
            </property>
           </widget>
          </item>
@@ -70,16 +77,30 @@
         <widget class="QTableView" name="tableView"/>
        </item>
        <item>
+        <widget class="QPushButton" name="revertCurrentButton">
+         <property name="text">
+          <string>Revert current</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="revertSelectedButton">
+         <property name="text">
+          <string>Revert selected</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QPushButton" name="selectAllButton">
          <property name="text">
-          <string>Select all</string>
+          <string>Select &amp;all</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="deselectAllbutton">
          <property name="text">
-          <string>Select none</string>
+          <string>Select &amp;none</string>
          </property>
         </widget>
        </item>

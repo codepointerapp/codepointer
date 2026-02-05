@@ -2,6 +2,8 @@
 #include <QAbstractTableModel>
 #include <QtAlgorithms>
 
+#include <qutepart/qutepart.h>
+
 #include "CommitForm.hpp"
 #include "GitPlugin.hpp"
 #include "ui_CommitForm.h"
@@ -38,7 +40,7 @@ class GitStatusTableModel final : public QAbstractTableModel {
     // Q_OBJECT
 
   public:
-    explicit GitStatusTableModel(QList<GitStatusEntry> entries, QObject *parent = nullptr);
+    explicit GitStatusTableModel(QObject *parent = nullptr);
 
     auto rowCount(const QModelIndex &parent = {}) const -> int override;
     auto columnCount(const QModelIndex &parent = {}) const -> int override;
@@ -56,10 +58,7 @@ class GitStatusTableModel final : public QAbstractTableModel {
     static auto statusToText(GitFileStatus status) -> QString;
 };
 
-GitStatusTableModel::GitStatusTableModel(QList<GitStatusEntry> entries, QObject *parent)
-    : QAbstractTableModel(parent) {
-    m_entries = std::move(entries);
-}
+GitStatusTableModel::GitStatusTableModel(QObject *parent) : QAbstractTableModel(parent) {}
 
 auto GitStatusTableModel::rowCount(const QModelIndex &parent) const -> int {
     return parent.isValid() ? 0 : m_entries.size();
@@ -185,17 +184,65 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     repoRoot = dir;
     git = plugin;
 
-    auto gitOutput = git->runGit({"-C", repoRoot, "status", "--porcelain"});
-    auto status = parseGitStatus(gitOutput);
-    auto list = new GitStatusTableModel(status, ui->tableView);
-    ui->tableView->setModel(list);
+    model = new GitStatusTableModel(ui->tableView);
+    // We will make it simpler for now
+    ui->modifiedFileNameLabel->hide();
+    ui->modifiedFileContents->hide();
+
+    ui->tableView->setModel(model);
     ui->tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->tableView->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    {
+        editor = new Qutepart::Qutepart(this);
+
+        // TODO - this would be epic
+        // editor = textEditorPlugin->fileNewEditor();
+
+        // TODO - I would like to get a highlighter from an extensions
+        editor->setHighlighter("diff.xml");
+
+        auto layout = ui->diffPreview->parentWidget()->layout();
+        layout->replaceWidget(ui->diffPreview, editor);
+        ui->diffPreview->deleteLater();
+        ui->diffPreview = editor;
+    }
+
+    connect(ui->tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
+            [this](const QItemSelection &selected, const QItemSelection &deselected) {
+                if (selected.indexes().size() == 0) {
+                    newFileSelected({});
+                    return;
+                }
+                auto firstIndex = selected.indexes().first();
+                auto idx = model->index(firstIndex.row(), 2);
+                auto fileName = model->data(idx, Qt::DisplayRole).toString();
+                newFileSelected(fileName);
+                Q_UNUSED(deselected);
+            });
 
     auto *header = ui->tableView->horizontalHeader();
     header->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     header->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    // Make the last column stretch
     header->setSectionResizeMode(2, QHeaderView::Stretch);
+
+    updateGitStatus();
 }
 
 CommitForm::~CommitForm() { delete ui; }
+
+void CommitForm::updateGitStatus() {
+    auto gitOutput = git->runGit({"-C", repoRoot, "status", "--porcelain"});
+    auto status = parseGitStatus(gitOutput);
+    model->setEntries(status);
+}
+
+void CommitForm::newFileSelected(const QString &filename) {
+    if (filename.isEmpty()) {
+        ui->diffPreview->setPlainText("");
+        return;
+    }
+
+    auto diff = git->runGit({"-C", repoRoot, "diff", filename});
+    ui->diffPreview->setPlainText(diff);
+}

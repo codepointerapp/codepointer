@@ -7,18 +7,28 @@ namespace Ui {
 class CommitForm;
 }
 
-class GitPlugin;
+namespace Qutepart {
+class Qutepart;
+}
 
-class CommitForm : public QWidget, public qmdiClient
-{
+class GitPlugin;
+class GitStatusTableModel;
+
+class CommitForm : public QWidget, public qmdiClient {
     Q_OBJECT
 
-public:
+  public:
     explicit CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent);
     ~CommitForm();
 
-private:
+  public slots:
+    void updateGitStatus();
+    void newFileSelected(const QString &filename);
+
+  private:
     Ui::CommitForm *ui;
+    GitStatusTableModel *model;
     GitPlugin *git;
+    Qutepart::Qutepart *editor;
     QString repoRoot;
 };
