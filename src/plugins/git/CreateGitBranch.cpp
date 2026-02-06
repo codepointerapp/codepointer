@@ -60,12 +60,12 @@ void CreateGitBranch::verifyBranchName(const QString &newText) {
 }
 
 void CreateGitBranch::findLocalBranches() {
-    auto res = plugin->runGit({"branch"});
-    if (res.isEmpty()) {
+    auto [output, exitCode] = plugin->runGit({"branch"});
+    if (output.isEmpty()) {
         return;
     }
     this->availableBranches.clear();
-    for (auto &line : res.split('\n', Qt::SkipEmptyParts)) {
+    for (auto &line : output.split('\n', Qt::SkipEmptyParts)) {
         auto branchName = line.trimmed();
         if (branchName.startsWith("* ")) {
             branchName.remove(0, 2);
@@ -100,5 +100,6 @@ QString CreateGitBranch::createBranchImplementation(const QString &branchName, b
     } else {
         args = {"branch", branchName};
     }
-    return plugin->runGit(args);
+    auto [gitOutput, exitCode] = plugin->runGit(args);
+    return gitOutput;
 }

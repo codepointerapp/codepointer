@@ -1,6 +1,7 @@
 #pragma once
 
 #include "iplugin.h"
+#include <tuple>
 
 namespace Ui {
 class GitCommandsForm;
@@ -47,7 +48,7 @@ class GitPlugin : public IPlugin {
     void on_gitCommitDoubleClicked(const QModelIndex &mi);
 
   public slots:
-    QString runGit(const QStringList &args);
+    std::tuple<QString, int> runGit(const QStringList &args);
     QString detectRepoRoot(const QString &path);
     QString getDiff(const QString &path);
     QString getRawCommit(const QString &sha1);

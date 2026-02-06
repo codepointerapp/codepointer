@@ -270,7 +270,6 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
             });
     connect(model, &QAbstractItemModel::modelReset, this,
             [this]() { ui->revertSelectedButton->setEnabled(false); });
-    ui->revertSelectedButton->setEnabled(false);
 
     connect(ui->selectAllButton, &QAbstractButton::clicked, this, [this]() {
         model->setAllChecked(true);
@@ -299,7 +298,7 @@ void CommitForm::keyPressEvent(QKeyEvent *event) {
 }
 
 void CommitForm::updateGitStatus() {
-    auto gitOutput = git->runGit({"-C", repoRoot, "status", "--porcelain"});
+    auto [gitOutput, exitCode] = git->runGit({"-C", repoRoot, "status", "--porcelain"});
     auto status = parseGitStatus(gitOutput);
     model->setEntries(status);
     if (model->rowCount() > 0) {
@@ -313,11 +312,26 @@ void CommitForm::newFileSelected(const QString &filename) {
         return;
     }
 
-    auto diff = git->runGit({"-C", repoRoot, "diff", filename});
-    ui->diffPreview->setPlainText(diff);
+    auto [output, exitCode] = git->runGit({"-C", repoRoot, "diff", filename});
+    if (exitCode != 0) {
+        ui->commitLogLabel->setText(output);
+        return;
+    }
+    ui->commitLogLabel->setText("");
+    ui->diffPreview->setPlainText(output);
 }
 
-void CommitForm::revertCurrentImpl() {}
+void CommitForm::revertCurrentImpl() {
+    auto selected = ui->tableView->currentIndex();
+    auto idx = model->index(selected.row(), 2);
+    auto fileName = model->data(idx, Qt::DisplayRole).toString();
+    auto args = QStringList{"-C", repoRoot, "checkout", fileName};
+    auto [output, exitCode] = git->runGit(args);
+    ui->gitOutput->setText(output);
+    if (exitCode == 0) {
+        updateGitStatus();
+    }
+}
 
 void CommitForm::revertSelectionImpl() {
     auto checked = model->checkedEntries();
@@ -330,8 +344,9 @@ void CommitForm::revertSelectionImpl() {
         args.push_back(c.filename);
     }
 
-    auto res = git->runGit(args);
-    qDebug() << res;
-    ui->gitOutput->setText(res);
-    updateGitStatus();
+    auto [output, exitCode] = git->runGit(args);
+    ui->gitOutput->setText(output);
+    if (exitCode == 0) {
+        updateGitStatus();
+    }
 }

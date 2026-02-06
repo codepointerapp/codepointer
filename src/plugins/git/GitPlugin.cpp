@@ -19,8 +19,8 @@
 #include "GitPlugin.hpp"
 #include "GlobalCommands.hpp"
 #include "iplugin.h"
-#include "plugins/git/CreateGitBranch.hpp"
 #include "plugins/git/CommitForm.hpp"
+#include "plugins/git/CreateGitBranch.hpp"
 #include "ui_GitCommands.h"
 #include "ui_GitCommit.h"
 #include "widgets/AutoShrinkLabel.hpp"
@@ -233,7 +233,7 @@ void GitPlugin::revertFileHandler() {
         return;
     }
     auto args = QStringList{"restore", client->mdiClientFileName()};
-    auto output = runGit(args);
+    auto [output, exitCode] = runGit(args);
     if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
         editor->loadFile(filename);
         editor->loadContent(false);
@@ -245,7 +245,7 @@ void GitPlugin::refreshBranchesHandler() {
     auto client = manager->getMdiServer()->getCurrentClient();
     auto filename = client->mdiClientFileName();
     auto repoRoot = getConfig().getGitLastDir();
-    auto output = runGit({"-C", repoRoot, "branch", "-a"});
+    auto [output, exitCode] = runGit({"-C", repoRoot, "branch", "-a"});
     auto branches = output.split('\n', Qt::SkipEmptyParts);
     form->branchListCombo->clear();
     auto activeIndex = -1;
@@ -279,7 +279,7 @@ void GitPlugin::diffBranchHandler() {
     auto filename = client->mdiClientFileName();
     auto repoRoot = QFileInfo(filename).absolutePath();
     auto branch = form->branchListCombo->currentText();
-    auto diff = runGit({"diff", branch});
+    auto [diff, exitCode] = runGit({"diff", branch});
     if (diff.isEmpty()) {
         return;
     }
@@ -318,9 +318,13 @@ void GitPlugin::deleteBranchHandler() {
     if (reply == QMessageBox::Yes) {
         auto deleteBranchArg = cb->isChecked() ? "-D" : "-d";
         auto args = QStringList{"branch", deleteBranchArg, branch};
-        auto res = runGit(args);
-        form->gitOutput->setText(res);
-        form->gitOutput->setToolTip(res);
+        auto [output, exitCode] = runGit(args);
+        if (exitCode != 0) {
+            // TODO - display this error
+            return;
+        }
+        form->gitOutput->setText(output);
+        form->gitOutput->setToolTip(output);
         refreshBranchesHandler();
     }
 }
@@ -381,7 +385,12 @@ void GitPlugin::logHandler(GitLog log, const QString &filename) {
     getConfig().setGitLastDir(repoRoot);
     getConfig().setGitLastCommand(args.join(" "));
 
-    auto output = runGit(args);
+    auto [output, exitCode] = runGit(args);
+    if (exitCode != 0) {
+        // ui->commitLogLabel->setText(output);
+        return;
+    }
+
     model->setContent(output);
     form->listView->setModel(model);
     gitDock->raise();
@@ -406,8 +415,12 @@ void GitPlugin::on_gitCommitClicked(const QModelIndex &mi) {
                 [this, widget](const QModelIndex &i) {
                     auto manager = getManager();
                     auto filename = i.data().toString();
-                    auto diff = runGit({"-C", getConfig().getGitLastDir(), "show",
-                                        widget->currentSha1, "--", filename});
+                    auto [diff, exitCode] = runGit({"-C", getConfig().getGitLastDir(), "show",
+                                                    widget->currentSha1, "--", filename});
+                    if (exitCode != 0) {
+                        // TODO display this error
+                        return;
+                    }
                     auto shortSha1 = shortGitSha1(widget->currentSha1);
                     auto displayName = QString("%1-%2.diff").arg(shortSha1, filename);
                     CommandArgs args = {
@@ -453,13 +466,13 @@ void GitPlugin::on_gitCommitDoubleClicked(const QModelIndex &mi) {
     manager->handleCommandAsync(GlobalCommands::DisplayText, args);
 }
 
-QString GitPlugin::runGit(const QStringList &args) {
+std::tuple<QString, int> GitPlugin::runGit(const QStringList &args) {
     // qDebug() << "git " << args.join(" ");
     QProcess p;
     p.setProcessChannelMode(QProcess::ProcessChannelMode::MergedChannels);
     p.start(gitBinary, args);
     p.waitForFinished();
-    return QString::fromUtf8(p.readAllStandardOutput());
+    return {QString::fromUtf8(p.readAllStandardOutput()), p.exitCode()};
 }
 
 QString GitPlugin::detectRepoRoot(const QString &filePath) {
@@ -472,11 +485,13 @@ QString GitPlugin::detectRepoRoot(const QString &filePath) {
 
 QString GitPlugin::getDiff(const QString &path) {
     auto fi = QFileInfo(path);
-    return runGit({"-C", fi.absolutePath(), "diff"});
+    auto [output, exitCode] = runGit({"-C", fi.absolutePath(), "diff"});
+    return output;
 }
 
 QString GitPlugin::getRawCommit(const QString &sha1) {
-    return runGit({"-C", getConfig().getGitLastDir(), "show", sha1});
+    auto [output, exitCode] = runGit({"-C", getConfig().getGitLastDir(), "show", sha1});
+    return output;
 }
 
 void GitPlugin::restoreGitLog() {
@@ -492,7 +507,7 @@ void GitPlugin::restoreGitLog() {
     auto args = cmd.split(" ");
     auto model = new CommitModel(this);
     form->label->setText(cmd);
-    auto output = runGit(args);
+    auto [output, exitCode] = runGit(args);
     model->setContent(output);
     form->listView->setModel(model);
 
