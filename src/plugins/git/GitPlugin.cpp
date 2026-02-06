@@ -178,6 +178,23 @@ void GitPlugin::loadConfig(QSettings &settings) {
     restoreGitLog();
 }
 
+int GitPlugin::canOpenFile(const QString &fileName) {
+    auto url = QUrl (fileName);
+    if (url.scheme().isEmpty()) {
+        return 0;
+    }
+    return url.scheme() == "git" ? 5 : 0;
+}
+
+qmdiClient *GitPlugin::openFile(const QString &fileName, int, int , int ) {
+    auto url = QUrl (fileName);
+    auto repoDir = url.path();
+    auto manager = getManager();
+    auto commitForm = new CommitForm(repoDir, this, manager);
+    mdiServer->addClient(commitForm);  
+    return nullptr;
+}
+
 void GitPlugin::logFileHandler() {
     auto manager = getManager();
     auto client = manager->getMdiServer()->getCurrentClient();

@@ -32,6 +32,8 @@ class GitPlugin : public IPlugin {
     virtual void on_client_merged(qmdiHost *host) override;
     virtual void on_client_unmerged(qmdiHost *host) override;
     virtual void loadConfig(QSettings &settings) override;
+    virtual int canOpenFile(const QString &fileName) override;
+    virtual qmdiClient *openFile(const QString &fileName, int x = -1, int y = -1, int z = -1) override;
 
   public slots:
     void logFileHandler();

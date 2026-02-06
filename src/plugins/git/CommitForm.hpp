@@ -20,6 +20,8 @@ class CommitForm : public QWidget, public qmdiClient {
   public:
     explicit CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent);
     ~CommitForm();
+    
+    virtual QString mdiClientFileName() override;
 
   protected:
     void keyPressEvent(QKeyEvent *event) override;
