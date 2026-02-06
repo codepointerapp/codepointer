@@ -1,5 +1,6 @@
 #include <QAbstractListModel>
 #include <QAbstractTableModel>
+#include <QKeyEvent>
 #include <QtAlgorithms>
 
 #include <qutepart/qutepart.h>
@@ -42,6 +43,7 @@ class GitStatusTableModel final : public QAbstractTableModel {
   public:
     explicit GitStatusTableModel(QObject *parent = nullptr);
 
+    // Re-implementation rom QAbstractTableModel
     auto rowCount(const QModelIndex &parent = {}) const -> int override;
     auto columnCount(const QModelIndex &parent = {}) const -> int override;
     auto data(const QModelIndex &index, int role) const -> QVariant override;
@@ -49,8 +51,11 @@ class GitStatusTableModel final : public QAbstractTableModel {
     auto flags(const QModelIndex &index) const -> Qt::ItemFlags override;
     auto headerData(int section, Qt::Orientation orientation, int role) const -> QVariant override;
 
+    // Public API
     auto setEntries(QList<GitStatusEntry> entries) -> void;
     auto checkedEntries() const -> QList<GitStatusEntry>;
+    auto setAllChecked(bool checked) -> void;
+    auto hasAnyChecked() const -> bool;
 
   private:
     QList<GitStatusEntry> m_entries;
@@ -176,6 +181,30 @@ auto GitStatusTableModel::statusToText(GitFileStatus status) -> QString {
     }
 }
 
+void GitStatusTableModel::setAllChecked(bool checked) {
+    if (m_entries.isEmpty()) {
+        return;
+    }
+
+    for (auto &e : m_entries) {
+        e.checked = checked;
+    }
+
+    const QModelIndex topLeft = index(0, 0);
+    const QModelIndex bottomRight = index(rowCount() - 1, 0);
+
+    emit dataChanged(topLeft, bottomRight, {Qt::CheckStateRole});
+}
+
+bool GitStatusTableModel::hasAnyChecked() const {
+    for (const auto &e : m_entries) {
+        if (e.checked) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /////////
 CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     : QWidget(parent), ui(new Ui::CommitForm) {
@@ -188,13 +217,15 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     // We will make it simpler for now
     ui->modifiedFileNameLabel->hide();
     ui->modifiedFileContents->hide();
-
     ui->tableView->setModel(model);
     ui->tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tableView->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->revertSelectedButton->setEnabled(false);
+    ui->commitMessage->setFocusPolicy(Qt::StrongFocus);
 
     {
         editor = new Qutepart::Qutepart(this);
+        editor->setReadOnly(true);
 
         // TODO - this would be epic
         // editor = textEditorPlugin->fileNewEditor();
@@ -208,6 +239,15 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
         ui->diffPreview = editor;
     }
 
+    auto *header = ui->tableView->horizontalHeader();
+    header->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(2, QHeaderView::Stretch);
+
+    connect(ui->revertCurrentButton, &QAbstractButton::clicked, this,
+            &CommitForm::revertCurrentImpl);
+    connect(ui->revertSelectedButton, &QAbstractButton::clicked, this,
+            &CommitForm::revertSelectionImpl);
     connect(ui->tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             [this](const QItemSelection &selected, const QItemSelection &deselected) {
                 if (selected.indexes().size() == 0) {
@@ -220,21 +260,51 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 newFileSelected(fileName);
                 Q_UNUSED(deselected);
             });
+    connect(model, &QAbstractItemModel::dataChanged, this,
+            [this](const QModelIndex &, const QModelIndex &, const QList<int> &roles) {
+                if (!roles.isEmpty() && !roles.contains(Qt::CheckStateRole)) {
+                    return;
+                }
 
-    auto *header = ui->tableView->horizontalHeader();
-    header->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(2, QHeaderView::Stretch);
+                ui->revertSelectedButton->setEnabled(!model->checkedEntries().isEmpty());
+            });
+    connect(model, &QAbstractItemModel::modelReset, this,
+            [this]() { ui->revertSelectedButton->setEnabled(false); });
+    ui->revertSelectedButton->setEnabled(false);
+
+    connect(ui->selectAllButton, &QAbstractButton::clicked, this, [this]() {
+        model->setAllChecked(true);
+        ui->revertSelectedButton->setEnabled(true);
+    });
+    connect(ui->selectNoneButton, &QAbstractButton::clicked, this, [this]() {
+        model->setAllChecked(false);
+        ui->revertSelectedButton->setEnabled(false);
+    });
 
     updateGitStatus();
 }
 
 CommitForm::~CommitForm() { delete ui; }
 
+void CommitForm::keyPressEvent(QKeyEvent *event) {
+    if (event->key() == Qt::Key_Escape) {
+        if (editor) {
+            editor->setFocus(Qt::ShortcutFocusReason);
+            event->accept();
+            return;
+        }
+    }
+
+    QWidget::keyPressEvent(event);
+}
+
 void CommitForm::updateGitStatus() {
     auto gitOutput = git->runGit({"-C", repoRoot, "status", "--porcelain"});
     auto status = parseGitStatus(gitOutput);
     model->setEntries(status);
+    if (model->rowCount() > 0) {
+        ui->tableView->selectRow(0);
+    }
 }
 
 void CommitForm::newFileSelected(const QString &filename) {
@@ -245,4 +315,23 @@ void CommitForm::newFileSelected(const QString &filename) {
 
     auto diff = git->runGit({"-C", repoRoot, "diff", filename});
     ui->diffPreview->setPlainText(diff);
+}
+
+void CommitForm::revertCurrentImpl() {}
+
+void CommitForm::revertSelectionImpl() {
+    auto checked = model->checkedEntries();
+    if (checked.isEmpty()) {
+        return;
+    }
+
+    auto args = QStringList{"-C", repoRoot, "checkout"};
+    for (auto &c : std::as_const(checked)) {
+        args.push_back(c.filename);
+    }
+
+    auto res = git->runGit(args);
+    qDebug() << res;
+    ui->gitOutput->setText(res);
+    updateGitStatus();
 }

@@ -21,9 +21,14 @@ class CommitForm : public QWidget, public qmdiClient {
     explicit CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent);
     ~CommitForm();
 
+  protected:
+    void keyPressEvent(QKeyEvent *event) override;
+
   public slots:
     void updateGitStatus();
     void newFileSelected(const QString &filename);
+    void revertCurrentImpl();
+    void revertSelectionImpl();
 
   private:
     Ui::CommitForm *ui;
