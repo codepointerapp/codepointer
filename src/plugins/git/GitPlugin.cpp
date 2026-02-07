@@ -179,19 +179,19 @@ void GitPlugin::loadConfig(QSettings &settings) {
 }
 
 int GitPlugin::canOpenFile(const QString &fileName) {
-    auto url = QUrl (fileName);
+    auto url = QUrl(fileName);
     if (url.scheme().isEmpty()) {
         return 0;
     }
     return url.scheme() == "git" ? 5 : 0;
 }
 
-qmdiClient *GitPlugin::openFile(const QString &fileName, int, int , int ) {
-    auto url = QUrl (fileName);
+qmdiClient *GitPlugin::openFile(const QString &fileName, int, int, int) {
+    auto url = QUrl(fileName);
     auto repoDir = url.path();
     auto manager = getManager();
     auto commitForm = new CommitForm(repoDir, this, manager);
-    mdiServer->addClient(commitForm);  
+    mdiServer->addClient(commitForm);
     return nullptr;
 }
 

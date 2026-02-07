@@ -285,9 +285,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
 
 CommitForm::~CommitForm() { delete ui; }
 
-QString CommitForm::mdiClientFileName() {
-     return QString("git:%1").arg(repoRoot);
-}
+QString CommitForm::mdiClientFileName() { return QString("git:%1").arg(repoRoot); }
 
 void CommitForm::keyPressEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Escape) {
