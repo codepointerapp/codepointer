@@ -338,6 +338,7 @@ void GitPlugin::deleteBranchHandler() {
         auto [output, exitCode] = runGit(args);
         if (exitCode != 0) {
             // TODO - display this error
+            qDebug() << "Command failed. Error" << exitCode << output;
             return;
         }
         form->gitOutput->setText(output);
@@ -493,11 +494,15 @@ std::tuple<QString, int> GitPlugin::runGit(const QStringList &args) {
 }
 
 QString GitPlugin::detectRepoRoot(const QString &filePath) {
-    QProcess p;
-    p.setWorkingDirectory(QFileInfo(filePath).absolutePath());
-    p.start(gitBinary, {"rev-parse", "--show-toplevel"});
-    p.waitForFinished();
-    return QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+    auto dir = QFileInfo(filePath).absolutePath();
+    auto args = QStringList{"-C", dir, "rev-parse", "--show-toplevel"};
+    auto [output, exitCode] = runGit(args);
+    if (exitCode != 0) {
+        qDebug() << "detectRepoRoot failed, with error" << exitCode << "output" << output
+                 << "args:" << args;
+        return {};
+    }
+    return output.trimmed();
 }
 
 QString GitPlugin::getDiff(const QString &path) {
