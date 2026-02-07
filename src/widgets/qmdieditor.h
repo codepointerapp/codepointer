@@ -179,8 +179,13 @@ class qmdiEditor : public QWidget, public qmdiClient {
         }
         return textEditor->document()->isEmpty();
     }
-    inline void foldTopLevel() const { textEditor->foldTopLevelBlocks(); };
+    inline void foldTopLevel() const { textEditor->foldTopLevelBlocks(); }
+    inline void setMinimapVisible(bool value) const { textEditor->setMinimapVisible(value); }
     void setReadOnly(bool b);
+    inline QPlainTextEdit* getEditor() const { return textEditor; }
+    inline void setHighlighter(const QString &languageId) {
+        textEditor->setHighlighter(languageId);
+    }
 
   protected:
     virtual void focusInEvent(QFocusEvent *event) override;

@@ -49,8 +49,8 @@
 
 #include "GlobalCommands.hpp"
 #include "plugins/texteditor/thememanager.h"
-#include "qmdieditor.h"
 #include "widgets/BoldItemDelegate.hpp"
+#include "widgets/qmdieditor.h"
 #include "widgets/textoperationswidget.h"
 #include "widgets/textpreview.h"
 #include "widgets/ui_bannermessage.h"

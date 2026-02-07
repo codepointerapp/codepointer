@@ -25,7 +25,7 @@
 #include "widgets/qmdieditor.h"
 
 TextEditorPlugin::TextEditorPlugin() {
-    name = tr("Text editor plugin - based on QutePart");
+    name = "TextEditorPlugin";
     author = tr("Diego Iastrubni <diegoiast@gmail.com>");
     iVersion = 0;
     sVersion = "0.0.1";

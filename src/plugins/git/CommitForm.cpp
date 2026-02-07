@@ -7,7 +7,9 @@
 
 #include "CommitForm.hpp"
 #include "GitPlugin.hpp"
+#include "plugins/texteditor/texteditor_plg.h"
 #include "ui_CommitForm.h"
+#include "widgets/qmdieditor.h"
 
 enum class GitFileStatus { Modified, Added, Deleted, Renamed, Copied, Untracked, Unknown };
 
@@ -224,19 +226,32 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     ui->commitMessage->setFocusPolicy(Qt::StrongFocus);
 
     {
+        auto layout = ui->diffPreview->parentWidget()->layout();
+
+#if 0
         editor = new Qutepart::Qutepart(this);
         editor->setReadOnly(true);
-
-        // TODO - this would be epic
-        // editor = textEditorPlugin->fileNewEditor();
-
-        // TODO - I would like to get a highlighter from an extensions
         editor->setHighlighter("diff.xml");
-
-        auto layout = ui->diffPreview->parentWidget()->layout();
         layout->replaceWidget(ui->diffPreview, editor);
         ui->diffPreview->deleteLater();
         ui->diffPreview = editor;
+#else
+        auto manager = git->getManager();
+        auto plugin = manager->findPlugin("TextEditorPlugin");
+        if (auto p = dynamic_cast<TextEditorPlugin *>(plugin)) {
+            auto client = p->fileNewEditor();
+            if (auto e = dynamic_cast<qmdiEditor *>(client)) {
+                e->setLineNumbersVisible(false);
+                e->setReadOnly(true);
+                e->setMinimapVisible(false);
+                e->setHighlighter("diff.xml");
+                e->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+                layout->replaceWidget(ui->diffPreview, e);
+                ui->diffPreview->deleteLater();
+                ui->diffPreview = e->getEditor();
+            }
+        }
+#endif
     }
 
     auto *header = ui->tableView->horizontalHeader();
