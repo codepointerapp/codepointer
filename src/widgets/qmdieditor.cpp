@@ -979,6 +979,10 @@ void qmdiEditor::handleTabDeselected() {
 
 // FIXME: this is blocking, and wrong
 QSet<QString> qmdiEditor::getTagCompletions(const QString &prefix) {
+    if (!mdiServer || !mdiServer->mdiHost) {
+        return {};
+    }
+    
     QSet<QString> completions;
     auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     if (!pluginManager) {
@@ -1036,6 +1040,9 @@ void qmdiEditor::handleWordTooltip(const QPoint &localPosition, const QPoint &gl
 
 QFuture<CommandArgs> qmdiEditor::getCommandForLocation(const QPoint &localPosition,
                                                        const QString &cmd) {
+    if (!mdiServer || !mdiServer->mdiHost) {
+        return {};
+    }
     auto cursor = textEditor->cursorForPosition(localPosition);
     cursor.select(QTextCursor::WordUnderCursor);
 
