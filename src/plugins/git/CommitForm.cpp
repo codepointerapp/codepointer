@@ -238,6 +238,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
         auto plugin = manager->findPlugin("TextEditorPlugin");
         if (auto p = dynamic_cast<TextEditorPlugin *>(plugin)) {
             auto client = p->fileNewEditor();
+            client->mdiServer = git->mdiServer;
             if (auto e = dynamic_cast<qmdiEditor *>(client)) {
                 e->setLineNumbersVisible(false);
                 e->setReadOnly(true);
@@ -329,14 +330,18 @@ void CommitForm::newFileSelected(const QString &filename) {
 
     auto [output, exitCode] = git->runGit({"-C", repoRoot, "diff", filename});
     if (exitCode != 0) {
-        ui->commitLogLabel->setText(output);
-        if (auto editor = dynamic_cast<qmdiEditor*>(ui->commitLogLabel)) {
-            editor->updateInternalMappings(repoRoot);
-        }
+        qDebug() << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output);
+        ui->commitLogLabel->setText("");
+        ui->diffPreview->setPlainText(output);
         return;
     }
-    ui->commitLogLabel->setText("");
+
     ui->diffPreview->setPlainText(output);
+    if (auto editor = dynamic_cast<qmdiEditor*>(ui->diffPreview->parent()->parent())) {
+        editor->updateInternalMappings(repoRoot);
+    } else {
+        qDebug() << "Double click on diff will not work";
+    }
 }
 
 void CommitForm::revertCurrentImpl() {

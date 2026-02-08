@@ -955,7 +955,8 @@ bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
                 auto text = block.text();
                 if (diffMetadata.mappings.contains(blockNumber)) {
                     auto l = diffMetadata.mappings[blockNumber];
-                    auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+                    auto pluginManager = mdiServer ?
+                        dynamic_cast<PluginManager *>(mdiServer->mdiHost) : nullptr;
                     if (pluginManager) {
                         // Lines start on the editor from 0
                         if (l.newLine >= 0) {
