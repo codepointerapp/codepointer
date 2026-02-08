@@ -55,7 +55,7 @@ GitPlugin::GitPlugin() {
 // TODO: find git in a more proper way
 #if defined(Q_OS_WINDOWS)
     auto label = tr("git exe");
-    gitBinary = "c:\\Program Files\\Git\\bin\\git.exe";
+    gitBinary =  R"(C:\Program Files\Git\bin\git.exe)";
 #else
     gitBinary = "git";
     auto label = tr("git binary");
