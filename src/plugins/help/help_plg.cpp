@@ -7,8 +7,6 @@
  */
 
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -47,6 +45,9 @@
 #include <windows.h>
 #else
 #include <unistd.h>
+// Needed for saving the desktop file
+#include <filesystem>
+#include <fstream>
 #endif
 
 #if defined(__linux__)
@@ -101,8 +102,9 @@ You can also load projects, build and execute them:
 )";
 
 auto static createDesktopMenuItem(const std::string &programName, const std::string &version,
-                                  const std::string &execPath, const std::string &svgIconContent)
-    -> std::string {
+                                  const std::string &execPath,
+                                  const std::string &svgIconContent) -> std::string {
+#if !defined(_WIN32)
     const char *homeDir = std::getenv("HOME");
     if (!homeDir) {
         std::cerr << "Unable to get HOME directory" << std::endl;
@@ -145,6 +147,14 @@ auto static createDesktopMenuItem(const std::string &programName, const std::str
          << "Terminal=false\n";
     file.close();
     return desktopFile.string();
+#else
+    // all this does not make sence on Windows
+    Q_UNUSED(programName)
+    Q_UNUSED(version)
+    Q_UNUSED(execPath)
+    Q_UNUSED(svgIconContent)
+    return {};
+#endif
 }
 
 auto static getExecutablePath() -> std::string {
@@ -540,10 +550,9 @@ void HelpPlugin::actionAbout_triggered() {
 
     auto contentWidget = new QWidget;
     auto contentLayout = new QVBoxLayout(contentWidget);
-    auto textLabel = new QLabel(aboutText.arg(appName)
-                                    .arg(version)
-                                    .arg("https://github.com/codepointerapp/codepointer")
-                                    .arg("https://gitlab.com/codepointer/codepointer"));
+    auto textLabel =
+        new QLabel(aboutText.arg(appName, version, "https://github.com/codepointerapp/codepointer",
+                                 "https://gitlab.com/codepointer/codepointer"));
     textLabel->setWordWrap(true);
     textLabel->setOpenExternalLinks(true);
     textLabel->setTextFormat(Qt::RichText);
