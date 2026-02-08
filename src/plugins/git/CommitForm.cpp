@@ -70,24 +70,21 @@ auto GitStatusTableModel::rowCount(const QModelIndex &parent) const -> int {
 }
 
 auto GitStatusTableModel::columnCount(const QModelIndex &) const -> int {
-    return 3; // checkbox | filename | status
+    // checkbox | filename | status
+    return 3;
 }
 
 auto GitStatusTableModel::data(const QModelIndex &index, int role) const -> QVariant {
     if (!index.isValid()) {
         return {};
     }
-
     const auto &e = m_entries.at(index.row());
-
     if (index.column() == 0 && role == Qt::CheckStateRole) {
         return e.checked ? Qt::Checked : Qt::Unchecked;
     }
-
     if (role != Qt::DisplayRole) {
         return {};
     }
-
     switch (index.column()) {
     case 1:
         return statusToText(e.status);
@@ -120,11 +117,9 @@ auto GitStatusTableModel::flags(const QModelIndex &index) const -> Qt::ItemFlags
     }
 
     auto f = Qt::ItemIsSelectable | Qt::ItemIsEnabled;
-
     if (index.column() == 0) {
         f |= Qt::ItemIsUserCheckable;
     }
-
     return f;
 }
 
@@ -214,26 +209,31 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     git = plugin;
 
     model = new GitStatusTableModel(ui->tableView);
-    // We will make it simpler for now
-    ui->modifiedFileNameLabel->hide();
-    ui->modifiedFileContents->hide();
-    ui->tableView->setModel(model);
-    ui->tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
-    ui->tableView->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->revertSelectedButton->setEnabled(false);
-    ui->commitMessage->setFocusPolicy(Qt::StrongFocus);
+    // We will make it simpler for now, no inline editing.
+    // I hope in the future to add a way to edit the file itself here.
+    // What prevetns:
+    //  1. We don't have a notion of shared document. We cannot open the
+    //     same "content" in different tabs.
+    //  2. When double clicking a line in a diff, the code directly opens the
+    //     modified file. Instead we will need to modify the code, and somehow
+    //     catch this event in this class, and navigate to the file.
+    //  3. 3 Color layuout would be strech on small screens. I would like that
+    //     on smaller "displays" the editor would be bellow the diff view, and
+    //     on larger screen on the side. Qt provides no such layout.
+    //     Solution to this might be having 2 editors with shared document, and
+    //     on resize hide/show the revevant one. Other alternative - move it
+    //     between layouts.
+    {
+        ui->modifiedFileNameLabel->hide();
+        ui->modifiedFileContents->hide();
+    }
 
+    // This code is a back hack, I use instead of changing the UI file to use
+    // a qmdiEditor. I am unsure how can I see QtDesigner to allocate the widget
+    // in a non-standard way. Note how I request the editor plugin for a widget
+    // instead of creating one manually here.
     {
         auto layout = ui->diffPreview->parentWidget()->layout();
-
-#if 0
-        editor = new Qutepart::Qutepart(this);
-        editor->setReadOnly(true);
-        editor->setHighlighter("diff.xml");
-        layout->replaceWidget(ui->diffPreview, editor);
-        ui->diffPreview->deleteLater();
-        ui->diffPreview = editor;
-#else
         auto manager = git->getManager();
         auto plugin = manager->findPlugin("TextEditorPlugin");
         if (auto p = dynamic_cast<TextEditorPlugin *>(plugin)) {
@@ -250,8 +250,13 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 ui->diffPreview = e->getEditor();
             }
         }
-#endif
     }
+
+    ui->tableView->setModel(model);
+    ui->tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->tableView->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->revertSelectedButton->setEnabled(false);
+    ui->commitMessage->setFocusPolicy(Qt::StrongFocus);
 
     auto *header = ui->tableView->horizontalHeader();
     header->setSectionResizeMode(0, QHeaderView::ResizeToContents);
@@ -337,6 +342,10 @@ void CommitForm::newFileSelected(const QString &filename) {
     }
 
     ui->diffPreview->setPlainText(output);
+    // FIXME: this looks way too ugly,
+    // Problem - the "editor" is not the correct widge
+    // The UI expects a QPlainTextEdit, and we have Widget that includes a
+    // QPlainTextEdit.
     if (auto editor = dynamic_cast<qmdiEditor*>(ui->diffPreview->parent()->parent())) {
         editor->updateInternalMappings(repoRoot);
     } else {
