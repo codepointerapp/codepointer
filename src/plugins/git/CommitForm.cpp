@@ -3,8 +3,6 @@
 #include <QKeyEvent>
 #include <QtAlgorithms>
 
-#include <qutepart/qutepart.h>
-
 #include "CommitForm.hpp"
 #include "GitPlugin.hpp"
 #include "plugins/texteditor/texteditor_plg.h"
@@ -304,8 +302,8 @@ QString CommitForm::mdiClientFileName() { return QString("git:%1").arg(repoRoot)
 
 void CommitForm::keyPressEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Escape) {
-        if (editor) {
-            editor->setFocus(Qt::ShortcutFocusReason);
+        if (ui->diffPreview) {
+            ui->diffPreview->setFocus(Qt::ShortcutFocusReason);
             event->accept();
             return;
         }
@@ -332,6 +330,9 @@ void CommitForm::newFileSelected(const QString &filename) {
     auto [output, exitCode] = git->runGit({"-C", repoRoot, "diff", filename});
     if (exitCode != 0) {
         ui->commitLogLabel->setText(output);
+        if (auto editor = dynamic_cast<qmdiEditor*>(ui->commitLogLabel)) {
+            editor->updateInternalMappings(repoRoot);
+        }
         return;
     }
     ui->commitLogLabel->setText("");

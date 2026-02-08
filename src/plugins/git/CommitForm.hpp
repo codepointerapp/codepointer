@@ -7,10 +7,6 @@ namespace Ui {
 class CommitForm;
 }
 
-namespace Qutepart {
-class Qutepart;
-}
-
 class GitPlugin;
 class GitStatusTableModel;
 
@@ -36,6 +32,5 @@ class CommitForm : public QWidget, public qmdiClient {
     Ui::CommitForm *ui;
     GitStatusTableModel *model;
     GitPlugin *git;
-    Qutepart::Qutepart *editor;
     QString repoRoot;
 };
