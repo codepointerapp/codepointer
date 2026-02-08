@@ -2,6 +2,7 @@
 #include <QAbstractTableModel>
 #include <QKeyEvent>
 #include <QtAlgorithms>
+#include <QMessageBox>
 
 #include "CommitForm.hpp"
 #include "GitPlugin.hpp"
@@ -256,6 +257,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     ui->tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tableView->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->revertSelectedButton->setEnabled(false);
+    ui->commitButton->setEnabled(false);
     ui->commitMessage->setFocusPolicy(Qt::StrongFocus);
 
     auto *header = ui->tableView->horizontalHeader();
@@ -269,6 +271,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
             &CommitForm::revertSelectionImpl);
     connect(ui->tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             [this](const QItemSelection &selected, const QItemSelection &deselected) {
+                qDebug() << "selection model cahnged";
                 if (selected.indexes().size() == 0) {
                     newFileSelected({});
                     return;
@@ -285,15 +288,17 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                     return;
                 }
 
-                ui->revertSelectedButton->setEnabled(!model->checkedEntries().isEmpty());
+                auto hasSelection = !model->checkedEntries().isEmpty();
+                ui->revertSelectedButton->setEnabled(hasSelection);
+                ui->commitButton->setEnabled(hasSelection);
             });
     connect(model, &QAbstractItemModel::modelReset, this,
             [this]() { ui->revertSelectedButton->setEnabled(false); });
 
     connect(ui->selectAllButton, &QAbstractButton::clicked, this, [this]() {
         model->setAllChecked(true);
-        ui->revertSelectedButton->setEnabled(true);
-    });
+/*        ui->revertSelectedButton->setEnabled(true);
+*/    });
     connect(ui->selectNoneButton, &QAbstractButton::clicked, this, [this]() {
         model->setAllChecked(false);
         ui->revertSelectedButton->setEnabled(false);
@@ -346,7 +351,7 @@ void CommitForm::newFileSelected(const QString &filename) {
     // Problem - the "editor" is not the correct widge
     // The UI expects a QPlainTextEdit, and we have Widget that includes a
     // QPlainTextEdit.
-    if (auto editor = dynamic_cast<qmdiEditor*>(ui->diffPreview->parent()->parent())) {
+    if (auto editor = dynamic_cast<qmdiEditor *>(ui->diffPreview->parent()->parent())) {
         editor->updateInternalMappings(repoRoot);
     } else {
         qDebug() << "Double click on diff will not work";
@@ -357,6 +362,18 @@ void CommitForm::revertCurrentImpl() {
     auto selected = ui->tableView->currentIndex();
     auto idx = model->index(selected.row(), 2);
     auto fileName = model->data(idx, Qt::DisplayRole).toString();
+
+    auto msgBox = QMessageBox();
+    msgBox.setWindowTitle("Revert file");
+    msgBox.setText(tr("Are you sure you want to revert this file?\n%1").arg(fileName));
+    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    msgBox.setDefaultButton(QMessageBox::No);
+    msgBox.setIcon(QMessageBox::Icon::Question);
+    auto reply = msgBox.exec();
+    if (reply != QMessageBox::Yes) {
+        return;
+    }
+
     auto args = QStringList{"-C", repoRoot, "checkout", fileName};
     auto [output, exitCode] = git->runGit(args);
     ui->gitOutput->setText(output);
@@ -371,6 +388,18 @@ void CommitForm::revertSelectionImpl() {
         return;
     }
 
+    auto msgBox = QMessageBox();
+    msgBox.setWindowTitle("Revert multiple files");
+    msgBox.setText(tr("Are you sure you want to revert %1 files?").arg(checked.count()));
+    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    msgBox.setDefaultButton(QMessageBox::No);
+    msgBox.setIcon(QMessageBox::Icon::Question);
+    auto reply = msgBox.exec();
+    if (reply != QMessageBox::Yes) {
+        return;
+    }
+
+
     auto args = QStringList{"-C", repoRoot, "checkout"};
     for (auto &c : std::as_const(checked)) {
         args.push_back(c.filename);
@@ -382,3 +411,5 @@ void CommitForm::revertSelectionImpl() {
         updateGitStatus();
     }
 }
+
+void CommitForm::commitImpl() {}

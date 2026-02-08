@@ -27,6 +27,7 @@ class CommitForm : public QWidget, public qmdiClient {
     void newFileSelected(const QString &filename);
     void revertCurrentImpl();
     void revertSelectionImpl();
+    void commitImpl();
 
   private:
     Ui::CommitForm *ui;
