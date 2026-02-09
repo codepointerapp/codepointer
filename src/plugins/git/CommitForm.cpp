@@ -1,8 +1,10 @@
 #include <QAbstractListModel>
 #include <QAbstractTableModel>
 #include <QKeyEvent>
-#include <QtAlgorithms>
 #include <QMessageBox>
+#include <QTemporaryFile>
+#include <QTextStream>
+#include <QtAlgorithms>
 
 #include "CommitForm.hpp"
 #include "GitPlugin.hpp"
@@ -20,12 +22,10 @@ struct GitStatusEntry {
 
 static auto parseGitStatus(QStringView statusOutput) -> QList<GitStatusEntry> {
     auto out = QList<GitStatusEntry>{};
-
     for (auto line : statusOutput.split('\n', Qt::SkipEmptyParts) |
                          std::views::filter([](auto l) { return l.size() >= 3; })) {
         const auto x = line[0];
         const auto y = line[1];
-
         out.append(
             {line.mid(3).trimmed().toString(), (x == '?' && y == '?')   ? GitFileStatus::Untracked
                                                : (x == 'A' || y == 'A') ? GitFileStatus::Added
@@ -36,6 +36,19 @@ static auto parseGitStatus(QStringView statusOutput) -> QList<GitStatusEntry> {
                                                                         : GitFileStatus::Unknown});
     }
     return out;
+}
+
+auto createTempFileWithContent(const QString &content) -> QString {
+    auto file = QTemporaryFile();
+    // keep file after destruction
+    file.setAutoRemove(false);
+    if (!file.open()) {
+        return {};
+    }
+    auto out = QTextStream(&file);
+    out << content;
+    file.close();
+    return file.fileName();
 }
 
 class GitStatusTableModel final : public QAbstractTableModel {
@@ -294,16 +307,13 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
             });
     connect(model, &QAbstractItemModel::modelReset, this,
             [this]() { ui->revertSelectedButton->setEnabled(false); });
-
-    connect(ui->selectAllButton, &QAbstractButton::clicked, this, [this]() {
-        model->setAllChecked(true);
-/*        ui->revertSelectedButton->setEnabled(true);
-*/    });
+    connect(ui->selectAllButton, &QAbstractButton::clicked, this,
+            [this]() { model->setAllChecked(true); });
     connect(ui->selectNoneButton, &QAbstractButton::clicked, this, [this]() {
         model->setAllChecked(false);
         ui->revertSelectedButton->setEnabled(false);
     });
-
+    connect(ui->commitButton, &QAbstractButton::clicked, this, &CommitForm::commitImpl);
     updateGitStatus();
 }
 
@@ -399,7 +409,6 @@ void CommitForm::revertSelectionImpl() {
         return;
     }
 
-
     auto args = QStringList{"-C", repoRoot, "checkout"};
     for (auto &c : std::as_const(checked)) {
         args.push_back(c.filename);
@@ -412,4 +421,35 @@ void CommitForm::revertSelectionImpl() {
     }
 }
 
-void CommitForm::commitImpl() {}
+void CommitForm::commitImpl() {
+    auto const &checked = model->checkedEntries();
+    if (checked.isEmpty()) {
+        return;
+    }
+
+    auto args = QStringList{"-C", repoRoot, "add"};
+    for (auto const &c : checked) {
+        args.push_back(c.filename);
+    }
+    auto [output, exitCode] = git->runGit(args);
+    if (exitCode != 0) {
+        qDebug() << QString("ExitCode=%1, output=%2\ncommand=%3")
+                        .arg(exitCode)
+                        .arg(output)
+                        .arg(QString("git ") + args.join(' '));
+        return;
+    }
+
+    auto commitLogFileName = createTempFileWithContent(ui->commitMessage->toPlainText());
+    auto cleanup = qScopeGuard([&] { QFile::remove(commitLogFileName); });
+    args = QStringList{"-C", repoRoot, "commit", "-F", commitLogFileName};
+    std::tie(output, exitCode) = git->runGit(args);
+    if (exitCode != 0) {
+        qDebug() << QString("ExitCode=%1, output=%2\ncommand=%3")
+                        .arg(exitCode)
+                        .arg(output)
+                        .arg(QString("git ") + args.join(' '));
+        return;
+    }
+    this->deleteLater();
+}
