@@ -291,8 +291,8 @@ bool FilesList::matchesFilters(const QString &filename,
 }
 
 void FilesList::updateList(const QStringList &chunk, bool clearList) {
-    const auto excludesText = excludeEdit->text();
-    const auto showsText = showEdit->text();
+    auto excludesText = excludeEdit->text();
+    auto showsText = showEdit->text();
     QThreadPool::globalInstance()->start([this, chunk, clearList, excludesText, showsText]() {
         auto excludes = toRegexList(excludesText.split(';', Qt::SkipEmptyParts));
         auto shows = toRegexList(showsText.split(';', Qt::SkipEmptyParts));
@@ -305,12 +305,8 @@ void FilesList::updateList(const QStringList &chunk, bool clearList) {
             }
         }
 
-        QElapsedTimer t1;
-        t1.start();
         filtered.sort(Qt::CaseInsensitive);
         QTimer::singleShot(0, this, [this, clearList, filtered]() {
-            QElapsedTimer t1;
-            t1.start();
             if (clearList) {
                 this->filesModel->clear();
             }
