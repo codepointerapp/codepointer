@@ -817,6 +817,49 @@ void qmdiEditor::on_fileChanged(const QString &filename) {
         return;
     }
 
+    auto isModified = textEditor->document()->isModified();
+    if (!isModified) {
+        auto oldCursor = textEditor->textCursor();
+        auto line   = oldCursor.blockNumber();
+        auto column = oldCursor.positionInBlock();
+        auto anchorLine   = oldCursor.anchor() >= oldCursor.position()
+            ? oldCursor.blockNumber()
+            : textEditor->document()
+                  ->findBlock(oldCursor.anchor())
+                  .blockNumber();
+        auto  anchorColumn = oldCursor.anchor() >= oldCursor.position()
+            ? oldCursor.positionInBlock()
+            : oldCursor.anchor() -
+              textEditor->document()->findBlock(oldCursor.anchor()).position();
+
+        documentHasBeenLoaded = false;
+        loadContent(false);
+
+        auto doc = textEditor->document();
+        auto newCursor = QTextCursor (doc);
+        auto maxLine = doc->blockCount() - 1;
+        auto caretLine = std::min(line, maxLine);
+        auto caretBlock = doc->findBlockByNumber(caretLine);
+        newCursor.setPosition(caretBlock.position());
+
+        auto caretMaxColumn = caretBlock.length() - 1;
+        newCursor.movePosition(
+            QTextCursor::Right,
+            QTextCursor::MoveAnchor,
+            std::min(column, caretMaxColumn)
+        );
+        auto anchorMaxLine = doc->blockCount() - 1;
+        auto selLine = std::min(anchorLine, anchorMaxLine);
+        auto anchorBlock = doc->findBlockByNumber(selLine);
+        auto anchorMaxColumn = anchorBlock.length() - 1;
+        auto anchorPos =
+            anchorBlock.position() +
+            std::min(anchorColumn, anchorMaxColumn);
+        newCursor.setPosition(anchorPos, QTextCursor::KeepAnchor);
+        textEditor->setTextCursor(newCursor);
+        return;
+    }
+
     QFileInfo f(filename);
     QString message;
     if (f.exists()) {
@@ -827,7 +870,7 @@ void qmdiEditor::on_fileChanged(const QString &filename) {
     } else {
         message = tr("File has been deleted outside the editor.");
     }
-    displayBannerMessage(message, 10);
+    displayBannerMessage(message, -1);
 }
 
 void qmdiEditor::hideTimer_timeout() {
@@ -1078,7 +1121,9 @@ void qmdiEditor::displayBannerMessage(QString message, int time) {
     banner->show();
     ui_banner->label->setText(message);
     m_timerHideout = time;
-    QTimer::singleShot(1000, this, SLOT(hideTimer_timeout()));
+    if (time >= 0) {
+        QTimer::singleShot(1000, this, SLOT(hideTimer_timeout()));
+    }
 }
 
 void qmdiEditor::hideBannerMessage() {
@@ -1394,7 +1439,7 @@ void qmdiEditor::loadContent(bool useBackup) {
         displayBannerMessage(
             tr("The file is readonly. Click <a href=':forcerw' title='Click here to try and "
                "change the file attributes for write access'>here to force write access.</a>"),
-            10);
+            60);
     }
 
     textEditor->document()->setModified(loadedFromBackup);
