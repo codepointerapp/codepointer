@@ -231,8 +231,8 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     //  2. When double clicking a line in a diff, the code directly opens the
     //     modified file. Instead we will need to modify the code, and somehow
     //     catch this event in this class, and navigate to the file.
-    //  3. 3 Color layuout would be strech on small screens. I would like that
-    //     on smaller "displays" the editor would be bellow the diff view, and
+    //  3. 3 Color layuout would be stretch on small screens. I would like that
+    //     on smaller "displays" the editor would be below the diff view, and
     //     on larger screen on the side. Qt provides no such layout.
     //     Solution to this might be having 2 editors with shared document, and
     //     on resize hide/show the revevant one. Other alternative - move it
@@ -284,7 +284,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
             &CommitForm::revertSelectionImpl);
     connect(ui->tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             [this](const QItemSelection &selected, const QItemSelection &deselected) {
-                qDebug() << "selection model cahnged";
+                qDebug() << "selection model changed";
                 if (selected.indexes().size() == 0) {
                     newFileSelected({});
                     return;
