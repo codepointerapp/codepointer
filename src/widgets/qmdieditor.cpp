@@ -1025,7 +1025,7 @@ QSet<QString> qmdiEditor::getTagCompletions(const QString &prefix) {
     if (!mdiServer || !mdiServer->mdiHost) {
         return {};
     }
-    
+
     QSet<QString> completions;
     auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     if (!pluginManager) {
@@ -1504,20 +1504,18 @@ void qmdiEditor::updateInternalMappings(const QString& baseDir) {
         if (pos < 0) {
             return {};
         }
-    
         // /dev/null = file add/delete
         auto path = line.mid(pos + 1);
         if (path == "/dev/null") {
             return {};
         }
-    
         // Strip leading a/ or b/
         if (path.size() >= 2 &&(path[0] == 'a' || path[0] == 'b') &&path[1] == '/') {
             path.remove(0,2);
         }
         return path;
     };
-    
+
     auto parse_hunk_header = [](const QString& line) -> std::pair<int, int>
     {
         // Example: "@@ -12,7 +34,9 @@"
@@ -1527,21 +1525,19 @@ void qmdiEditor::updateInternalMappings(const QString& baseDir) {
         if (i < 0) {
             return {0, 0};
         }
-    
         // parse old_start, skip '-'
         ++i;
         while (i < line.size() && line[i].isDigit()) {
             old_start = old_start * 10 + (line[i].digitValue());
             ++i;
         }
-    
+
         i = line.indexOf('+', i);
         if (i < 0) {
             return {0, 0};
         }
         // skip '+'
-        ++i; 
-    
+        ++i;
         while (i < line.size() && line[i].isDigit()) {
             new_start = new_start * 10 + line[i].digitValue();
             ++i;
@@ -1557,12 +1553,12 @@ void qmdiEditor::updateInternalMappings(const QString& baseDir) {
     for (auto it = lines.begin(); it != lines.end(); ++it) {
         auto line = *it;
         auto text = line.text();
-        
+
         if (text.startsWith("+++ ")) {
             current_file = extractFileName(text);
             continue;
         }
-        
+
         if (text.startsWith("@@")) {
             auto [old_start, new_start] = parse_hunk_header(text);
             old_line = old_start;
@@ -1570,7 +1566,7 @@ void qmdiEditor::updateInternalMappings(const QString& baseDir) {
             in_hunk = true;
             continue;
         }
-        
+
         if (!in_hunk) {
             continue;
         }

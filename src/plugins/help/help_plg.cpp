@@ -102,8 +102,8 @@ You can also load projects, build and execute them:
 )";
 
 auto static createDesktopMenuItem(const std::string &programName, const std::string &version,
-                                  const std::string &execPath,
-                                  const std::string &svgIconContent) -> std::string {
+                                  const std::string &execPath, const std::string &svgIconContent)
+    -> std::string {
 #if !defined(_WIN32)
     const char *homeDir = std::getenv("HOME");
     if (!homeDir) {
