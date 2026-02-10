@@ -20,20 +20,24 @@ struct GitStatusEntry {
     bool checked = false;
 };
 
-static auto parseGitStatus(QStringView statusOutput) -> QList<GitStatusEntry> {
-    auto out = QList<GitStatusEntry>{};
-    for (auto line : statusOutput.split('\n', Qt::SkipEmptyParts) |
-                         std::views::filter([](auto l) { return l.size() >= 3; })) {
-        const auto x = line[0];
-        const auto y = line[1];
-        out.append(
-            {line.mid(3).trimmed().toString(), (x == '?' && y == '?')   ? GitFileStatus::Untracked
-                                               : (x == 'A' || y == 'A') ? GitFileStatus::Added
-                                               : (x == 'M' || y == 'M') ? GitFileStatus::Modified
-                                               : (x == 'D' || y == 'D') ? GitFileStatus::Deleted
-                                               : (x == 'R' || y == 'R') ? GitFileStatus::Renamed
-                                               : (x == 'C' || y == 'C') ? GitFileStatus::Copied
-                                                                        : GitFileStatus::Unknown});
+static auto parseGitStatus(QStringView statusOutput) -> QList<GitStatusEntry>
+{
+    auto out = QList<GitStatusEntry>();
+    for (auto line : statusOutput.split('\n', Qt::SkipEmptyParts)) {
+        if (line.size() < 3) {
+            continue;
+        }
+        auto x = line[0];
+        auto y = line[1];
+        auto status =
+            (x == '?' && y == '?') ? GitFileStatus::Untracked :
+            (x == 'A' || y == 'A') ? GitFileStatus::Added :
+            (x == 'M' || y == 'M') ? GitFileStatus::Modified :
+            (x == 'D' || y == 'D') ? GitFileStatus::Deleted :
+            (x == 'R' || y == 'R') ? GitFileStatus::Renamed :
+            (x == 'C' || y == 'C') ? GitFileStatus::Copied :
+                                     GitFileStatus::Unknown;
+        out.append({ line.mid(3).trimmed().toString(), status });
     }
     return out;
 }
