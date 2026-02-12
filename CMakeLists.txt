@@ -95,6 +95,8 @@ set(codepointer_sources
     src/widgets/bannerwidget.h
     src/widgets/HistoryLineEdit.cpp
     src/widgets/HistoryLineEdit.h
+    src/widgets/BoldItemDelegate.cpp
+    src/widgets/BoldItemDelegate.hpp
     src/widgets/gotolineform.ui
     src/widgets/bannermessage.ui
     src/widgets/replaceform.ui

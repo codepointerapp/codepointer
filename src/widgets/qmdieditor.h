@@ -36,15 +36,6 @@ namespace Qutepart {
 class ThemeManager;
 }
 
-class BoldItemDelegate : public QStyledItemDelegate {
-  public:
-    QString boldItemStr = "";
-    explicit BoldItemDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
-
-    void paint(QPainter *painter, const QStyleOptionViewItem &option,
-               const QModelIndex &index) const override;
-};
-
 /**
 A source editor with MDI interface.
 This class will be a very rich text editor which will also have a set of toolbars and menus
