@@ -23,6 +23,7 @@
 #include "ui_GitCommands.h"
 #include "ui_GitCommit.h"
 #include "widgets/AutoShrinkLabel.hpp"
+#include "widgets/BoldItemDelegate.hpp"
 #include "widgets/qmdieditor.h"
 
 QString shortGitSha1(const QString &fullSha1, int length = 7) {
