@@ -796,44 +796,7 @@ void qmdiEditor::on_fileChanged(const QString &filename) {
 
     auto isModified = textEditor->document()->isModified();
     if (!isModified) {
-        auto oldCursor = textEditor->textCursor();
-        auto line   = oldCursor.blockNumber();
-        auto column = oldCursor.positionInBlock();
-        auto anchorLine   = oldCursor.anchor() >= oldCursor.position()
-            ? oldCursor.blockNumber()
-            : textEditor->document()
-                  ->findBlock(oldCursor.anchor())
-                  .blockNumber();
-        auto  anchorColumn = oldCursor.anchor() >= oldCursor.position()
-            ? oldCursor.positionInBlock()
-            : oldCursor.anchor() -
-              textEditor->document()->findBlock(oldCursor.anchor()).position();
-
-        documentHasBeenLoaded = false;
-        loadContent(false);
-
-        auto doc = textEditor->document();
-        auto newCursor = QTextCursor (doc);
-        auto maxLine = doc->blockCount() - 1;
-        auto caretLine = std::min(line, maxLine);
-        auto caretBlock = doc->findBlockByNumber(caretLine);
-        newCursor.setPosition(caretBlock.position());
-
-        auto caretMaxColumn = caretBlock.length() - 1;
-        newCursor.movePosition(
-            QTextCursor::Right,
-            QTextCursor::MoveAnchor,
-            std::min(column, caretMaxColumn)
-        );
-        auto anchorMaxLine = doc->blockCount() - 1;
-        auto selLine = std::min(anchorLine, anchorMaxLine);
-        auto anchorBlock = doc->findBlockByNumber(selLine);
-        auto anchorMaxColumn = anchorBlock.length() - 1;
-        auto anchorPos =
-            anchorBlock.position() +
-            std::min(anchorColumn, anchorMaxColumn);
-        newCursor.setPosition(anchorPos, QTextCursor::KeepAnchor);
-        textEditor->setTextCursor(newCursor);
+        reload();
         return;
     }
 
@@ -848,6 +811,40 @@ void qmdiEditor::on_fileChanged(const QString &filename) {
         message = tr("File has been deleted outside the editor.");
     }
     displayBannerMessage(message, -1);
+}
+
+void qmdiEditor::reload() {
+    auto oldCursor = textEditor->textCursor();
+    auto line = oldCursor.blockNumber();
+    auto column = oldCursor.positionInBlock();
+    auto anchorLine = oldCursor.anchor() >= oldCursor.position()
+                          ? oldCursor.blockNumber()
+                          : textEditor->document()->findBlock(oldCursor.anchor()).blockNumber();
+    auto anchorColumn = oldCursor.anchor() >= oldCursor.position()
+                            ? oldCursor.positionInBlock()
+                            : oldCursor.anchor() -
+                                  textEditor->document()->findBlock(oldCursor.anchor()).position();
+
+    documentHasBeenLoaded = false;
+    loadContent(false);
+
+    auto doc = textEditor->document();
+    auto newCursor = QTextCursor(doc);
+    auto maxLine = doc->blockCount() - 1;
+    auto caretLine = std::min(line, maxLine);
+    auto caretBlock = doc->findBlockByNumber(caretLine);
+    newCursor.setPosition(caretBlock.position());
+
+    auto caretMaxColumn = caretBlock.length() - 1;
+    newCursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor,
+                           std::min(column, caretMaxColumn));
+    auto anchorMaxLine = doc->blockCount() - 1;
+    auto selLine = std::min(anchorLine, anchorMaxLine);
+    auto anchorBlock = doc->findBlockByNumber(selLine);
+    auto anchorMaxColumn = anchorBlock.length() - 1;
+    auto anchorPos = anchorBlock.position() + std::min(anchorColumn, anchorMaxColumn);
+    newCursor.setPosition(anchorPos, QTextCursor::KeepAnchor);
+    textEditor->setTextCursor(newCursor);
 }
 
 void qmdiEditor::hideTimer_timeout() {
@@ -1332,8 +1329,7 @@ void qmdiEditor::transformBlockCase() {
 
 void qmdiEditor::fileMessage_clicked(const QString &s) {
     if (s == ":reload") {
-        documentHasBeenLoaded = false;
-        loadContent(false);
+        reload();
         hideBannerMessage();
     } else if (s == ":forcerw") {
         hideBannerMessage();
@@ -1398,9 +1394,28 @@ void qmdiEditor::loadContent(bool useBackup) {
     // When loading, (setPlainText()) a signal is emitted,  which triggers the system to believe
     // that the content has been modified. Just don't do this. It will also save some time
     // on loading, since really, signals emitted a this stage are not meaningful.
-    textEditor->blockSignals(true);
-    textEditor->setPlainText(textStream.readAll());
-    file.close();
+    {
+        auto doc = textEditor->document();
+        auto oldCursor = textEditor->textCursor();
+        auto selStart = oldCursor.selectionStart();
+        auto selEnd   = oldCursor.selectionEnd();
+        auto cursor = QTextCursor (doc);
+
+        cursor.beginEditBlock();
+        cursor.select(QTextCursor::Document);
+        cursor.removeSelectedText();
+        cursor.insertText(textStream.readAll());
+        cursor.endEditBlock();
+
+        auto docLength = doc->characterCount() - 1;
+        selStart = qMin(selStart, docLength);
+        selEnd = qMin(selEnd, docLength);
+
+        auto newCursor = QTextCursor (doc);
+        newCursor.setPosition(selStart);
+        newCursor.setPosition(selEnd, QTextCursor::KeepAnchor);
+        textEditor->setTextCursor(newCursor);
+    }
 
     QFileInfo fileInfo(fileName);
     auto elapsed = timer.elapsed();
