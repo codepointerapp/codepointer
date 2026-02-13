@@ -892,16 +892,20 @@ CommandArgs ProjectManagerPlugin::handleCommand(const QString &command, const Co
                         outputPanel ? outputPanel->captureTasksOutput->isChecked() : true;
                     this->runCommand(workingDir, scriptName, arguments, env, capture);
                 });
-                this->mdiServer->mdiHost->unmergeClient(client);
-                this->mdiServer->mdiHost->mergeClient(client);
-                this->mdiServer->mdiHost->updateGUI();
+                if (client == mdiServer->getCurrentClient()) {
+                    this->mdiServer->mdiHost->unmergeClient(client);
+                    this->mdiServer->mdiHost->mergeClient(client);
+                    this->mdiServer->mdiHost->updateGUI();
+                }
             }
         } else {
             client->contextMenu.removeAction(action);
             client->menus[tr("&Project")]->removeAction(action);
-            this->mdiServer->mdiHost->unmergeClient(client);
-            this->mdiServer->mdiHost->mergeClient(client);
-            this->mdiServer->mdiHost->updateGUI();
+            if (client == mdiServer->getCurrentClient()) {
+                this->mdiServer->mdiHost->unmergeClient(client);
+                this->mdiServer->mdiHost->mergeClient(client);
+                this->mdiServer->mdiHost->updateGUI();
+            }
         }
 
         auto widget = dynamic_cast<QObject *>(client);
@@ -932,9 +936,11 @@ CommandArgs ProjectManagerPlugin::handleCommand(const QString &command, const Co
         if (client) {
             auto action = client->contextMenu.findActionNamed("runScript");
             client->contextMenu.removeAction(action);
-            this->mdiServer->mdiHost->unmergeClient(client);
-            this->mdiServer->mdiHost->mergeClient(client);
-            this->mdiServer->mdiHost->updateGUI();
+            if (client == mdiServer->getCurrentClient()) {
+                this->mdiServer->mdiHost->unmergeClient(client);
+                this->mdiServer->mdiHost->mergeClient(client);
+                this->mdiServer->mdiHost->updateGUI();
+            }
         }
         return {};
     }

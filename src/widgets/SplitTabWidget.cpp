@@ -602,11 +602,13 @@ void SplitTabWidget::onTabFocusChanged(QWidget *widget, bool focused) {
     auto tab = qobject_cast<QTabWidget *>(widget);
     if (tab) {
         if (focused && tab->currentWidget()) {
-            tab->currentWidget()->setFocus();
+            if (!tab->currentWidget()->hasFocus()) {
+                tab->currentWidget()->setFocus();
+            }
             onTabFocusChanged(tab->currentWidget(), true);
         }
     }
-    if (widget && focused) {
+    if (widget && focused && !widget->hasFocus()) {
         widget->setFocus();
     }
 }
@@ -624,6 +626,12 @@ void SplitTabWidget::onNewSplitCreated(QTabWidget *tabWidget, int count) {
             tabBar, &DraggableTabBar::emptyAreaDoubleClicked, this,
             [this, tabWidget](const QPoint &pos) { emit emptyAreaDoubleClicked(tabWidget, pos); });
     }
+
+    connect(tabWidget, &QTabWidget::currentChanged, this, [this, tabWidget](int index) {
+        if (index >= 0) {
+            onTabFocusChanged(tabWidget->widget(index), true);
+        }
+    });
 }
 
 void SplitTabWidget::onSplitCountMaybeChanged() {
