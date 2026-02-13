@@ -42,9 +42,7 @@ class ProjectBuildModel : public QAbstractListModel {
     QStringList getAllOpenDirs() const;
 };
 
-enum class ClangFormatOnSave {
-    Never, Always, InProjects
-};
+enum class ClangFormatOnSave { Never, Always, InProjects };
 
 class ProjectManagerPlugin : public IPlugin {
 
