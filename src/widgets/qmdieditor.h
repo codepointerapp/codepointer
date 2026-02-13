@@ -98,6 +98,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
 
     void newDocument();
     void setPlainText(const QString &plainText);
+    void reload();
     bool doSave();
     bool doSaveAs();
     bool loadFile(const QString &fileName);
