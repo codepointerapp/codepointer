@@ -1,4 +1,3 @@
-#include "qmdipluginconfig.h"
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QDockWidget>
@@ -16,6 +15,12 @@
 #include <QStringListModel>
 #include <QTimer>
 #include <QWidgetAction>
+#include <QByteArray>
+#include <QFile>
+#include <QFileInfo>
+#include <QMimeDatabase>
+#include <QMimeType>
+#include <QStringList>
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <fcntl.h>
@@ -31,6 +36,7 @@
 #endif
 
 #include <CommandPaletteWidget/CommandPalette>
+#include <qmdipluginconfig.h>
 #include <qmdiclient.h>
 #include <qmdihost.h>
 #include <qmdiserver.h>
@@ -148,6 +154,17 @@ auto static setupPty(QProcess &process, int &masterFd) -> bool {
 #endif
 }
 
+auto static isClangFormatSupported(const QString& fileName) -> bool {
+    auto static supported = QSet<QString>{
+        "c","cc","cpp","cxx",
+        "h","hh","hpp","hxx",
+        "m","mm","cu","cuh"
+    };
+    auto ext = QFileInfo(fileName).suffix().toLower();
+    return supported.contains(ext);
+}
+
+
 void ProjectBuildModel::addConfig(std::shared_ptr<ProjectBuildConfig> config) {
     int row = configs.size();
     beginInsertRows(QModelIndex(), row, row);
@@ -233,7 +250,7 @@ QStringList ProjectBuildModel::getAllOpenDirs() const {
 }
 
 ProjectManagerPlugin::ProjectManagerPlugin() {
-    name = tr("Project manager");
+    name = "ProjectManager";
     author = tr("Diego Iastrubni <diegoiast@gmail.com>");
     iVersion = 0;
     sVersion = "0.0.1";
@@ -241,18 +258,27 @@ ProjectManagerPlugin::ProjectManagerPlugin() {
     alwaysEnabled = true;
     auto monospacedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 
+    auto values = QStringList()
+        << tr("Never")
+        << tr("Always")
+        << tr("Loaded projects");
+
+#if defined(Q_OS_LINUX)
+    clangFormatExe = "/usr/bin/clang-format";
+#else
+    clangFormatExe = R"(C:\Program Files\llvm\bin\ctags.exe)";
+#endif
+
     config.pluginName = tr("Project manager");
     config.description = tr("Add support for building using CMake/Cargo/Go");
-    config.configItems.push_back(
-        qmdiConfigItem::Builder()
+    config.configItems.push_back(qmdiConfigItem::Builder()
             .setDisplayName(tr("Save before running tasks (build, config etc)"))
             .setDescription(tr("If checked, files are saved before running any task"))
             .setKey(Config::SaveBeforeTaskKey)
             .setType(qmdiConfigItem::Bool)
             .setDefaultValue(true)
             .build());
-    config.configItems.push_back(
-        qmdiConfigItem::Builder()
+    config.configItems.push_back(qmdiConfigItem::Builder()
             .setDisplayName(tr("Black console"))
             .setDescription(tr("Should the console background be black, or default"))
             .setKey(Config::BlackConsoleKey)
@@ -260,12 +286,28 @@ ProjectManagerPlugin::ProjectManagerPlugin() {
             .setDefaultValue(false)
             .build());
     config.configItems.push_back(qmdiConfigItem::Builder()
-                                     .setDisplayName(tr("Console font"))
-                                     .setKey(Config::ConsoleFontKey)
-                                     .setType(qmdiConfigItem::Font)
-                                     .setDefaultValue(monospacedFont)
-                                     .setValue(monospacedFont)
-                                     .build());
+            .setDisplayName(tr("Console font"))
+            .setKey(Config::ConsoleFontKey)
+            .setType(qmdiConfigItem::Font)
+            .setDefaultValue(monospacedFont)
+            .setValue(monospacedFont)
+            .build());
+    config.configItems.push_back(qmdiConfigItem::Builder()
+            .setDisplayName(tr("clang-format exe"))
+            .setDescription(tr("Where do you have LLVM tools installed"))
+            .setKey(Config::ClangFormatExeKey)
+            .setType(qmdiConfigItem::Path)
+            .setDefaultValue(clangFormatExe)
+            .setPossibleValue(true) // Must be an existing file
+            .build());
+    config.configItems.push_back(qmdiConfigItem::Builder()
+            .setDisplayName(tr("Clang-format behaviour"))
+            .setDescription(tr("When to run clang-format"))
+            .setKey(Config::ClangFormatBehaviourKey)
+            .setType(qmdiConfigItem::OneOf)
+            .setPossibleValue(values)
+            .setDefaultValue(ClangFormatOnSave::InProjects)
+            .build());
 
     /*
         config.configItems.push_back(qmdiConfigItem::Builder()
@@ -807,18 +849,14 @@ int ProjectManagerPlugin::canHandleCommand(const QString &command, const Command
     if (command == GlobalCommands::LoadedFile) {
         return true;
     }
+    if (command == GlobalCommands::SavedFile) {
+        return true;
+    }
     if (command == GlobalCommands::ClosedFile) {
         return true;
     }
     return false;
 }
-
-#include <QByteArray>
-#include <QFile>
-#include <QFileInfo>
-#include <QMimeDatabase>
-#include <QMimeType>
-#include <QStringList>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -861,73 +899,15 @@ auto verifyRunnable(const QString &fileName) -> bool {
 CommandArgs ProjectManagerPlugin::handleCommand(const QString &command, const CommandArgs &args) {
     if (command == GlobalCommands::LoadedFile) {
         auto client = args.value(GlobalArguments::Client).value<qmdiClient *>();
-        if (!client) {
-            return {};
-        }
-
-        auto filename = args[GlobalArguments::FileName];
-        auto action = client->contextMenu.findActionNamed("runScript");
-        auto isScript = verifyRunnable(client->mdiClientFileName());
-        if (isScript) {
-            if (!action) {
-                auto shortcut = QKeySequence(Qt::ControlModifier | Qt::ShiftModifier | Qt::Key_R);
-                action = new QAction(tr("Run script"));
-                action->setObjectName("runScript");
-                action->setShortcut(shortcut);
-                action->setData(QVariant::fromValue(client));
-                client->contextMenu.addAction(action);
-                client->menus[tr("&Project")]->addAction(action);
-
-                connect(action, &QAction::triggered, action, [action, this]() {
-                    auto client = action->data().value<qmdiClient *>();
-                    if (!client->canCloseClient(CloseReason::CloseTab)) {
-                        return;
-                    }
-                    auto fi = QFileInfo(client->mdiClientFileName());
-                    auto workingDir = fi.dir().absolutePath();
-                    auto scriptName = fi.absoluteFilePath();
-                    auto arguments = QStringList();
-                    auto env = QProcessEnvironment();
-                    auto capture =
-                        outputPanel ? outputPanel->captureTasksOutput->isChecked() : true;
-                    this->runCommand(workingDir, scriptName, arguments, env, capture);
-                });
-                if (client == mdiServer->getCurrentClient()) {
-                    this->mdiServer->mdiHost->unmergeClient(client);
-                    this->mdiServer->mdiHost->mergeClient(client);
-                    this->mdiServer->mdiHost->updateGUI();
-                }
-            }
-        } else {
-            client->contextMenu.removeAction(action);
-            client->menus[tr("&Project")]->removeAction(action);
-            if (client == mdiServer->getCurrentClient()) {
-                this->mdiServer->mdiHost->unmergeClient(client);
-                this->mdiServer->mdiHost->mergeClient(client);
-                this->mdiServer->mdiHost->updateGUI();
-            }
-        }
-
-        auto widget = dynamic_cast<QObject *>(client);
-        auto actionCopyFilePath = new QAction(tr("Copy path relative to project"), widget);
-        connect(actionCopyFilePath, &QAction::triggered, actionCopyFilePath, [client, this]() {
-            auto c = QApplication::clipboard();
-            auto fileName = client->mdiClientFileName();
-            auto project = projectModel->findProjectForFile(fileName);
-            if (!project || !fileName.startsWith(project->sourceDir)) {
-                c->setText(fileName);
-                return;
-            }
-            auto fixed = fileName;
-            auto l = project->sourceDir.length();
-            if (!project->sourceDir.endsWith('\\') && !project->sourceDir.endsWith('/')) {
-                l++;
-            }
-            fixed.remove(0, l);
-            c->setText(fixed);
-        });
-        client->contextMenu.addAction(actionCopyFilePath);
-
+        auto filename = args[GlobalArguments::FileName].toString();
+        fixClientsMenu(client, filename);
+        return {};
+    }
+    if (command == GlobalCommands::SavedFile) {
+        auto client = args.value(GlobalArguments::Client).value<qmdiClient *>();
+        auto filename = args[GlobalArguments::FileName].toString();
+        fixClientsMenu(client, filename);
+        saveFileExternalActions(client);
         return {};
     }
     if (command == GlobalCommands::ClosedFile) {
@@ -1665,4 +1645,105 @@ auto ProjectManagerPlugin::tryScrollOutput(int line) -> bool {
     centerScrollValue = qMax(0, qMin(centerScrollValue, vScrollBar->maximum()));
     vScrollBar->setValue(centerScrollValue);
     return true;
+}
+
+auto ProjectManagerPlugin::fixClientsMenu(qmdiClient *client, const QString &fileName) -> void {
+    if (!client) {
+        return;
+    }
+
+    // TODO - do we even need this argument?
+    if (fileName.isEmpty()) {
+        return;
+    }
+
+    auto action = client->contextMenu.findActionNamed("runScript");
+    auto isScript = verifyRunnable(client->mdiClientFileName());
+    if (isScript) {
+        if (!action) {
+            auto shortcut = QKeySequence(Qt::ControlModifier | Qt::ShiftModifier | Qt::Key_R);
+            action = new QAction(tr("Run script"));
+            action->setObjectName("runScript");
+            action->setShortcut(shortcut);
+            action->setData(QVariant::fromValue(client));
+            client->contextMenu.addAction(action);
+            client->menus[tr("&Project")]->addAction(action);
+
+            connect(action, &QAction::triggered, action, [action, this]() {
+                auto client = action->data().value<qmdiClient *>();
+                if (!client->canCloseClient(CloseReason::CloseTab)) {
+                    return;
+                }
+                auto fi = QFileInfo(client->mdiClientFileName());
+                auto workingDir = fi.dir().absolutePath();
+                auto scriptName = fi.absoluteFilePath();
+                auto arguments = QStringList();
+                auto env = QProcessEnvironment();
+                auto capture =
+                    outputPanel ? outputPanel->captureTasksOutput->isChecked() : true;
+                this->runCommand(workingDir, scriptName, arguments, env, capture);
+            });
+            this->mdiServer->mdiHost->unmergeClient(client);
+            this->mdiServer->mdiHost->mergeClient(client);
+            this->mdiServer->mdiHost->updateGUI();
+        }
+    } else {
+        client->contextMenu.removeAction(action);
+        client->menus[tr("&Project")]->removeAction(action);
+        this->mdiServer->mdiHost->unmergeClient(client);
+        this->mdiServer->mdiHost->mergeClient(client);
+        this->mdiServer->mdiHost->updateGUI();
+    }
+
+    auto widget = dynamic_cast<QObject *>(client);
+    auto actionCopyFilePath = new QAction(tr("Copy path relative to project"), widget);
+    connect(actionCopyFilePath, &QAction::triggered, actionCopyFilePath, [client, this]() {
+        auto c = QApplication::clipboard();
+        auto fileName = client->mdiClientFileName();
+        auto project = projectModel->findProjectForFile(fileName);
+        if (!project || !fileName.startsWith(project->sourceDir)) {
+            c->setText(fileName);
+            return;
+        }
+        auto fixed = fileName;
+        auto l = project->sourceDir.length();
+        if (!project->sourceDir.endsWith('\\') && !project->sourceDir.endsWith('/')) {
+            l++;
+        }
+        fixed.remove(0, l);
+        c->setText(fixed);
+    });
+    client->contextMenu.addAction(actionCopyFilePath);
+}
+
+auto ProjectManagerPlugin::saveFileExternalActions(qmdiClient *client) -> void {
+    // TODO how can we notify of errors?
+    if (getConfig().getClangFormatBehaviour() == ClangFormatOnSave::Never) {
+        return;
+    }
+
+    auto fileName = client->mdiClientFileName();
+    if (!isClangFormatSupported(fileName)) {
+        qDebug() << "saveFileExternalActions: not suppported by clang-format" << fileName;
+        return;
+    }
+    if (getConfig().getClangFormatBehaviour() == ClangFormatOnSave::InProjects) {
+        auto project = projectModel->findProjectForFile(fileName);
+        if (!project || !fileName.startsWith(project->sourceDir)) {
+            qDebug() << "saveFileExternalActions: will not autoformat file" << fileName;
+            return;
+        }
+    }
+
+    auto clangFormat = getConfig().getClangFormatExe();
+    auto args = QStringList{ "-style=file", "-fallback-style=none", "-i", fileName };
+    auto p = QProcess();
+    p.start(clangFormat, args);
+    p.waitForFinished();
+    auto exitCode = p.exitCode();
+    if (p.exitStatus() != QProcess::NormalExit || exitCode != 0) {
+        auto output = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+        qDebug() << "Running clang-format failed, exit=" << exitCode << output;
+        qDebug() << QString("clang ") + args.join(" ");
+    }
 }
