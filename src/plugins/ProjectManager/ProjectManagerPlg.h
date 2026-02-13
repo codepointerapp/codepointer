@@ -42,12 +42,18 @@ class ProjectBuildModel : public QAbstractListModel {
     QStringList getAllOpenDirs() const;
 };
 
+enum class ClangFormatOnSave {
+    Never, Always, InProjects
+};
+
 class ProjectManagerPlugin : public IPlugin {
 
     struct Config {
         CONFIG_DEFINE(SaveBeforeTask, bool);
         CONFIG_DEFINE(BlackConsole, bool);
         CONFIG_DEFINE(ConsoleFont, QString)
+        CONFIG_DEFINE(ClangFormatExe, QString);
+        CONFIG_DEFINE(ClangFormatBehaviour, ClangFormatOnSave)
         CONFIG_DEFINE(ExtraPath, QStringList);
         CONFIG_DEFINE(OpenDirs, QStringList);
         CONFIG_DEFINE(SelectedDirectory, QString);
@@ -113,6 +119,8 @@ class ProjectManagerPlugin : public IPlugin {
     auto updateExecutablesUI(std::shared_ptr<ProjectBuildConfig> buildConfig) -> void;
     auto tryOpenProject(const QString &filename, const QString &dir) -> bool;
     auto tryScrollOutput(int line) -> bool;
+    auto fixClientsMenu(qmdiClient *client, const QString &filename) -> void;
+    auto saveFileExternalActions(qmdiClient *client) -> void;
 
     int panelIndex = -1;
     Ui::ProjectManagerGUI *gui = nullptr;
@@ -132,6 +140,7 @@ class ProjectManagerPlugin : public IPlugin {
     ProjectBuildModel *projectModel = nullptr;
     CommandPalette *commandPalette = nullptr;
     ProjectSearch *searchPanelUI = nullptr;
+    QString clangFormatExe;
 
     QAction *runAction = nullptr;
     QAction *buildAction = nullptr;

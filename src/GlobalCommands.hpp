@@ -15,6 +15,9 @@ inline constexpr const char *OpenFile = "OpenFile";
 // Broadcast - a new file has been loaded. The payload will contain the filename
 inline constexpr const char *LoadedFile = "LoadedFile";
 
+// Broadcast - a file has been saved. The payload will contain the filename
+inline constexpr const char *SavedFile = "SavedFile";
+
 // Broadcast - a file has been closed
 inline constexpr const char *ClosedFile = "ClosedFile";
 

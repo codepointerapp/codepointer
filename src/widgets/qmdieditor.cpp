@@ -1245,7 +1245,7 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
 
     auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     pluginManager->handleCommand(
-        GlobalCommands::LoadedFile,
+        GlobalCommands::SavedFile,
         {
             {GlobalArguments::FileName, mdiClientFileName()},
             {GlobalArguments::Client, QVariant::fromValue(static_cast<qmdiClient *>(this))},
