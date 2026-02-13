@@ -12,7 +12,7 @@
 
 /**
  * \class Bold
- * \brief item delegate used for highlighting a specific valud
+ * \brief item delegate used for highlighting a specific value
  *
  * This is a quick and dirty delegate to strap into a QListView or QComboBox
  * (or anything supported) that will display a specific item, at the same font

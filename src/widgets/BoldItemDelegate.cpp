@@ -30,7 +30,7 @@ void BoldItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
     painter->setFont(font);
 
     // I honestly don't remember why I needed to adjust 4 pixels, but it looks
-    // beeter this way.
+    // better this way.
     QRect textRect = option.rect.adjusted(4, 0, -4, 0);
     painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, text);
     painter->restore();

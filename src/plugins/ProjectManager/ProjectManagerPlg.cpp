@@ -1,26 +1,26 @@
+#include <QByteArray>
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QDockWidget>
+#include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLineEdit>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMimeDatabase>
+#include <QMimeType>
 #include <QScrollBar>
 #include <QSettings>
 #include <QSocketNotifier>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QStringListModel>
 #include <QTimer>
 #include <QWidgetAction>
-#include <QByteArray>
-#include <QFile>
-#include <QFileInfo>
-#include <QMimeDatabase>
-#include <QMimeType>
-#include <QStringList>
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <fcntl.h>
@@ -36,9 +36,9 @@
 #endif
 
 #include <CommandPaletteWidget/CommandPalette>
-#include <qmdipluginconfig.h>
 #include <qmdiclient.h>
 #include <qmdihost.h>
+#include <qmdipluginconfig.h>
 #include <qmdiserver.h>
 #include <qmditabwidget.h>
 
@@ -154,16 +154,12 @@ auto static setupPty(QProcess &process, int &masterFd) -> bool {
 #endif
 }
 
-auto static isClangFormatSupported(const QString& fileName) -> bool {
-    auto static supported = QSet<QString>{
-        "c","cc","cpp","cxx",
-        "h","hh","hpp","hxx",
-        "m","mm","cu","cuh"
-    };
+auto static isClangFormatSupported(const QString &fileName) -> bool {
+    auto static supported =
+        QSet<QString>{"c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "m", "mm", "cu", "cuh"};
     auto ext = QFileInfo(fileName).suffix().toLower();
     return supported.contains(ext);
 }
-
 
 void ProjectBuildModel::addConfig(std::shared_ptr<ProjectBuildConfig> config) {
     int row = configs.size();
@@ -258,10 +254,7 @@ ProjectManagerPlugin::ProjectManagerPlugin() {
     alwaysEnabled = true;
     auto monospacedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 
-    auto values = QStringList()
-        << tr("Never")
-        << tr("Always")
-        << tr("Loaded projects");
+    auto values = QStringList() << tr("Never") << tr("Always") << tr("Loaded projects");
 
 #if defined(Q_OS_LINUX)
     clangFormatExe = "/usr/bin/clang-format";
@@ -271,14 +264,16 @@ ProjectManagerPlugin::ProjectManagerPlugin() {
 
     config.pluginName = tr("Project manager");
     config.description = tr("Add support for building using CMake/Cargo/Go");
-    config.configItems.push_back(qmdiConfigItem::Builder()
+    config.configItems.push_back(
+        qmdiConfigItem::Builder()
             .setDisplayName(tr("Save before running tasks (build, config etc)"))
             .setDescription(tr("If checked, files are saved before running any task"))
             .setKey(Config::SaveBeforeTaskKey)
             .setType(qmdiConfigItem::Bool)
             .setDefaultValue(true)
             .build());
-    config.configItems.push_back(qmdiConfigItem::Builder()
+    config.configItems.push_back(
+        qmdiConfigItem::Builder()
             .setDisplayName(tr("Black console"))
             .setDescription(tr("Should the console background be black, or default"))
             .setKey(Config::BlackConsoleKey)
@@ -286,28 +281,28 @@ ProjectManagerPlugin::ProjectManagerPlugin() {
             .setDefaultValue(false)
             .build());
     config.configItems.push_back(qmdiConfigItem::Builder()
-            .setDisplayName(tr("Console font"))
-            .setKey(Config::ConsoleFontKey)
-            .setType(qmdiConfigItem::Font)
-            .setDefaultValue(monospacedFont)
-            .setValue(monospacedFont)
-            .build());
+                                     .setDisplayName(tr("Console font"))
+                                     .setKey(Config::ConsoleFontKey)
+                                     .setType(qmdiConfigItem::Font)
+                                     .setDefaultValue(monospacedFont)
+                                     .setValue(monospacedFont)
+                                     .build());
     config.configItems.push_back(qmdiConfigItem::Builder()
-            .setDisplayName(tr("clang-format exe"))
-            .setDescription(tr("Where do you have LLVM tools installed"))
-            .setKey(Config::ClangFormatExeKey)
-            .setType(qmdiConfigItem::Path)
-            .setDefaultValue(clangFormatExe)
-            .setPossibleValue(true) // Must be an existing file
-            .build());
+                                     .setDisplayName(tr("clang-format exe"))
+                                     .setDescription(tr("Where do you have LLVM tools installed"))
+                                     .setKey(Config::ClangFormatExeKey)
+                                     .setType(qmdiConfigItem::Path)
+                                     .setDefaultValue(clangFormatExe)
+                                     .setPossibleValue(true) // Must be an existing file
+                                     .build());
     config.configItems.push_back(qmdiConfigItem::Builder()
-            .setDisplayName(tr("Clang-format behaviour"))
-            .setDescription(tr("When to run clang-format"))
-            .setKey(Config::ClangFormatBehaviourKey)
-            .setType(qmdiConfigItem::OneOf)
-            .setPossibleValue(values)
-            .setDefaultValue(ClangFormatOnSave::InProjects)
-            .build());
+                                     .setDisplayName(tr("Clang-format behaviour"))
+                                     .setDescription(tr("When to run clang-format"))
+                                     .setKey(Config::ClangFormatBehaviourKey)
+                                     .setType(qmdiConfigItem::OneOf)
+                                     .setPossibleValue(values)
+                                     .setDefaultValue(ClangFormatOnSave::InProjects)
+                                     .build());
 
     /*
         config.configItems.push_back(qmdiConfigItem::Builder()
@@ -1679,8 +1674,7 @@ auto ProjectManagerPlugin::fixClientsMenu(qmdiClient *client, const QString &fil
                 auto scriptName = fi.absoluteFilePath();
                 auto arguments = QStringList();
                 auto env = QProcessEnvironment();
-                auto capture =
-                    outputPanel ? outputPanel->captureTasksOutput->isChecked() : true;
+                auto capture = outputPanel ? outputPanel->captureTasksOutput->isChecked() : true;
                 this->runCommand(workingDir, scriptName, arguments, env, capture);
             });
             this->mdiServer->mdiHost->unmergeClient(client);
@@ -1724,7 +1718,7 @@ auto ProjectManagerPlugin::saveFileExternalActions(qmdiClient *client) -> void {
 
     auto fileName = client->mdiClientFileName();
     if (!isClangFormatSupported(fileName)) {
-        qDebug() << "saveFileExternalActions: not suppported by clang-format" << fileName;
+        qDebug() << "saveFileExternalActions: not supported by clang-format" << fileName;
         return;
     }
     if (getConfig().getClangFormatBehaviour() == ClangFormatOnSave::InProjects) {
@@ -1736,7 +1730,7 @@ auto ProjectManagerPlugin::saveFileExternalActions(qmdiClient *client) -> void {
     }
 
     auto clangFormat = getConfig().getClangFormatExe();
-    auto args = QStringList{ "-style=file", "-fallback-style=none", "-i", fileName };
+    auto args = QStringList{"-style=file", "-fallback-style=none", "-i", fileName};
     auto p = QProcess();
     p.start(clangFormat, args);
     p.waitForFinished();
