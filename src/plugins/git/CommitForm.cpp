@@ -415,7 +415,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     //        to set the syntax highlighter.
     //        We need better abstractions, some IEditor, which can be an
     //        interface with has implementation as Qutepart of QSCintilla or
-    //        something different completelly.
+    //        something different completely.
     ui->diffPreview->setPlainText(output);
 
     // FIXME: this looks way too ugly,
