@@ -57,7 +57,7 @@ else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
 
-    CPMAddPackage("gh:diegoiast/qmdilib#7756133c93f092ade2cef88c438d84a93051f6a0")
+    CPMAddPackage("gh:diegoiast/qmdilib#23a174f6946f518e407552b3ce1368db13f97635")
     CPMAddPackage("gh:diegoiast/qutepart-cpp#2eea3e989a8f22be542002bc58f46c587eb9a412")
     CPMAddPackage("gh:diegoiast/command-palette-widget#69eb447b61c9d042394a1404c71a0d0b54ac28c0")
     CPMAddPackage("gh:diegoiast/KodoTerm#9d016815076a451ad639fa021d46602585e91247")

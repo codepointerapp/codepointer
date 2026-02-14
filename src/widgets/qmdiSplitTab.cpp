@@ -232,6 +232,15 @@ qmdiSplitTab::qmdiSplitTab(QWidget *parent) : SplitTabWidget(parent) {
             });
 }
 
+qmdiSplitTab::~qmdiSplitTab() {
+    auto count = getClientsCount();
+    for (int i = 0; i < count; ++i) {
+        if (auto client = getClient(i)) {
+            client->mdiServer = nullptr;
+        }
+    }
+}
+
 void qmdiSplitTab::onTabFocusChanged(QWidget *widget, bool focused) {
     SplitTabWidget::onTabFocusChanged(widget, focused);
 

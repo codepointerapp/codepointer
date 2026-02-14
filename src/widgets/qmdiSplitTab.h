@@ -37,6 +37,7 @@ class qmdiSplitTab : public SplitTabWidget, public qmdiServer {
     // SplitTabWidget
     bool loadingFinished = false;
     qmdiSplitTab(QWidget *parent = nullptr);
+    ~qmdiSplitTab() override;
     virtual void onTabFocusChanged(QWidget *widget, bool focused) override;
     virtual bool event(QEvent *ev) override;
     virtual bool eventFilter(QObject *obj, QEvent *event) override;
