@@ -263,6 +263,11 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 layout->replaceWidget(ui->diffPreview, e);
                 ui->diffPreview->deleteLater();
                 ui->diffPreview = e->getEditor();
+
+                // FIXME: The diff-preview widget has the correct font
+                //        configuration if we would create the widget from the
+                //        plugin - instead we need to do this very ugly hack.
+                ui->commitMessage->setFont(e->getEditor()->font());
             }
         }
     }
@@ -285,7 +290,6 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
             &CommitForm::revertSelectionImpl);
     connect(ui->tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             [this](const QItemSelection &selected, const QItemSelection &) {
-                qDebug() << "selection model changed";
                 if (selected.indexes().size() == 0) {
                     newFileSelected({}, GitFileStatus::Unknown);
                     return;
