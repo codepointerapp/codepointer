@@ -148,7 +148,7 @@ auto static createDesktopMenuItem(const std::string &programName, const std::str
     file.close();
     return desktopFile.string();
 #else
-    // all this does not make sence on Windows
+    // all this does not make sense on Windows
     Q_UNUSED(programName)
     Q_UNUSED(version)
     Q_UNUSED(execPath)
