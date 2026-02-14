@@ -19,7 +19,7 @@
      <property name="orientation">
       <enum>Qt::Orientation::Horizontal</enum>
      </property>
-     <widget class="QWidget" name="layoutWidget">
+     <widget class="QWidget" name="messageLayoutWidget">
       <layout class="QVBoxLayout" name="messageLayout">
        <item>
         <widget class="QLabel" name="commitLogLabel">
@@ -64,7 +64,7 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="layoutWidget">
+     <widget class="QWidget" name="filesLayoutWidget">
       <layout class="QVBoxLayout" name="filesLayout">
        <item>
         <widget class="QLabel" name="filesLabel">
@@ -106,7 +106,7 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="layoutWidget">
+     <widget class="QWidget" name="diffLayoutWidget">
       <layout class="QVBoxLayout" name="diffLayout">
        <item>
         <widget class="QLabel" name="diffLabel">
