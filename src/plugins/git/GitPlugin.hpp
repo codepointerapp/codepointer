@@ -45,6 +45,7 @@ class GitPlugin : public IPlugin {
     void diffBranchHandler();
     void newBranchHandler();
     void deleteBranchHandler();
+    void commitDisplayHandler(const QModelIndex &mi);
     void commitHandler();
     void logHandler(GitPlugin::GitLog log, const QString &filename);
     void on_gitCommitClicked(const QModelIndex &mi);

@@ -14,18 +14,21 @@
 #include <QStringListModel>
 #include <QTimer>
 
-#include "CommitDelegate.hpp"
-#include "CommitModel.hpp"
-#include "GitPlugin.hpp"
+#include <iplugin.h>
+
+
 #include "GlobalCommands.hpp"
-#include "iplugin.h"
-#include "plugins/git/CommitForm.hpp"
-#include "plugins/git/CreateGitBranch.hpp"
 #include "ui_GitCommands.h"
 #include "ui_GitCommit.h"
 #include "widgets/AutoShrinkLabel.hpp"
 #include "widgets/BoldItemDelegate.hpp"
 #include "widgets/qmdieditor.h"
+
+#include "plugins/git/CommitForm.hpp"
+#include "plugins/git/CommitDelegate.hpp"
+#include "plugins/git/CommitModel.hpp"
+#include "plugins/git/CreateGitBranch.hpp"
+#include "plugins/git/GitPlugin.hpp"
 
 QString shortGitSha1(const QString &fullSha1, int length = 7) {
     if (length <= 0) {
@@ -366,6 +369,27 @@ void GitPlugin::commitHandler() {
     mdiServer->addClient(commitForm);
 }
 
+void GitPlugin::commitDisplayHandler(const QModelIndex &mi) {
+    auto widget = static_cast<GitCommitDisplay *>(form->container->widget(0));
+    auto manager = getManager();
+    auto filename = mi.data().toString();
+    auto [diff, exitCode] = runGit({"-C", getConfig().getGitLastDir(), "show",
+                            widget->currentSha1, "--", filename});
+    if (exitCode != 0) {
+        // TODO display this error
+        return;
+    }
+    auto shortSha1 = shortGitSha1(widget->currentSha1);
+    auto displayName = QString("%1-%2.diff").arg(shortSha1, filename);
+    CommandArgs args = {
+        {GlobalArguments::FileName, displayName},
+        {GlobalArguments::Content, diff},
+        {GlobalArguments::ReadOnly, true},
+        {GlobalArguments::SourceDirectory, getConfig().getGitLastDir()},
+    };
+    manager->handleCommandAsync(GlobalCommands::DisplayText, args);
+}
+
 void GitPlugin::logHandler(GitLog log, const QString &filename) {
     auto repoRoot = detectRepoRoot(filename);
     if (repoRoot.isEmpty()) {
@@ -420,30 +444,11 @@ void GitPlugin::on_gitCommitClicked(const QModelIndex &mi) {
     auto rawCommit = getRawCommit(sha1);
     auto const fullCommit = FullCommitInfo::parse(rawCommit);
     auto widget = static_cast<GitCommitDisplay *>(form->container->widget(0));
-
     if (!widget) {
         widget = new GitCommitDisplay(form->container);
         form->container->addWidget(widget);
         connect(widget->ui.commits, &QAbstractItemView::doubleClicked, this,
-                [this, widget](const QModelIndex &i) {
-                    auto manager = getManager();
-                    auto filename = i.data().toString();
-                    auto [diff, exitCode] = runGit({"-C", getConfig().getGitLastDir(), "show",
-                                                    widget->currentSha1, "--", filename});
-                    if (exitCode != 0) {
-                        // TODO display this error
-                        return;
-                    }
-                    auto shortSha1 = shortGitSha1(widget->currentSha1);
-                    auto displayName = QString("%1-%2.diff").arg(shortSha1, filename);
-                    CommandArgs args = {
-                        {GlobalArguments::FileName, displayName},
-                        {GlobalArguments::Content, diff},
-                        {GlobalArguments::ReadOnly, true},
-                        {GlobalArguments::SourceDirectory, getConfig().getGitLastDir()},
-                    };
-                    manager->handleCommandAsync(GlobalCommands::DisplayText, args);
-                });
+                &GitPlugin::commitDisplayHandler);
     }
 
     widget->currentSha1 = sha1;
