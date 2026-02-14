@@ -357,22 +357,17 @@ void GitPlugin::commitHandler() {
         return;
     }
 
-    auto repoRoot = QFileInfo(filename).absolutePath();
-    repoRoot = detectRepoRoot(repoRoot);
-    qDebug() << "Current client" << filename << "at dir" << repoRoot;
+    auto repoRoot = detectRepoRoot(filename);
     if (repoRoot.isEmpty()) {
         qDebug() << "Filename is not in any git repo" << filename;
         return;
     }
-    // qDebug() << "Will commit in repo" << repoRoot;
-
     auto commitForm = new CommitForm(repoRoot, this, manager);
     mdiServer->addClient(commitForm);
 }
 
 void GitPlugin::logHandler(GitLog log, const QString &filename) {
-    auto repoRoot = QFileInfo(filename).absolutePath();
-    repoRoot = detectRepoRoot(repoRoot);
+    auto repoRoot = detectRepoRoot(filename);
     if (repoRoot.isEmpty()) {
         form->label->setText(tr("No commits or not a git repo"));
         form->diffBranchButton->setEnabled(true);
@@ -498,8 +493,8 @@ QString GitPlugin::detectRepoRoot(const QString &filePath) {
     auto args = QStringList{"-C", dir, "rev-parse", "--show-toplevel"};
     auto [output, exitCode] = runGit(args);
     if (exitCode != 0) {
-        qDebug() << "detectRepoRoot failed, with error" << exitCode << "output" << output
-                 << "args:" << args;
+        qDebug() << "detectRepoRoot failed for file" << filePath << ", with error" << exitCode
+                 << "output" << output << "args:" << args;
         return {};
     }
     return output.trimmed();

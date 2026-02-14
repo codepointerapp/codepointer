@@ -377,7 +377,7 @@ void CommitForm::revertCurrentImpl() {
 
     auto msgBox = QMessageBox();
     msgBox.setWindowTitle("Revert file");
-    msgBox.setText(tr("Are you sure you want to revert this file?\n%1").arg(fileName));
+    msgBox.setText(tr("Are you sure you want to revert this file?\n<b>%1</b>").arg(fileName));
     msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     msgBox.setDefaultButton(QMessageBox::No);
     msgBox.setIcon(QMessageBox::Icon::Question);
