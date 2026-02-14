@@ -1175,8 +1175,15 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
         return false;
     }
 
+    QPointer<qmdiEditor> safeThis(this);
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     QApplication::processEvents();
+
+    if (!safeThis) {
+        QApplication::restoreOverrideCursor();
+        return false;
+    }
+
     auto textStream = QTextStream(&file);
     auto cursor = QTextCursor(textEditor->document());
     auto op = Qutepart::AtomicEditOperation(textEditor);
@@ -1363,8 +1370,14 @@ void qmdiEditor::loadContent(bool useBackup) {
     setModificationsLookupEnabled(false);
     hideBannerMessage();
     setReadOnly(false);
+    QPointer<qmdiEditor> safeThis(this);
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     QApplication::processEvents();
+
+    if (!safeThis) {
+        QApplication::restoreOverrideCursor();
+        return;
+    }
 
     QFile file;
     auto loadedFromBackup = false;
