@@ -16,7 +16,6 @@
 
 #include <iplugin.h>
 
-
 #include "GlobalCommands.hpp"
 #include "ui_GitCommands.h"
 #include "ui_GitCommit.h"
@@ -24,8 +23,8 @@
 #include "widgets/BoldItemDelegate.hpp"
 #include "widgets/qmdieditor.h"
 
-#include "plugins/git/CommitForm.hpp"
 #include "plugins/git/CommitDelegate.hpp"
+#include "plugins/git/CommitForm.hpp"
 #include "plugins/git/CommitModel.hpp"
 #include "plugins/git/CreateGitBranch.hpp"
 #include "plugins/git/GitPlugin.hpp"
@@ -373,8 +372,8 @@ void GitPlugin::commitDisplayHandler(const QModelIndex &mi) {
     auto widget = static_cast<GitCommitDisplay *>(form->container->widget(0));
     auto manager = getManager();
     auto filename = mi.data().toString();
-    auto [diff, exitCode] = runGit({"-C", getConfig().getGitLastDir(), "show",
-                            widget->currentSha1, "--", filename});
+    auto [diff, exitCode] =
+        runGit({"-C", getConfig().getGitLastDir(), "show", widget->currentSha1, "--", filename});
     if (exitCode != 0) {
         // TODO display this error
         return;

@@ -12,8 +12,6 @@
 #include "ui_CommitForm.h"
 #include "widgets/qmdieditor.h"
 
-enum class GitFileStatus { Modified, Added, Deleted, Renamed, Copied, Untracked, Unknown };
-
 struct GitStatusEntry {
     QString filename;
     GitFileStatus status;
@@ -57,6 +55,7 @@ class GitStatusTableModel final : public QAbstractTableModel {
     // Q_OBJECT
 
   public:
+    enum Roles { StatusRole = Qt::UserRole + 1 };
     explicit GitStatusTableModel(QObject *parent = nullptr);
 
     // Re-implementation rom QAbstractTableModel
@@ -95,6 +94,9 @@ auto GitStatusTableModel::data(const QModelIndex &index, int role) const -> QVar
         return {};
     }
     const auto &e = m_entries.at(index.row());
+    if (role == StatusRole) {
+        return static_cast<int>(e.status);
+    }
     if (index.column() == 0 && role == Qt::CheckStateRole) {
         return e.checked ? Qt::Checked : Qt::Unchecked;
     }
@@ -196,14 +198,11 @@ void GitStatusTableModel::setAllChecked(bool checked) {
     if (m_entries.isEmpty()) {
         return;
     }
-
     for (auto &e : m_entries) {
         e.checked = checked;
     }
-
-    const QModelIndex topLeft = index(0, 0);
-    const QModelIndex bottomRight = index(rowCount() - 1, 0);
-
+    auto topLeft = index(0, 0);
+    auto bottomRight = index(rowCount() - 1, 0);
     emit dataChanged(topLeft, bottomRight, {Qt::CheckStateRole});
 }
 
@@ -285,17 +284,18 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     connect(ui->revertSelectedButton, &QAbstractButton::clicked, this,
             &CommitForm::revertSelectionImpl);
     connect(ui->tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
-            [this](const QItemSelection &selected, const QItemSelection &deselected) {
+            [this](const QItemSelection &selected, const QItemSelection &) {
                 qDebug() << "selection model changed";
                 if (selected.indexes().size() == 0) {
-                    newFileSelected({});
+                    newFileSelected({}, GitFileStatus::Unknown);
                     return;
                 }
                 auto firstIndex = selected.indexes().first();
                 auto idx = model->index(firstIndex.row(), 2);
                 auto fileName = model->data(idx, Qt::DisplayRole).toString();
-                newFileSelected(fileName);
-                Q_UNUSED(deselected);
+                auto status = static_cast<GitFileStatus>(
+                    model->data(idx, GitStatusTableModel::StatusRole).toInt());
+                newFileSelected(fileName, status);
             });
     connect(model, &QAbstractItemModel::dataChanged, this,
             [this](const QModelIndex &, const QModelIndex &, const QList<int> &roles) {
@@ -344,27 +344,83 @@ void CommitForm::updateGitStatus() {
     }
 }
 
-void CommitForm::newFileSelected(const QString &filename) {
+void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) {
     if (filename.isEmpty()) {
         ui->diffPreview->setPlainText("");
         return;
     }
 
-    auto [output, exitCode] = git->runGit({"-C", repoRoot, "diff", filename});
-    if (exitCode != 0) {
-        qDebug() << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output);
-        ui->commitLogLabel->setText("");
-        ui->diffPreview->setPlainText(output);
-        return;
+    auto output = QString();
+    auto highlighter = QString{"diff.xml"};
+    auto fullFilePath = repoRoot + "/" + filename;
+    switch (status) {
+    case GitFileStatus::Modified: {
+        auto [output2, exitCode] = git->runGit({"-C", repoRoot, "diff", filename});
+        if (exitCode != 0) {
+            qDebug() << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output2);
+            ui->commitLogLabel->setText("");
+            ui->diffPreview->setPlainText(output);
+            return;
+        }
+        output = output2;
+    }
+    case GitFileStatus::Deleted:
+        break;
+    case GitFileStatus::Added:
+    case GitFileStatus::Renamed:
+    case GitFileStatus::Copied:
+    case GitFileStatus::Untracked: {
+        auto manager = git->getManager();
+        auto plugin = manager->findPlugin("TextEditorPlugin");
+
+        auto p = dynamic_cast<TextEditorPlugin *>(plugin);
+        if (!p) {
+            qDebug() << "Cannot find the text editor plugin";
+            break;
+        }
+        auto score = p->canOpenFile(fullFilePath);
+        if (score == 1) {
+            qDebug() << "Text editor plugin says this is not a text file" << score << fullFilePath;
+            break;
+        }
+
+        auto file = QFile(fullFilePath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            qDebug() << "Could not open file for reading" << fullFilePath;
+            break;
+        }
+        auto in = QTextStream(&file);
+        auto lineCount = 5000;
+        while (!in.atEnd() && lineCount >= 0) {
+            output += in.readLine();
+            output += "\n";
+        }
+        file.close();
+
+        auto langInfo = ::Qutepart::chooseLanguage({}, {}, filename);
+        if (langInfo.isValid()) {
+            highlighter = langInfo.id;
+        }
+        break;
+    }
+    default:
+        break;
     }
 
+    // FIXME: Note how we need to hijack the low level APIs of Qutepart
+    //        to set the syntax highlighter.
+    //        We need better abstractions, some IEditor, which can be an
+    //        interface with has implementation as Qutepart of QSCintilla or
+    //        something different completelly.
     ui->diffPreview->setPlainText(output);
+
     // FIXME: this looks way too ugly,
     // Problem - the "editor" is not the correct widge
     // The UI expects a QPlainTextEdit, and we have Widget that includes a
     // QPlainTextEdit.
     if (auto editor = dynamic_cast<qmdiEditor *>(ui->diffPreview->parent()->parent())) {
         editor->updateInternalMappings(repoRoot);
+        editor->setHighlighter(highlighter);
     } else {
         qDebug() << "Double click on diff will not work";
     }
@@ -377,7 +433,8 @@ void CommitForm::revertCurrentImpl() {
 
     auto msgBox = QMessageBox();
     msgBox.setWindowTitle("Revert file");
-    msgBox.setText(tr("Are you sure you want to revert this file?\n<b>%1</b>").arg(fileName));
+    msgBox.setText(tr("Are you sure you want to revert this file?<br><br><b>%1</b>").arg(fileName));
+    msgBox.setTextFormat(Qt::RichText);
     msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     msgBox.setDefaultButton(QMessageBox::No);
     msgBox.setIcon(QMessageBox::Icon::Question);

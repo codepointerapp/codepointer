@@ -10,6 +10,8 @@ class CommitForm;
 class GitPlugin;
 class GitStatusTableModel;
 
+enum class GitFileStatus { Modified, Added, Deleted, Renamed, Copied, Untracked, Unknown };
+
 class CommitForm : public QWidget, public qmdiClient {
     Q_OBJECT
 
@@ -24,7 +26,7 @@ class CommitForm : public QWidget, public qmdiClient {
 
   public slots:
     void updateGitStatus();
-    void newFileSelected(const QString &filename);
+    void newFileSelected(const QString &filename, GitFileStatus status);
     void revertCurrentImpl();
     void revertSelectionImpl();
     void commitImpl();
