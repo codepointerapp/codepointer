@@ -1396,11 +1396,17 @@ void qmdiEditor::loadContent(bool useBackup) {
     // that the content has been modified. Just don't do this. It will also save some time
     // on loading, since really, signals emitted a this stage are not meaningful.
     {
+        auto firstLoad = useBackup;
         auto doc = textEditor->document();
+        textEditor->blockSignals(true);
+        if (firstLoad) {
+            doc->setUndoRedoEnabled(false);
+        }
+
         auto oldCursor = textEditor->textCursor();
         auto selStart = oldCursor.selectionStart();
-        auto selEnd   = oldCursor.selectionEnd();
-        auto cursor = QTextCursor (doc);
+        auto selEnd = oldCursor.selectionEnd();
+        auto cursor = QTextCursor(doc);
 
         cursor.beginEditBlock();
         cursor.select(QTextCursor::Document);
@@ -1408,11 +1414,15 @@ void qmdiEditor::loadContent(bool useBackup) {
         cursor.insertText(textStream.readAll());
         cursor.endEditBlock();
 
+        if (firstLoad) {
+            doc->setUndoRedoEnabled(true);
+        }
+
         auto docLength = doc->characterCount() - 1;
         selStart = qMin(selStart, docLength);
         selEnd = qMin(selEnd, docLength);
 
-        auto newCursor = QTextCursor (doc);
+        auto newCursor = QTextCursor(doc);
         newCursor.setPosition(selStart);
         newCursor.setPosition(selEnd, QTextCursor::KeepAnchor);
         textEditor->setTextCursor(newCursor);
