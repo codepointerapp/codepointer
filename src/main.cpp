@@ -25,6 +25,59 @@
 #include "plugins/imageviewer/imageviewer_plg.h"
 #include "plugins/texteditor/texteditor_plg.h"
 
+#include <QPainter>
+#include <QProxyStyle>
+#include <QStyleOptionDockWidget>
+
+class ThemeProxyStyle : public QProxyStyle {
+  public:
+    using QProxyStyle::QProxyStyle;
+
+    void polish(QPalette &pal) override {
+        QProxyStyle::polish(pal);
+#if defined(BUILD_DEV)
+        auto tintBackgroundColor = QColor::fromRgb(0xFFC107); // Yellow
+#elif defined(BUILD_OFFICIAL)
+        auto tintBackgroundColor = QColor::fromRgb(0x44aa44); // Green
+#else
+        auto tintBackgroundColor = QColor::fromRgb(0x6ba8ff); // Blue
+#endif
+        pal.setColor(QPalette::Highlight, tintBackgroundColor);
+        pal.setColor(QPalette::HighlightedText, Qt::white);
+    }
+
+    void drawControl(ControlElement element, const QStyleOption *option, QPainter *painter,
+                     const QWidget *widget) const override {
+        if (element == CE_DockWidgetTitle) {
+            if (const auto *v6 = qstyleoption_cast<const QStyleOptionDockWidget *>(option)) {
+                auto rect = v6->rect;
+                auto highlight = v6->palette.color(QPalette::Highlight);
+                auto lighter = highlight.lighter(150);
+
+                painter->save();
+                if (v6->state & State_Active) {
+                    auto grad = QLinearGradient(rect.topLeft(), rect.topRight());
+                    grad.setColorAt(0, highlight);
+                    grad.setColorAt(1, lighter);
+                    painter->fillRect(rect, grad);
+                } else {
+                    painter->fillRect(rect, highlight);
+                }
+
+                auto titleRect = rect.adjusted(5, 0, -5, 0);
+                painter->setPen(Qt::white);
+                auto font = painter->font();
+                font.setBold(true);
+                painter->setFont(font);
+                painter->drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, v6->title);
+                painter->restore();
+                return;
+            }
+        }
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+};
+
 int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(qutepart_syntax_files);
     Q_INIT_RESOURCE(qutepart_theme_data);
@@ -36,10 +89,11 @@ int main(int argc, char *argv[]) {
 #if defined(WIN32)
     // default style on windows is ugly and unusable.
     // lets fallback to something more usable for us
-    app.setStyle("windowsvista");
+    app.setStyle(new ThemeProxyStyle("windowsvista"));
     auto needsIcons = true;
     auto iconsPath = "/share/icons";
 #else
+    app.setStyle(new ThemeProxyStyle(app.style()->objectName()));
     auto needsIcons = QIcon::fromTheme(QIcon::ThemeIcon::GoNext).isNull();
     auto iconsPath = "/../share/icons";
 #endif
@@ -58,37 +112,6 @@ int main(int argc, char *argv[]) {
         QIcon::setFallbackThemeName("Breeze");
         qDebug() << "No icons found, using our own. Icons search path" << paths;
     }
-
-#if defined(BUILD_DEV)
-    auto tintBackgroundColor = QColor::fromRgb(0xFFC107);
-#elif defined(BUILD_OFFICIAL)
-    auto tintBackgroundColor = QColor::fromRgb(0x44aa44);
-#endif
-
-#if !defined(BUILD_CE)
-    auto tintTextColor = Qt::white;
-    auto lighterColor = tintBackgroundColor.lighter(150).name();
-    auto baseColor = tintBackgroundColor.name();
-    auto dockStyle = QString("QDockWidget::title:active {"
-                             "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-                             "   stop:0 %1, "
-                             "   stop:1 %2);"
-                             "  color: white;"
-                             "  font-weight: bold;"
-                             "}"
-                             "QDockWidget::title:!active {"
-                             "  background: %1;"
-                             "  color: white;"
-                             "  font-weight: bold;"
-                             "}")
-                         .arg(baseColor, lighterColor);
-    qApp->setStyleSheet(dockStyle);
-
-    auto pal = qApp->palette();
-    pal.setColor(QPalette::Highlight, tintBackgroundColor);
-    pal.setColor(QPalette::HighlightedText, tintTextColor);
-    qApp->setPalette(pal);
-#endif
 
     QCommandLineParser parser;
     parser.addHelpOption();
