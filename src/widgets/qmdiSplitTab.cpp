@@ -130,7 +130,7 @@ QToolButton#fancyShmancyMenu[windowActive="false"] {
 )CSS")
                 .arg(b.name(QColor::HexArgb), appHighlightColor.name(QColor::HexArgb));
 
-        manager->setStyleSheet(highlightedStyle);
+        appMenuButton->setStyleSheet(highlightedStyle);
         QObject::connect(qApp, &QGuiApplication::focusWindowChanged, appMenuButton,
                          [appMenuButton](QWindow *win) {
                              QWidget *windowWidget = appMenuButton->window();
