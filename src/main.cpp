@@ -10,7 +10,10 @@
 #include <QCommandLineParser>
 #include <QDir>
 #include <QIcon>
+#include <QPainter>
+#include <QProxyStyle>
 #include <QStandardPaths>
+#include <QStyleOptionDockWidget>
 #include <QToolButton>
 
 #include "pluginmanager.h"
@@ -24,10 +27,6 @@
 #include "plugins/hexviewer/hexviewer_plg.h"
 #include "plugins/imageviewer/imageviewer_plg.h"
 #include "plugins/texteditor/texteditor_plg.h"
-
-#include <QPainter>
-#include <QProxyStyle>
-#include <QStyleOptionDockWidget>
 
 class ThemeProxyStyle : public QProxyStyle {
   public:
