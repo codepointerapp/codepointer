@@ -328,6 +328,9 @@ CommitForm::~CommitForm() { delete ui; }
 QString CommitForm::mdiClientFileName() { return QString("git:%1").arg(repoRoot); }
 
 void CommitForm::keyPressEvent(QKeyEvent *event) {
+#if 0
+    Commenting this out. I am not giving this up, but I think that for now hiding the bottom
+    pannels is more important.
     if (event->key() == Qt::Key_Escape) {
         if (ui->diffPreview) {
             ui->diffPreview->setFocus(Qt::ShortcutFocusReason);
@@ -335,7 +338,7 @@ void CommitForm::keyPressEvent(QKeyEvent *event) {
             return;
         }
     }
-
+#endif
     QWidget::keyPressEvent(event);
 }
 
@@ -359,6 +362,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     auto fullFilePath = repoRoot + "/" + filename;
     switch (status) {
     case GitFileStatus::Modified: {
+        ui->diffLabel->setText("git diff");
         auto [output2, exitCode] = git->runGit({"-C", repoRoot, "diff", filename});
         if (exitCode != 0) {
             qDebug() << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output2);
@@ -367,8 +371,10 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
             return;
         }
         output = output2;
+        break;
     }
     case GitFileStatus::Deleted:
+        ui->diffLabel->setText(tr("Deleted"));
         break;
     case GitFileStatus::Added:
     case GitFileStatus::Renamed:
@@ -376,7 +382,6 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     case GitFileStatus::Untracked: {
         auto manager = git->getManager();
         auto plugin = manager->findPlugin("TextEditorPlugin");
-
         auto p = dynamic_cast<TextEditorPlugin *>(plugin);
         if (!p) {
             qDebug() << "Cannot find the text editor plugin";
@@ -405,6 +410,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         if (langInfo.isValid()) {
             highlighter = langInfo.id;
         }
+        ui->diffLabel->setText(tr("Content"));
         break;
     }
     default:
@@ -449,7 +455,7 @@ void CommitForm::revertCurrentImpl() {
 
     auto args = QStringList{"-C", repoRoot, "checkout", fileName};
     auto [output, exitCode] = git->runGit(args);
-    ui->gitOutput->setText(output);
+    ui->gitOutput->setText(output.trimmed());
     if (exitCode == 0) {
         updateGitStatus();
     }
@@ -478,7 +484,7 @@ void CommitForm::revertSelectionImpl() {
     }
 
     auto [output, exitCode] = git->runGit(args);
-    ui->gitOutput->setText(output);
+    ui->gitOutput->setText(output.trimmed());
     if (exitCode == 0) {
         updateGitStatus();
     }
@@ -496,6 +502,7 @@ void CommitForm::commitImpl() {
     }
     auto [output, exitCode] = git->runGit(args);
     if (exitCode != 0) {
+        ui->gitOutput->setText(output.trimmed());
         qDebug() << QString("ExitCode=%1, output=%2\ncommand=%3")
                         .arg(exitCode)
                         .arg(output)
@@ -507,6 +514,7 @@ void CommitForm::commitImpl() {
     auto cleanup = qScopeGuard([&] { QFile::remove(commitLogFileName); });
     args = QStringList{"-C", repoRoot, "commit", "-F", commitLogFileName};
     std::tie(output, exitCode) = git->runGit(args);
+    ui->gitOutput->setText(output.trimmed());
     if (exitCode != 0) {
         qDebug() << QString("ExitCode=%1, output=%2\ncommand=%3")
                         .arg(exitCode)
