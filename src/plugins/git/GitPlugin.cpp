@@ -251,7 +251,8 @@ void GitPlugin::revertFileHandler() {
         qDebug() << "Not reverting";
         return;
     }
-    auto args = QStringList{"restore", client->mdiClientFileName()};
+    auto fi = QFileInfo(filename);
+    auto args = QStringList{"-C", fi.absolutePath(), "restore", fi.fileName()};
     auto [output, exitCode] = runGit(args);
     if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
         editor->loadFile(filename);
@@ -506,7 +507,7 @@ QString GitPlugin::detectRepoRoot(const QString &filePath) {
 
 QString GitPlugin::getDiff(const QString &path) {
     auto fi = QFileInfo(path);
-    auto [output, exitCode] = runGit({"-C", fi.absolutePath(), "diff"});
+    auto [output, exitCode] = runGit({"-C", fi.absolutePath(), "diff", fi.fileName()});
     return output;
 }
 
