@@ -12,14 +12,14 @@ This short month brings up 3 major things:
    (commit, log, "file log", diff with more to come).
 2. clang format support. If in the route of a saved file there is a
    `.clang-format` file - the IDE will call clang format after saving. This is
-   contigurable (never, only for files in loaded projects or always). This
+   configurable (never, only for files in loaded projects or always). This
    defaults to **never**, but I am testing it locally with loaded projects.
 3. As I continue using the IDE as my main IDE, I setup my computer to use
    dark thems on nights. I found out that color changes were not properly
    applied. This was not trivial to find out - but this should not be a problem
    from now on.
 
-Some other good cleaups were done (commets are properly supported on nested
+Some other good cleanups were done (comments are properly supported on nested
 syntaxes, clicking diff will open the corresponding file a the modified line,
 markings are cleared when rebuilding, completion will preserve the case of the
 text. See details in each commit.
