@@ -1677,16 +1677,21 @@ auto ProjectManagerPlugin::fixClientsMenu(qmdiClient *client, const QString &fil
                 auto capture = outputPanel ? outputPanel->captureTasksOutput->isChecked() : true;
                 this->runCommand(workingDir, scriptName, arguments, env, capture);
             });
-            this->mdiServer->mdiHost->unmergeClient(client);
-            this->mdiServer->mdiHost->mergeClient(client);
-            this->mdiServer->mdiHost->updateGUI();
+
+            if (this->mdiServer->getCurrentClient() == client) {
+                this->mdiServer->mdiHost->unmergeClient(client);
+                this->mdiServer->mdiHost->mergeClient(client);
+                this->mdiServer->mdiHost->updateGUI();
+            }
         }
     } else {
         client->contextMenu.removeAction(action);
         client->menus[tr("&Project")]->removeAction(action);
-        this->mdiServer->mdiHost->unmergeClient(client);
-        this->mdiServer->mdiHost->mergeClient(client);
-        this->mdiServer->mdiHost->updateGUI();
+        if (this->mdiServer->getCurrentClient() == client) {
+            this->mdiServer->mdiHost->unmergeClient(client);
+            this->mdiServer->mdiHost->mergeClient(client);
+            this->mdiServer->mdiHost->updateGUI();
+        }
     }
 
     auto widget = dynamic_cast<QObject *>(client);

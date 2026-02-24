@@ -628,7 +628,7 @@ void SplitTabWidget::onNewSplitCreated(QTabWidget *tabWidget, int count) {
     }
 
     connect(tabWidget, &QTabWidget::currentChanged, this, [this, tabWidget](int index) {
-        if (index >= 0) {
+        if (index >= 0 && tabWidget == currentTabWidget) {
             onTabFocusChanged(tabWidget->widget(index), true);
         }
     });

@@ -242,12 +242,17 @@ qmdiSplitTab::~qmdiSplitTab() {
 }
 
 void qmdiSplitTab::onTabFocusChanged(QWidget *widget, bool focused) {
-    SplitTabWidget::onTabFocusChanged(widget, focused);
-
-    // nothing to do, if the same tab has been selected twice
-    if (widget == activeWidget) {
+    if (widget == activeWidget && focused) {
         return;
     }
+
+    if (qobject_cast<QTabWidget *>(widget)) {
+        SplitTabWidget::onTabFocusChanged(widget, focused);
+        return;
+    }
+
+    SplitTabWidget::onTabFocusChanged(widget, focused);
+
     if (!focused) {
         if (widget == nullptr) {
             auto client = dynamic_cast<qmdiClient *>(activeWidget);
@@ -410,13 +415,12 @@ void qmdiSplitTab::deleteClient(qmdiClient *client) {
     if (mdiHost == nullptr) {
         return;
     }
-    if (dynamic_cast<qmdiClient *>(activeWidget) != client) {
-        return;
-    }
 
     mdiHost->unmergeClient(client);
+    if (dynamic_cast<qmdiClient *>(activeWidget) == client) {
+        activeWidget = nullptr;
+    }
     mdiHost->updateGUI(dynamic_cast<QMainWindow *>(mdiHost));
-    activeWidget = nullptr;
 }
 
 int qmdiSplitTab::getClientsCount() const {
