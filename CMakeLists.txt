@@ -43,8 +43,8 @@ option(CODEPOINTER_WORK_OFFLINE OFF)
 
 if (CODEPOINTER_WORK_OFFLINE)
     # For this to work, you need to make these libraries available yourself.
-    # On Linux/macOS, you can run the script `get-code.sh`. This might work on Windows using
-    # git-bash, but is untested.
+    # On Linux/macOS, you can run the script `get-code.sh`. Tested also on
+    # git/bash form Git on Windows.
     add_subdirectory("lib/qmdilib")
     add_subdirectory("lib/qutepart-cpp")
     add_subdirectory("lib/command-palette-widget")
