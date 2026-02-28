@@ -15,7 +15,7 @@ This short month brings up 3 major things:
    configurable (never, only for files in loaded projects or always). This
    defaults to **never**, but I am testing it locally with loaded projects.
 3. As I continue using the IDE as my main IDE, I setup my computer to use
-   dark thems on nights. I found out that color changes were not properly
+   dark themes on nights. I found out that color changes were not properly
    applied. This was not trivial to find out - but this should not be a problem
    from now on.
 
@@ -41,3 +41,4 @@ text. See details in each commit.
 * clang-format - https://github.com/codepointerapp/codepointer/issues/172
 * Toggle comment - https://github.com/diegoiast/qutepart-cpp/issues/9
 * The IDE does not adopt to new themes change - https://github.com/codepointerapp/codepointer/issues/166
+* Closing a tab before content loaded, causes a crash - https://github.com/codepointerapp/codepointer/issues/162

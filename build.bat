@@ -1,7 +1,7 @@
 @echo on
 
 SET matrix_config_build_dir=windows-msvc
-SET PATH=c:\Qt\6.10.1\msvc2022_64\bin\;c:\Program Files (x86)\Inno Setup 6\;%PATH%
+SET PATH=c:\Qt\6.10.2\msvc2022_64\bin\;c:\Program Files (x86)\Inno Setup 6\;%PATH%
 SET BUILD_TYPE=OFFICIAL
 
 RMDIR /s /q "build/%matrix_config_build_dir%"
