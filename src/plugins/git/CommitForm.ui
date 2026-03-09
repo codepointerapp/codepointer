@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>623</width>
-    <height>469</height>
+    <width>1025</width>
+    <height>543</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -66,6 +66,16 @@
            </property>
           </spacer>
          </item>
+         <item>
+          <widget class="QPushButton" name="pushButton">
+           <property name="toolTip">
+            <string>Push to default branch</string>
+           </property>
+           <property name="text">
+            <string>&amp;Push</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
       </layout>
@@ -85,14 +95,14 @@
        <item>
         <widget class="QPushButton" name="revertCurrentButton">
          <property name="text">
-          <string>Revert current</string>
+          <string>Re&amp;vert current</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="revertSelectedButton">
          <property name="text">
-          <string>Revert selected</string>
+          <string>Revert &amp;selected</string>
          </property>
         </widget>
        </item>
@@ -152,6 +162,9 @@
      </property>
      <property name="text">
       <string/>
+     </property>
+     <property name="textInteractionFlags">
+      <set>Qt::TextInteractionFlag::LinksAccessibleByMouse|Qt::TextInteractionFlag::TextSelectableByKeyboard|Qt::TextInteractionFlag::TextSelectableByMouse</set>
      </property>
     </widget>
    </item>
