@@ -89,6 +89,17 @@ auto static getCorrespondingFile(const QString &fileName) -> QString {
     return {};
 }
 
+auto static runningUnderGnome() -> bool {
+#if defined(WIN32)
+    return false;
+#else
+    std::string desktopEnv =
+        std::getenv("XDG_CURRENT_DESKTOP") ? std::getenv("XDG_CURRENT_DESKTOP") : "";
+
+    return desktopEnv.find("GNOME") != std::string::npos;
+#endif
+}
+
 auto static getLineEnding(QIODevice &stream, const QString &defaultLineEnding) -> QString {
     if (stream.atEnd()) {
         return defaultLineEnding;
@@ -605,11 +616,16 @@ void qmdiEditor::setupActions() {
     actionCut->setShortcut(QKeySequence::Cut);
     actionPaste->setShortcut(QKeySequence::Paste);
     actionFind->setShortcut(QKeySequence::Find);
-    actionFindNext->setShortcut(QKeySequence::FindNext);
-    actionFindPrev->setShortcut(QKeySequence::FindPrevious);
+    
+    // Gnome uses control+g for find next, which steals our git shortcuts 
+    if (!runningUnderGnome()) {
+        actionFindNext->setShortcut(QKeySequence::FindNext);
+    }
     // this is usually "control+r, which we use for running a target
     // actionReplace->setShortcut(QKeySequence::Replace);
     actionReplace->setShortcut(QKeySequence(Qt::ControlModifier | Qt::Key_H));
+    
+    actionFindPrev->setShortcut(QKeySequence::FindPrevious);    
     actionGotoLine->setShortcut(QKeySequence(Qt::ControlModifier | Qt::Key_L));
     actionCapitalize->setShortcut(QKeySequence(Qt::ControlModifier | Qt::Key_U));
     actionLowerCase->setShortcut(QKeySequence(Qt::ControlModifier | Qt::ShiftModifier | Qt::Key_U));
