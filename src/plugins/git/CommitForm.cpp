@@ -374,6 +374,7 @@ void CommitForm::keyPressEvent(QKeyEvent *event) {
 }
 
 void CommitForm::updateGitStatus() {
+    ui->gitOutput->clear();
     auto [gitOutput, exitCode] = git->runGit({"-C", repoRoot, "status", "--porcelain"});
     auto status = parseGitStatus(gitOutput);
     model->setEntries(status);
@@ -394,6 +395,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     switch (status) {
     case GitFileStatus::Modified: {
         ui->diffLabel->setText("git diff");
+        ui->gitOutput->clear();
         auto [output2, exitCode] = git->runGit({"-C", repoRoot, "diff", filename});
         if (exitCode != 0) {
             qDebug() << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output2);
@@ -483,9 +485,9 @@ void CommitForm::revertCurrentImpl() {
     if (reply != QMessageBox::Yes) {
         return;
     }
-    ui->commitMessage->clear();
 
     auto args = QStringList{"-C", repoRoot, "checkout", fileName};
+    ui->gitOutput->clear();
     auto [output, exitCode] = git->runGit(args);
     ui->gitOutput->setText(output.trimmed());
     if (exitCode == 0) {
@@ -516,6 +518,7 @@ void CommitForm::revertSelectionImpl() {
         args.push_back(c.filename);
     }
 
+    ui->gitOutput->clear();
     auto [output, exitCode] = git->runGit(args);
     ui->gitOutput->setText(output.trimmed());
     if (exitCode == 0) {
@@ -533,6 +536,8 @@ void CommitForm::commitImpl() {
     for (auto const &c : checked) {
         args.push_back(c.filename);
     }
+
+    ui->gitOutput->clear();
     auto [output, exitCode] = git->runGit(args);
     if (exitCode != 0) {
         ui->gitOutput->setText(output.trimmed());
@@ -558,6 +563,7 @@ void CommitForm::commitImpl() {
 }
 
 void CommitForm::pushImpl() {
+    ui->gitOutput->clear();
     auto args = QStringList{"-C", repoRoot, "push"};
     auto [output, exitCode] = git->runGit(args);
     ui->gitOutput->setText(output.trimmed());
