@@ -330,7 +330,7 @@ QString CommitForm::mdiClientFileName() { return QString("git:%1").arg(repoRoot)
 void CommitForm::keyPressEvent(QKeyEvent *event) {
 #if 0
     Commenting this out. I am not giving this up, but I think that for now hiding the bottom
-    pannels is more important.
+    panels is more important.
     if (event->key() == Qt::Key_Escape) {
         if (ui->diffPreview) {
             ui->diffPreview->setFocus(Qt::ShortcutFocusReason);
