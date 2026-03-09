@@ -211,7 +211,7 @@ ProjectSearch::ProjectSearch(QWidget *parent, ProjectBuildModel *m)
     this->model = m;
 
     QStringList headerLabels;
-    headerLabels << tr("Text") << tr("Line");
+    headerLabels << tr("Filename/Text") << tr("Line");
     ui->treeWidget->setHeaderLabels(headerLabels);
     ui->treeWidget->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     ui->treeWidget->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -389,20 +389,18 @@ void ProjectSearch::searchButton_clicked() {
         return;
     }
 
-    this->ui->treeWidget->clear();
-
     auto allowList = ui->includeFiles->text();
     auto denyList = ui->excludeFiles->text();
     auto originalText = ui->searchButton->text();
-
     auto searchText = ui->searchFor->text().toStdString();
     auto startSearchPath = QDir::toNativeSeparators(ui->pathEdit->path());
+
+    this->ui->treeWidget->clear();
     SearchOptions options;
     options.caseSensitive = ui->caseSensitiveBtn->isChecked();
     options.wholeWord = ui->wholeWordBtn->isChecked();
     options.useRegex = ui->regexBtn->isChecked();
     options.searchInBinaries = ui->searchInBinaryFiles->isChecked();
-
     ui->searchButton->setText("(click to &stop)");
     ui->progressIndicator->start();
     running = true;
@@ -410,10 +408,12 @@ void ProjectSearch::searchButton_clicked() {
     if (allowList.isEmpty()) {
         allowList = "*";
     }
+    ui->message->clear();
     QThreadPool::globalInstance()->start([this, originalText, allowList, denyList, searchText,
                                           startSearchPath, options]() {
-        QDirIterator it(startSearchPath, allowList.split(";"), QDir::Files,
-                        QDirIterator::Subdirectories);
+        auto totalFound = 0;
+        auto it = QDirIterator(startSearchPath, allowList.split(";"), QDir::Files,
+                               QDirIterator::Subdirectories);
         while (it.hasNext()) {
             auto fullFileName = QDir::toNativeSeparators(it.next());
             auto *foundData = new QList<FoundData>;
@@ -421,32 +421,32 @@ void ProjectSearch::searchButton_clicked() {
                 continue;
             }
 
-            auto trimCount = startSearchPath.size();
-            if (startSearchPath.endsWith('\\') || startSearchPath.endsWith('/')) {
-                trimCount++;
-            }
-            auto shortFileName = fullFileName.mid(trimCount);
-            if (shortFileName.startsWith('/') || shortFileName.startsWith('\\')) {
-                shortFileName.remove(0, 1);
-            }
-
+            auto baseDir = QDir(ui->pathEdit->path());
+            auto shortFileName = baseDir.relativeFilePath(fullFileName);
             if (!FilenameMatches(fullFileName, allowList, denyList)) {
                 continue;
             };
             searchFile(fullFileName.toStdString(), searchText, options,
-                       [foundData](auto line, auto line_number) {
+                       [foundData, &totalFound](auto line, auto line_number) {
                            foundData->push_back({line, line_number});
+                           totalFound++;
                        });
 
             if (!foundData->empty()) {
                 // clang-format off
-                QMetaObject::invokeMethod(
-                    this, "file_searched", Qt::QueuedConnection,
+                QMetaObject::invokeMethod(this, "file_searched", Qt::QueuedConnection,
                     Q_ARG(QString, fullFileName),
                     Q_ARG(QString, shortFileName),
                     Q_ARG(QList<FoundData>*, foundData)
                 );
                 // clang-format on
+
+                if (totalFound != 0) {
+                    // Remember - this is a worker thread, we cannot directly modify the UI
+                    QMetaObject::invokeMethod(this, [this, totalFound]() {
+                        ui->message->setText(QString("Found %1 times").arg(totalFound));
+                    }, Qt::QueuedConnection);
+                }
             } else {
                 delete foundData;
             }
@@ -457,10 +457,16 @@ void ProjectSearch::searchButton_clicked() {
         }
 
         // this is done, since the progress indicator needs to be stopped from the main thread
-        QTimer::singleShot(0, this, [this, originalText]() {
+        QTimer::singleShot(0, this, [this, totalFound, originalText]() {
             ui->searchButton->setText(originalText);
             ui->progressIndicator->stop();
             running = false;
+            if (totalFound != 0) {
+                auto m = QString("Found %1 times").arg(totalFound);
+                ui->message->setText(m);
+            } else {
+                ui->message->setText(QString("Not found"));
+            }
         });
     });
 }
