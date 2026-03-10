@@ -26,7 +26,7 @@ class CreateGitBranch : public QDialog {
     void createBranch();
 
   private:
-    QString createBranchImplementation(const QString &branchName, bool checkout);
+    void createBranchImplementation(const QString &branchName, bool checkout);
     Ui::CreateGitBranch *ui;
     GitPlugin *plugin;
     QStringList availableBranches;

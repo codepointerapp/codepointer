@@ -375,13 +375,15 @@ void CommitForm::keyPressEvent(QKeyEvent *event) {
 }
 
 void CommitForm::updateGitStatus() {
-    ui->gitOutput->clear();
-    auto [gitOutput, exitCode] = git->runGit({"-C", repoRoot, "status", "--porcelain"});
-    auto status = parseGitStatus(gitOutput);
-    model->setEntries(status);
-    if (model->rowCount() > 0) {
-        ui->tableView->selectRow(0);
-    }
+    git->runGit({"-C", repoRoot, "status", "--porcelain"})
+        .then(this, [this](const std::tuple<QString, int> &res) {
+            auto [gitOutput, exitCode] = res;
+            auto status = parseGitStatus(gitOutput);
+            model->setEntries(status);
+            if (model->rowCount() > 0) {
+                ui->tableView->selectRow(0);
+            }
+        });
 }
 
 void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) {
@@ -390,25 +392,48 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         return;
     }
 
-    auto output = QString();
     auto highlighter = QString{"diff.xml"};
     auto fullFilePath = repoRoot + "/" + filename;
+
+    auto updateEditor = [this](const QString &output, const QString &highlighter) {
+        ui->diffPreview->setPlainText(output);
+
+        // FIXME: this looks way too ugly,
+        // Problem - the "editor" is not the correct widget
+        // The UI expects a QPlainTextEdit, and we have Widget that includes a
+        // QPlainTextEdit.
+        if (auto editor = dynamic_cast<qmdiEditor *>(ui->diffPreview->parent()->parent())) {
+            // FIXME: Note how we need to hijack the low level APIs of Qutepart
+            //        to set the syntax highlighter.
+            //        We need better abstractions, some IEditor, which can be an
+            //        interface with has implementation as Qutepart of QSCintilla or
+            //        something different completely.
+            editor->setHighlighter(highlighter);
+            editor->updateInternalMappings(repoRoot);
+        } else {
+            qDebug() << "Double click on diff will not work";
+        }
+    };
+
     switch (status) {
     case GitFileStatus::Modified: {
         ui->diffLabel->setText("git diff");
-        ui->gitOutput->clear();
-        auto [output2, exitCode] = git->runGit({"-C", repoRoot, "diff", filename});
-        if (exitCode != 0) {
-            qDebug() << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output2);
-            ui->commitLogLabel->setText("");
-            ui->diffPreview->setPlainText(output);
-            return;
-        }
-        output = output2;
-        break;
+        git->runGit({"-C", repoRoot, "diff", filename})
+            .then(this, [this, updateEditor](const std::tuple<QString, int> &res) {
+                auto [output2, exitCode] = res;
+                if (exitCode != 0) {
+                    qDebug() << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output2);
+                    ui->commitLogLabel->setText("");
+                    updateEditor("", "diff.xml");
+                    return;
+                }
+                updateEditor(output2, "diff.xml");
+            });
+        return;
     }
     case GitFileStatus::Deleted:
         ui->diffLabel->setText(tr("Deleted"));
+        updateEditor("", highlighter);
         break;
     case GitFileStatus::Added:
     case GitFileStatus::Renamed:
@@ -423,7 +448,8 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         }
         auto score = p->canOpenFile(fullFilePath);
         if (score == 1) {
-            qDebug() << "Text editor plugin says this is not a text file" << score << fullFilePath;
+            // qDebug() << "Text editor plugin says this is not a text file" << score <<
+            // fullFilePath;
             break;
         }
 
@@ -434,6 +460,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         }
         auto in = QTextStream(&file);
         auto lineCount = 5000;
+        auto output = QString();
         while (!in.atEnd() && lineCount >= 0) {
             output += in.readLine();
             output += "\n";
@@ -445,28 +472,11 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
             highlighter = langInfo.id;
         }
         ui->diffLabel->setText(tr("Content"));
+        updateEditor(output, highlighter);
         break;
     }
     default:
         break;
-    }
-
-    // FIXME: Note how we need to hijack the low level APIs of Qutepart
-    //        to set the syntax highlighter.
-    //        We need better abstractions, some IEditor, which can be an
-    //        interface with has implementation as Qutepart of QSCintilla or
-    //        something different completely.
-    ui->diffPreview->setPlainText(output);
-
-    // FIXME: this looks way too ugly,
-    // Problem - the "editor" is not the correct widge
-    // The UI expects a QPlainTextEdit, and we have Widget that includes a
-    // QPlainTextEdit.
-    if (auto editor = dynamic_cast<qmdiEditor *>(ui->diffPreview->parent()->parent())) {
-        editor->updateInternalMappings(repoRoot);
-        editor->setHighlighter(highlighter);
-    } else {
-        qDebug() << "Double click on diff will not work";
     }
 }
 
@@ -488,12 +498,13 @@ void CommitForm::revertCurrentImpl() {
     }
 
     auto args = QStringList{"-C", repoRoot, "checkout", fileName};
-    ui->gitOutput->clear();
-    auto [output, exitCode] = git->runGit(args);
-    ui->gitOutput->setText(output.trimmed());
-    if (exitCode == 0) {
-        updateGitStatus();
-    }
+    git->runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
+        auto [output, exitCode] = res;
+        ui->gitOutput->setText(output.trimmed());
+        if (exitCode == 0) {
+            updateGitStatus();
+        }
+    });
 }
 
 void CommitForm::revertSelectionImpl() {
@@ -520,11 +531,13 @@ void CommitForm::revertSelectionImpl() {
     }
 
     ui->gitOutput->clear();
-    auto [output, exitCode] = git->runGit(args);
-    ui->gitOutput->setText(output.trimmed());
-    if (exitCode == 0) {
-        updateGitStatus();
-    }
+    git->runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
+        auto [output, exitCode] = res;
+        ui->gitOutput->setText(output.trimmed());
+        if (exitCode == 0) {
+            updateGitStatus();
+        }
+    });
 }
 
 void CommitForm::commitImpl() {
@@ -539,29 +552,29 @@ void CommitForm::commitImpl() {
     }
 
     ui->gitOutput->clear();
-    auto [output, exitCode] = git->runGit(args);
-    if (exitCode != 0) {
-        ui->gitOutput->setText(output.trimmed());
-        qDebug() << QString("ExitCode=%1, output=%2\ncommand=%3")
-                        .arg(exitCode)
-                        .arg(output, QString("git ") + args.join(' '));
-        return;
-    }
+    git->runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
+        auto [output, exitCode] = res;
+        if (exitCode != 0) {
+            ui->gitOutput->setText(output.trimmed());
+            qDebug() << QString("ExitCode=%1, output=%2").arg(exitCode).arg(output);
+            return;
+        }
 
-    qDebug() << "Will use the following message for commit" << ui->commitMessage->toPlainText();
-    auto commitLogFileName = createTempFileWithContent(ui->commitMessage->toPlainText());
-    auto cleanup = qScopeGuard([&] { QFile::remove(commitLogFileName); });
-    args = QStringList{"-C", repoRoot, "commit", "-F", commitLogFileName};
-    std::tie(output, exitCode) = git->runGit(args);
-    ui->gitOutput->setText(output.trimmed());
-    if (exitCode != 0) {
-        qDebug() << QString("ExitCode=%1, output=%2\ncommand=%3")
-                        .arg(exitCode)
-                        .arg(output, QString("git ") + args.join(' '));
-    } else {
-        ui->commitMessage->clear();
-    }
-    updateGitStatus();
+        auto commitLogFileName = createTempFileWithContent(ui->commitMessage->toPlainText());
+        auto commitArgs = QStringList{"-C", repoRoot, "commit", "-F", commitLogFileName};
+        git->runGit(commitArgs)
+            .then(this, [this, commitLogFileName](const std::tuple<QString, int> &res2) {
+                auto [output2, exitCode2] = res2;
+                QFile::remove(commitLogFileName);
+                ui->gitOutput->setText(output2.trimmed());
+                if (exitCode2 != 0) {
+                    qDebug() << QString("ExitCode=%1, output=%2").arg(exitCode2).arg(output2);
+                } else {
+                    ui->commitMessage->clear();
+                }
+                updateGitStatus();
+            });
+    });
 }
 
 void CommitForm::pushImpl() {
@@ -570,19 +583,17 @@ void CommitForm::pushImpl() {
     ui->pushButton->setText(tr("Pushing..."));
     ui->gitOutput->clear();
 
-    // WHY? because I want to update the UI while runGit() blocks
-    QApplication::processEvents();
-
     auto args = QStringList{"-C", repoRoot, "push"};
-    auto [output, exitCode] = git->runGit(args);
-    ui->gitOutput->setText(output.trimmed());
-    if (exitCode != 0) {
-        qDebug() << QString("ExitCode=%1, output=%2\ncommand=%3")
-                        .arg(exitCode)
-                        .arg(output, QString("git ") + args.join(' '));
-    }
+    git->runGit(args).then(this, [this, t](const std::tuple<QString, int> &result) {
+        auto [output, exitCode] = result;
+        if (exitCode != 0) {
+            qDebug()
+                << QString("ExitCode=%1, output=%2\ncommand=git push").arg(exitCode).arg(output);
+        }
 
-    updateGitStatus();
-    ui->pushButton->setText(t);
-    ui->pushButton->setEnabled(true);
+        updateGitStatus();
+        ui->gitOutput->setText(output.trimmed());
+        ui->pushButton->setText(t);
+        ui->pushButton->setEnabled(true);
+    });
 };

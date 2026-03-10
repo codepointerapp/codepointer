@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFontMetrics>
+#include <QFuture>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPainter>
@@ -12,6 +13,7 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QStringListModel>
+#include <QtConcurrent>
 #include <QTimer>
 
 #include <iplugin.h>
@@ -214,104 +216,130 @@ void GitPlugin::logProjectHandler() {
 void GitPlugin::diffFileHandler() {
     auto manager = getManager();
     auto client = manager->getMdiServer()->getCurrentClient();
-    auto filename = client->mdiClientFileName();
-    auto repoRoot = QFileInfo(filename).absolutePath();
-    auto const diff = getDiff(filename);
-    if (diff.isEmpty()) {
+    if (!client) {
         return;
     }
+    auto filename = client->mdiClientFileName();
+    auto clientName = client->mdiClientName;
     auto position = manager->getMdiServer()->getClientIndex(client);
-    repoRoot = detectRepoRoot(repoRoot);
-    CommandArgs args = {
-        {GlobalArguments::FileName, QString("%1.diff").arg(client->mdiClientName)},
-        {GlobalArguments::Content, diff},
-        {GlobalArguments::ReadOnly, true},
-        {GlobalArguments::Position, position},
-        {GlobalArguments::SourceDirectory, repoRoot},
-    };
-    manager->handleCommandAsync(GlobalCommands::DisplayText, args);
+
+    getDiff(filename).then(this, [this, filename, clientName, position](const std::tuple<QString, int> &res) {
+        auto [diff, exitCode] = res;
+        if (exitCode != 0 || diff.isEmpty()) {
+            return;
+        }
+        detectRepoRoot(filename).then(this, [this, clientName, position, diff](const std::tuple<QString, int> &res2) {
+            auto [repoRoot, exitCode2] = res2;
+            if (exitCode2 != 0 || repoRoot.isEmpty()) {
+                return;
+            }
+            CommandArgs args = {
+                {GlobalArguments::FileName, QString("%1.diff").arg(clientName)},
+                {GlobalArguments::Content, diff},
+                {GlobalArguments::ReadOnly, true},
+                {GlobalArguments::Position, position},
+                {GlobalArguments::SourceDirectory, repoRoot},
+            };
+            getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
+        });
+    });
 }
 
 void GitPlugin::revertFileHandler() {
     auto manager = getManager();
     auto client = manager->getMdiServer()->getCurrentClient();
+    if (!client) {
+        return;
+    }
     auto filename = client->mdiClientFileName();
-    auto const diff = getDiff(filename);
-    if (diff.isEmpty()) {
-        return;
-    }
+    auto clientName = client->mdiClientName;
 
-    QMessageBox msgBox(QMessageBox::Warning, client->mdiClientName,
-                       tr("Do you want to revert %1?\n").arg(client->mdiClientName),
-                       QMessageBox::Yes | QMessageBox::Default, manager);
-    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-    msgBox.setDefaultButton(QMessageBox::Yes);
-    auto ret = msgBox.exec();
-    if (ret != QMessageBox::Yes) {
-        qDebug() << "Not reverting";
-        return;
-    }
-    auto fi = QFileInfo(filename);
-    auto args = QStringList{"-C", fi.absolutePath(), "restore", fi.fileName()};
-    auto [output, exitCode] = runGit(args);
-    if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
-        editor->loadFile(filename);
-        editor->loadContent(false);
-    }
+    getDiff(filename).then(this, [this, filename, client, clientName](const std::tuple<QString, int> &res) {
+        auto [diff, exitCode] = res;
+        if (exitCode != 0 || diff.isEmpty()) {
+            return;
+        }
+
+        QMessageBox msgBox(QMessageBox::Warning, clientName,
+                           tr("Do you want to revert %1?\n").arg(clientName),
+                           QMessageBox::Yes | QMessageBox::Default, getManager());
+        msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+        msgBox.setDefaultButton(QMessageBox::Yes);
+        auto ret = msgBox.exec();
+        if (ret != QMessageBox::Yes) {
+            return;
+        }
+        auto fi = QFileInfo(filename);
+        auto args = QStringList{"-C", fi.absolutePath(), "restore", fi.fileName()};
+        runGit(args).then(this, [this, client, filename](const std::tuple<QString, int> &res2) {
+            if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
+                editor->loadFile(filename);
+                editor->loadContent(false);
+            }
+        });
+    });
 }
 
 void GitPlugin::refreshBranchesHandler() {
-    auto manager = getManager();
-    auto client = manager->getMdiServer()->getCurrentClient();
-    auto filename = client->mdiClientFileName();
     auto repoRoot = getConfig().getGitLastDir();
-    auto [output, exitCode] = runGit({"-C", repoRoot, "branch", "-a"});
-    auto branches = output.split('\n', Qt::SkipEmptyParts);
-    form->branchListCombo->clear();
-    auto activeIndex = -1;
-    auto delegate = static_cast<BoldItemDelegate *>(form->branchListCombo->itemDelegate());
-    for (auto const &line : std::as_const(branches)) {
-        auto isActive = line.startsWith('*');
-        auto branchName = line.mid(2).trimmed();
-        if (branchName.isEmpty()) {
-            continue;
-        }
-
-        form->branchListCombo->addItem(branchName);
-        if (isActive) {
-            delegate->boldItemStr = branchName;
-            activeIndex = form->branchListCombo->count() - 1;
-        }
+    if (repoRoot.isEmpty()) {
+        return;
     }
 
-    if (activeIndex != -1) {
-        form->branchListCombo->setCurrentIndex(activeIndex);
-    }
-    form->diffBranchButton->setEnabled(true);
-    form->newBranchButton->setEnabled(true);
-    form->deleteBranchButton->setEnabled(true);
-    form->checkoutBranchButton->setEnabled(true);
+    runGit({"-C", repoRoot, "branch", "-a"}).then(this, [this](const std::tuple<QString, int> &res) {
+        auto [output, exitCode] = res;
+        auto branches = output.split('\n', Qt::SkipEmptyParts);
+        form->branchListCombo->clear();
+        auto activeIndex = -1;
+        auto delegate = static_cast<BoldItemDelegate *>(form->branchListCombo->itemDelegate());
+        for (auto const &line : std::as_const(branches)) {
+            auto isActive = line.startsWith('*');
+            auto branchName = line.mid(2).trimmed();
+            if (branchName.isEmpty()) {
+                continue;
+            }
+
+            form->branchListCombo->addItem(branchName);
+            if (isActive) {
+                delegate->boldItemStr = branchName;
+                activeIndex = form->branchListCombo->count() - 1;
+            }
+        }
+
+        if (activeIndex != -1) {
+            form->branchListCombo->setCurrentIndex(activeIndex);
+        }
+        form->diffBranchButton->setEnabled(true);
+        form->newBranchButton->setEnabled(true);
+        form->deleteBranchButton->setEnabled(true);
+        form->checkoutBranchButton->setEnabled(true);
+    });
 }
 
 void GitPlugin::diffBranchHandler() {
     auto manager = getManager();
     auto client = manager->getMdiServer()->getCurrentClient();
+    if (!client) {
+        return;
+    }
     auto filename = client->mdiClientFileName();
     auto repoRoot = QFileInfo(filename).absolutePath();
     auto branch = form->branchListCombo->currentText();
-    auto [diff, exitCode] = runGit({"diff", branch});
-    if (diff.isEmpty()) {
-        return;
-    }
+    runGit({"diff", branch}).then(this, [this, branch, repoRoot](const std::tuple<QString, int> &res) {
+        auto [diff, exitCode] = res;
+        if (diff.isEmpty()) {
+            return;
+        }
 
-    CommandArgs args = {
-        {GlobalArguments::FileName, QString("diff-%1.diff").arg(branch)},
-        {GlobalArguments::Content, diff},
-        {GlobalArguments::ReadOnly, true},
-        {GlobalArguments::FoldTopLevel, true},
-        {GlobalArguments::SourceDirectory, repoRoot},
-    };
-    manager->handleCommandAsync(GlobalCommands::DisplayText, args);
+        CommandArgs args = {
+            {GlobalArguments::FileName, QString("diff-%1.diff").arg(branch)},
+            {GlobalArguments::Content, diff},
+            {GlobalArguments::ReadOnly, true},
+            {GlobalArguments::FoldTopLevel, true},
+            {GlobalArguments::SourceDirectory, repoRoot},
+        };
+        getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
+    });
 }
 
 void GitPlugin::newBranchHandler() {
@@ -338,21 +366,26 @@ void GitPlugin::deleteBranchHandler() {
     if (reply == QMessageBox::Yes) {
         auto deleteBranchArg = cb->isChecked() ? "-D" : "-d";
         auto args = QStringList{"branch", deleteBranchArg, branch};
-        auto [output, exitCode] = runGit(args);
-        if (exitCode != 0) {
-            // TODO - display this error
-            qDebug() << "Command failed. Error" << exitCode << output;
-            return;
-        }
-        form->gitOutput->setText(output);
-        form->gitOutput->setToolTip(output);
-        refreshBranchesHandler();
+        runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
+            auto [output, exitCode] = res;
+            if (exitCode != 0) {
+                // TODO - display this error
+                qDebug() << "Command failed. Error" << exitCode << output;
+                return;
+            }
+            form->gitOutput->setText(output);
+            form->gitOutput->setToolTip(output);
+            refreshBranchesHandler();
+        });
     }
 }
 
 void GitPlugin::commitHandler() {
     auto manager = getManager();
     auto client = manager->getMdiServer()->getCurrentClient();
+    if (!client) {
+        return;
+    }
     auto filename = client->mdiClientFileName();
     if (filename.isEmpty()) {
         // TODO - query the current project and use it for commits
@@ -360,78 +393,86 @@ void GitPlugin::commitHandler() {
         return;
     }
 
-    auto repoRoot = detectRepoRoot(filename);
-    if (repoRoot.isEmpty()) {
-        qDebug() << "Filename is not in any git repo" << filename;
-        return;
-    }
-    auto commitForm = new CommitForm(repoRoot, this, manager);
-    mdiServer->addClient(commitForm);
+    detectRepoRoot(filename).then(this, [this, manager](const std::tuple<QString, int> &res) {
+        auto [repoRoot, exitCode] = res;
+        if (exitCode != 0 || repoRoot.isEmpty()) {
+            qDebug() << "Filename is not in any git repo";
+            return;
+        }
+        auto commitForm = new CommitForm(repoRoot, this, manager);
+        mdiServer->addClient(commitForm);
+    });
 }
 
 void GitPlugin::commitDisplayHandler(const QModelIndex &mi) {
     auto widget = static_cast<GitCommitDisplay *>(form->container->widget(0));
     auto manager = getManager();
     auto filename = mi.data().toString();
-    auto [diff, exitCode] =
-        runGit({"-C", getConfig().getGitLastDir(), "show", widget->currentSha1, "--", filename});
-    if (exitCode != 0) {
-        // TODO display this error
-        return;
-    }
-    auto shortSha1 = shortGitSha1(widget->currentSha1);
-    auto displayName = QString("%1-%2.diff").arg(shortSha1, filename);
-    CommandArgs args = {
-        {GlobalArguments::FileName, displayName},
-        {GlobalArguments::Content, diff},
-        {GlobalArguments::ReadOnly, true},
-        {GlobalArguments::SourceDirectory, getConfig().getGitLastDir()},
-    };
-    manager->handleCommandAsync(GlobalCommands::DisplayText, args);
+    auto sha1 = widget->currentSha1;
+    auto lastDir = getConfig().getGitLastDir();
+
+    runGit({"-C", lastDir, "show", sha1, "--", filename}).then(this, [this, manager, filename, sha1, lastDir](const std::tuple<QString, int> &res) {
+        auto [diff, exitCode] = res;
+        if (exitCode != 0) {
+            // TODO display this error
+            return;
+        }
+        auto shortSha1 = shortGitSha1(sha1);
+        auto displayName = QString("%1-%2.diff").arg(shortSha1, filename);
+        CommandArgs args = {
+            {GlobalArguments::FileName, displayName},
+            {GlobalArguments::Content, diff},
+            {GlobalArguments::ReadOnly, true},
+            {GlobalArguments::SourceDirectory, lastDir},
+        };
+        manager->handleCommandAsync(GlobalCommands::DisplayText, args);
+    });
 }
 
 void GitPlugin::logHandler(GitLog log, const QString &filename) {
-    auto repoRoot = detectRepoRoot(filename);
-    if (repoRoot.isEmpty()) {
-        form->label->setText(tr("No commits or not a git repo"));
-        form->diffBranchButton->setEnabled(true);
-        form->newBranchButton->setEnabled(true);
-        form->deleteBranchButton->setEnabled(true);
-        return;
-    }
-
-    auto args = QStringList{"-C", repoRoot, "log", "--graph",
-                            "--pretty=format:%x01%H%x02%P%x02%an%x02%ai%x02%s"};
-    auto labelText = QString();
-    switch (log) {
-    case GitPlugin::GitLog::File:
-        labelText = QString("git log %1").arg(filename);
-        if (!filename.isEmpty()) {
-            args << "--" << filename;
+    detectRepoRoot(filename).then(this, [this, log, filename](const std::tuple<QString, int> &res) {
+        auto [repoRoot, exitCode] = res;
+        if (exitCode != 0 || repoRoot.isEmpty()) {
+            form->label->setText(tr("No commits or not a git repo"));
+            form->diffBranchButton->setEnabled(true);
+            form->newBranchButton->setEnabled(true);
+            form->deleteBranchButton->setEnabled(true);
+            return;
         }
-        break;
-    case GitPlugin::GitLog::Project:
-        labelText = QString("git log (repo)");
-        break;
-    }
 
-    getConfig().setGitLastDir(repoRoot);
-    auto model = new CommitModel(this);
-    form->label->setText(labelText);
+        auto args = QStringList{"-C", repoRoot, "log", "--graph",
+                                "--pretty=format:%x01%H%x02%P%x02%an%x02%ai%x02%s"};
+        auto labelText = QString();
+        switch (log) {
+        case GitPlugin::GitLog::File:
+            labelText = QString("git log %1").arg(filename);
+            if (!filename.isEmpty()) {
+                args << "--" << filename;
+            }
+            break;
+        case GitPlugin::GitLog::Project:
+            labelText = QString("git log (repo)");
+            break;
+        }
 
-    getConfig().setGitLastDir(repoRoot);
-    getConfig().setGitLastCommand(args.join(" "));
+        getConfig().setGitLastDir(repoRoot);
+        form->label->setText(labelText);
+        getConfig().setGitLastCommand(args.join(" "));
 
-    auto [output, exitCode] = runGit(args);
-    if (exitCode != 0) {
-        // ui->commitLogLabel->setText(output);
-        return;
-    }
+        runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
+            auto [output, exitCode] = res;
+            if (exitCode != 0) {
+                // ui->commitLogLabel->setText(output);
+                return;
+            }
 
-    model->setContent(output);
-    form->listView->setModel(model);
-    gitDock->raise();
-    gitDock->show();
+            auto model = new CommitModel(this);
+            model->setContent(output);
+            form->listView->setModel(model);
+            gitDock->raise();
+            gitDock->show();
+        });
+    });
 }
 
 void GitPlugin::on_gitCommitClicked(const QModelIndex &mi) {
@@ -441,81 +482,88 @@ void GitPlugin::on_gitCommitClicked(const QModelIndex &mi) {
     getManager()->saveSettings();
 
     auto const sha1Short = shortGitSha1(sha1);
-    auto rawCommit = getRawCommit(sha1);
-    auto const fullCommit = FullCommitInfo::parse(rawCommit);
-    auto widget = static_cast<GitCommitDisplay *>(form->container->widget(0));
-    if (!widget) {
-        widget = new GitCommitDisplay(form->container);
-        form->container->addWidget(widget);
-        connect(widget->ui.commits, &QAbstractItemView::doubleClicked, this,
-                &GitPlugin::commitDisplayHandler);
-    }
+    getRawCommit(sha1).then(this, [this, sha1, sha1Short](const std::tuple<QString, int> &res) {
+        auto [rawCommit, exitCode] = res;
+        if (exitCode != 0) {
+            return;
+        }
+        auto const fullCommit = FullCommitInfo::parse(rawCommit);
+        auto widget = static_cast<GitCommitDisplay *>(form->container->widget(0));
+        if (!widget) {
+            widget = new GitCommitDisplay(form->container);
+            form->container->addWidget(widget);
+            connect(widget->ui.commits, &QAbstractItemView::doubleClicked, this,
+                    &GitPlugin::commitDisplayHandler);
+        }
 
-    widget->currentSha1 = sha1;
-    widget->ui.sha1->setPrimaryText(sha1);
-    widget->ui.sha1->setFallbackText(sha1Short);
-    widget->ui.commiter->setText(fullCommit.author.toString());
-    widget->ui.commitDate->setText(fullCommit.date.toString());
-    widget->ui.commit->setText(fullCommit.subject.toString());
-    widget->ui.commitMessage->setVisible(!fullCommit.body.trimmed().isEmpty());
-    widget->ui.commitMessage->setMarkdown(fullCommit.body);
+        widget->currentSha1 = sha1;
+        widget->ui.sha1->setPrimaryText(sha1);
+        widget->ui.sha1->setFallbackText(sha1Short);
+        widget->ui.commiter->setText(fullCommit.author.toString());
+        widget->ui.commitDate->setText(fullCommit.date.toString());
+        widget->ui.commit->setText(fullCommit.subject.toString());
+        widget->ui.commitMessage->setVisible(!fullCommit.body.trimmed().isEmpty());
+        widget->ui.commitMessage->setMarkdown(fullCommit.body);
 
-    auto s = QStringList();
-    for (auto ss : fullCommit.files) {
-        s.push_back(ss.filename.toString());
-    }
-    widget->ui.commits->setModel(new QStringListModel(s));
-    widget->ui.commits->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        auto s = QStringList();
+        for (auto ss : fullCommit.files) {
+            s.push_back(ss.filename.toString());
+        }
+        widget->ui.commits->setModel(new QStringListModel(s));
+        widget->ui.commits->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    });
 }
 
 void GitPlugin::on_gitCommitDoubleClicked(const QModelIndex &mi) {
     auto const *model = static_cast<CommitModel *>(form->listView->model());
     auto const sha1 = model->data(mi, CommitModel::Roles::HashRole).toString();
-    auto const rawCommit = getRawCommit(sha1);
-    auto const fullCommit = FullCommitInfo::parse(rawCommit);
-    auto manager = getManager();
-    CommandArgs args = {
-        {GlobalArguments::FileName, QString("%1.diff").arg(shortGitSha1(sha1))},
-        {GlobalArguments::Content, *fullCommit.raw},
-        {GlobalArguments::ReadOnly, true},
-        {GlobalArguments::FoldTopLevel, true},
-        {GlobalArguments::SourceDirectory, getConfig().getGitLastDir()},
-    };
-    manager->handleCommandAsync(GlobalCommands::DisplayText, args);
+    auto lastDir = getConfig().getGitLastDir();
+    getRawCommit(sha1).then(this, [this, sha1, lastDir](const std::tuple<QString, int> &res) {
+        auto [rawCommit, exitCode] = res;
+        if (exitCode != 0) {
+            return;
+        }
+        auto const fullCommit = FullCommitInfo::parse(rawCommit);
+        auto manager = getManager();
+        CommandArgs args = {
+            {GlobalArguments::FileName, QString("%1.diff").arg(shortGitSha1(sha1))},
+            {GlobalArguments::Content, *fullCommit.raw},
+            {GlobalArguments::ReadOnly, true},
+            {GlobalArguments::FoldTopLevel, true},
+            {GlobalArguments::SourceDirectory, lastDir},
+        };
+        manager->handleCommandAsync(GlobalCommands::DisplayText, args);
+    });
 }
 
 
 // FIXME: this should return a future, and not be "sync" but "async".
-std::tuple<QString, int> GitPlugin::runGit(const QStringList &args) {
-    // qDebug() << "git " << args.join(" ");
-    QProcess p;
-    p.setProcessChannelMode(QProcess::ProcessChannelMode::MergedChannels);
-    p.start(gitBinary, args);
-    p.waitForFinished();
-    return {QString::fromUtf8(p.readAllStandardOutput()), p.exitCode()};
+QFuture<std::tuple<QString, int>> GitPlugin::runGit(const QStringList &args) {
+    return QtConcurrent::run([this, args] {
+        QProcess p;
+        p.setProcessChannelMode(QProcess::ProcessChannelMode::MergedChannels);
+        p.start(gitBinary, args);
+        p.waitForFinished();
+        return std::make_tuple(QString::fromUtf8(p.readAllStandardOutput()), p.exitCode());
+    });
 }
 
-QString GitPlugin::detectRepoRoot(const QString &filePath) {
+QFuture<std::tuple<QString, int>> GitPlugin::detectRepoRoot(const QString &filePath) {
     auto dir = QFileInfo(filePath).absolutePath();
     auto args = QStringList{"-C", dir, "rev-parse", "--show-toplevel"};
-    auto [output, exitCode] = runGit(args);
-    if (exitCode != 0) {
-        qDebug() << "detectRepoRoot failed for file" << filePath << ", with error" << exitCode
-                 << "output" << output << "args:" << args;
-        return {};
-    }
-    return output.trimmed();
+    return runGit(args).then([](const std::tuple<QString, int> &res) {
+        auto [output, exitCode] = res;
+        return std::make_tuple((exitCode == 0) ? output.trimmed() : QString{}, exitCode);
+    });
 }
 
-QString GitPlugin::getDiff(const QString &path) {
+QFuture<std::tuple<QString, int>> GitPlugin::getDiff(const QString &path) {
     auto fi = QFileInfo(path);
-    auto [output, exitCode] = runGit({"-C", fi.absolutePath(), "diff", fi.fileName()});
-    return output;
+    return runGit({"-C", fi.absolutePath(), "diff", fi.fileName()});
 }
 
-QString GitPlugin::getRawCommit(const QString &sha1) {
-    auto [output, exitCode] = runGit({"-C", getConfig().getGitLastDir(), "show", sha1});
-    return output;
+QFuture<std::tuple<QString, int>> GitPlugin::getRawCommit(const QString &sha1) {
+    return runGit({"-C", getConfig().getGitLastDir(), "show", sha1});
 }
 
 void GitPlugin::restoreGitLog() {
@@ -529,22 +577,24 @@ void GitPlugin::restoreGitLog() {
     }
 
     auto args = cmd.split(" ");
-    auto model = new CommitModel(this);
     form->label->setText(cmd);
-    auto [output, exitCode] = runGit(args);
-    model->setContent(output);
-    form->listView->setModel(model);
+    runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
+        auto [output, exitCode] = res;
+        auto model = new CommitModel(this);
+        model->setContent(output);
+        form->listView->setModel(model);
 
-    auto lastActive = getConfig().getGitLastActiveItem();
-    if (!lastActive.isEmpty()) {
-        for (int i = 0; i < model->rowCount(); ++i) {
-            auto index = model->index(i, 0);
-            if (model->data(index, CommitModel::Roles::HashRole).toString() == lastActive) {
-                form->listView->setCurrentIndex(index);
-                QTimer::singleShot(0, this, [this, index] { on_gitCommitClicked(index); });
-                break;
+        auto lastActive = getConfig().getGitLastActiveItem();
+        if (!lastActive.isEmpty()) {
+            for (int i = 0; i < model->rowCount(); ++i) {
+                auto index = model->index(i, 0);
+                if (model->data(index, CommitModel::Roles::HashRole).toString() == lastActive) {
+                    form->listView->setCurrentIndex(index);
+                    QTimer::singleShot(0, this, [this, index] { on_gitCommitClicked(index); });
+                    break;
+                }
             }
         }
-    }
+    });
     QTimer::singleShot(0, this, &GitPlugin::refreshBranchesHandler);
 }

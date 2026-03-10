@@ -60,46 +60,47 @@ void CreateGitBranch::verifyBranchName(const QString &newText) {
 }
 
 void CreateGitBranch::findLocalBranches() {
-    auto [output, exitCode] = plugin->runGit({"branch"});
-    if (output.isEmpty()) {
-        return;
-    }
-    this->availableBranches.clear();
-    for (auto &line : output.split('\n', Qt::SkipEmptyParts)) {
-        auto branchName = line.trimmed();
-        if (branchName.startsWith("* ")) {
-            branchName.remove(0, 2);
+    plugin->runGit({"branch"}).then(this, [this](const std::tuple<QString, int> &res) {
+        auto [output, exitCode] = res;
+        if (output.isEmpty()) {
+            return;
         }
-        this->availableBranches.append(branchName.trimmed());
-    }
-    qDebug() << "Available branches =" << this->availableBranches;
+        this->availableBranches.clear();
+        for (auto &line : output.split('\n', Qt::SkipEmptyParts)) {
+            auto branchName = line.trimmed();
+            if (branchName.startsWith("* ")) {
+                branchName.remove(0, 2);
+            }
+            this->availableBranches.append(branchName.trimmed());
+        }
+        qDebug() << "Available branches =" << this->availableBranches;
+    });
 }
 
 void CreateGitBranch::createBranch() {
     ui->gitLogMessage->clear();
-    auto res = createBranchImplementation(ui->branchNameEdit->text(), false);
-    if (res.isEmpty()) {
-        accept();
-    }
-    ui->gitLogMessage->setText(res);
+    createBranchImplementation(ui->branchNameEdit->text(), false);
 }
 
 void CreateGitBranch::createBranchAndCheckout() {
     ui->gitLogMessage->clear();
-    auto res = createBranchImplementation(ui->branchNameEdit->text(), true);
-    if (res.isEmpty()) {
-        accept();
-    }
-    ui->gitLogMessage->setText(res);
+    createBranchImplementation(ui->branchNameEdit->text(), true);
 }
 
-QString CreateGitBranch::createBranchImplementation(const QString &branchName, bool checkout) {
+void CreateGitBranch::createBranchImplementation(const QString &branchName, bool checkout) {
     QStringList args;
     if (checkout) {
         args = {"checkout", "-b", branchName};
     } else {
         args = {"branch", branchName};
     }
-    auto [gitOutput, exitCode] = plugin->runGit(args);
-    return gitOutput;
+    plugin->runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
+        auto [gitOutput, exitCode] = res;
+        if (gitOutput.isEmpty() && exitCode == 0) {
+            ui->gitLogMessage->clear();
+            accept();
+        } else {
+            ui->gitLogMessage->setText(gitOutput);
+        }
+    });
 }

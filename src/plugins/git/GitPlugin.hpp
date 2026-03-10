@@ -1,6 +1,7 @@
 #pragma once
 
 #include "iplugin.h"
+#include <QFuture>
 #include <tuple>
 
 namespace Ui {
@@ -52,10 +53,10 @@ class GitPlugin : public IPlugin {
     void on_gitCommitDoubleClicked(const QModelIndex &mi);
 
   public slots:
-    std::tuple<QString, int> runGit(const QStringList &args);
-    QString detectRepoRoot(const QString &path);
-    QString getDiff(const QString &path);
-    QString getRawCommit(const QString &sha1);
+    QFuture<std::tuple<QString, int>> runGit(const QStringList &args);
+    QFuture<std::tuple<QString, int>> detectRepoRoot(const QString &path);
+    QFuture<std::tuple<QString, int>> getDiff(const QString &path);
+    QFuture<std::tuple<QString, int>> getRawCommit(const QString &sha1);
     void restoreGitLog();
 
   private:
