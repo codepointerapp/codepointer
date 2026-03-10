@@ -83,7 +83,7 @@ rem %run_directory%    - where this task should be run, as defined in
 rem                      the task's definition in the JSON file
 rem %task%             - the actual code to be run
 
-rem The following meta variables are for qtedit4. Note the prefix:
+rem The following meta variables are for codepointer Note the prefix:
 rem @@ name = @@NAME@@
 rem @@ author = auto generated - by CodePointer
 

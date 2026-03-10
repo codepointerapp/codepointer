@@ -7,7 +7,7 @@
 
   <description>
     <p>
-    qtedit4 is an IDE for Rust, Go, C++ Python and more. Its focus is local development,
+    codepointer is an IDE for Rust, Go, C++ Python and more. Its focus is local development,
     not web development.
     </p>
   </description>
@@ -29,7 +29,7 @@
   </categories>
 
   <provides>
-    <binary>qtedit4</binary>
+    <binary>codepointer</binary>
   </provides>
 
   <launchable type="desktop-id">

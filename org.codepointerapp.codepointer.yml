@@ -1,8 +1,8 @@
-app-id: org.diegoiast.qtedit4
+app-id: org.codepointer.codepointer
 runtime: org.kde.Platform
-runtime-version: '6.8'
+runtime-version: '6.10'
 sdk: org.kde.Sdk
-command: qtedit4
+command: codepointer
 
 finish-args:
   - --share=ipc
@@ -12,7 +12,7 @@ finish-args:
   - --filesystem=host
 
 modules:
-  - name: qtedit4
+  - name: codepointer
     buildsystem: simple
 
     build-commands:
@@ -28,7 +28,7 @@ modules:
     sources:
       # Main application
       # - type: git
-      #   url: https://github.com/diegoiast/qtedit4.git
+      #   url: https://github.com/codepointerapp/codepoointer.git
       #   commit: d09365bc68ebc1b9b543f84b9b21c71c889f1353
       - type: dir
         path: .

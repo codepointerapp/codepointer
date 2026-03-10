@@ -1,6 +1,6 @@
-# Hacking on QtEdit4
+# Hacking on codepointer
 
-So you want to hack on QtEdit4. You have chosen poorly. Here
+So you want to hack on codpointer. You have chosen poorly. Here
 are some of the reasons why you should not be using C++ for such
 project:
 
@@ -31,7 +31,7 @@ project:
       starts naming the icons in a "theme", it actually only works
       on Gnu/Linux distros. On Windows, you need to deploy your own.
       This project bundles its own "breeze" icons from KDE, see
-      [icons-breeze.cmake](https://github.com/diegoiast/qtedit4/blob/main/cmake/icons-breeze.cmake)
+      [icons-breeze.cmake](https://github.com/codepointerapp/codepointer/blob/main/cmake/icons-breeze.cmake)
    1. While Qt has an abstration for "settings", its not enough.
       1. There is no way to enforce a "schema".
       1. There is no "good" way to modify a menu/toolbar. Problems
@@ -96,14 +96,14 @@ If you want to debug the installer:
 
 1. Execute the `build.bat` once, this will build everything.
     1. If it fails to run:
-    1. From Windows terminal, `cd c:\user\epiccoder\Documents\QtEdit4`
+    1. From Windows terminal, `cd c:\user\epiccoder\Documents\codepointer`
     1. Run nanually `call build.bat` . Try to understand what went wrong,
        usually, this means some path inside the batch file is wrong.
     1. The usual problems are the Qt version, tools are installed on different path
        on your setup, or you are missing a tool.
     1. You can modify the file as needed to *your* setup.
 2. From the Windows Start menu find *Inno Setup Compiler* and urn it. When it
-   starts, point it to `setup_script.iss` inside the qtedit4 clone.
+   starts, point it to `setup_script.iss` inside the codepointer clone.
 3. Press F9, to compile the installer and execute it.
 
 
@@ -179,8 +179,8 @@ export CXX=/usr/lib64/ccache/g++
 
 mkdir -p src
 cd src
-git clone https://github.com/diegoiast/qtedit4.git
-cd qtedit4
+git clone https://github.com/codepointerapp/codepointer.git
+cd codepointer
 cmake -S . -B build -G Ninja
 cmake --build build
 ```
@@ -212,7 +212,7 @@ ccache compilers is `CC=/usr/lib64/ccache/gcc` and in Debian it's
 `CC=/usr/lib/ccache/clang-19` for example). Do not make PRs on this
 subject, as this is script is really very intimate with your system
 (unless you can genenalize it to work every where). Output will be called
-`dist/qtedit4-qt680-v0.0.3-x86_64.AppImage` (depending on various definitions
+`dist/codepointer-v0.1.2-x86_64.AppImage` (depending on various definitions
 in the script, the output may slightly vary). Just `chmod` that file and
 you can execute it.
 
@@ -256,7 +256,7 @@ ideally make a PR to the original project.
    until upstream takes your patch.
 
 Alternativelly, there is a script called `get-code.sh` which will pull all cmake
-dependencies into `lib`. You then need to run cmake with QTEDIT4_WORK_OFFLINE
+dependencies into `lib`. You then need to run cmake with CODEPOINTER_WORK_OFFLINE
 defined. Now, you will see the 3rd party sources in lib, as normal git repos.
 
 ## Coding standards
@@ -362,10 +362,10 @@ enough to understand.
 
 #### Changing how plugins/widget work
 
-This should not be done  inside QtEdit4. If you want to modify how this works
+This should not be done  inside codepointer. If you want to modify how this works
 all changes must be done inside qmdilib, look for `PluginDemo`. That is a small
-scale application that behaves like qtedit4. Once you understand that demo,
-you will see that QtEdit4 is just a different set of plugins loaded.
+scale application that behaves like codepointer. Once you understand that demo,
+you will see that codepointer is just a different set of plugins loaded.
 
 ### Example plugin - search
 

@@ -1,4 +1,4 @@
-**Full Changelog**: https://github.com/diegoiast/qtedit4/compare/v0.1.1...v0.1.2
+**Full Changelog**: https://github.com/diegoiast/codepointer/codepointer/v0.1.1...v0.1.2
 
 # March 2026 - release 0.1.2 - Very superstition
 

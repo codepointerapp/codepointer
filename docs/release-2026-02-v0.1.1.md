@@ -1,12 +1,12 @@
-**Full Changelog**: https://github.com/diegoiast/qtedit4/compare/v0.1.0...v0.1.1
+**Full Changelog**: https://github.com/codepointerapp/codepointer/compare/v0.1.0...v0.1.1
 
 # February 2026 - release 0.1.1 - Not on my watch
 
-Application is back again in github. When migrating the application to this 
+Application is back again in github. When migrating the application to this
 new owner - account was disabled. This happened in Christmas, so timing was
 not ideal as most support was in vacation. Things got sorted out eventually.
 
-New months main new feature is a terminal dock (available by pressing 
+New months main new feature is a terminal dock (available by pressing
 `control+t`.  This works on Linux and Windows, using your default shell.
 
 The global search got minor updates as well. Git plugin should be more reliable.
