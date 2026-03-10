@@ -20,7 +20,8 @@ struct GitStatusEntry {
 
 static auto parseGitStatus(QStringView statusOutput) -> QList<GitStatusEntry> {
     auto out = QList<GitStatusEntry>();
-    for (auto line : statusOutput.split('\n', Qt::SkipEmptyParts)) {
+    auto lines = statusOutput.split('\n', Qt::SkipEmptyParts);
+    for (auto line : std::as_const(lines)) {
         if (line.size() < 3) {
             continue;
         }
@@ -560,10 +561,18 @@ void CommitForm::commitImpl() {
     } else {
         ui->commitMessage->clear();
     }
+    updateGitStatus();
 }
 
 void CommitForm::pushImpl() {
+    auto t = ui->pushButton->text();
+    ui->pushButton->setEnabled(false);
+    ui->pushButton->setText(tr("Pushing..."));
     ui->gitOutput->clear();
+
+    // WHY? because I want to update the UI while runGit() blocks
+    QApplication::processEvents();
+
     auto args = QStringList{"-C", repoRoot, "push"};
     auto [output, exitCode] = git->runGit(args);
     ui->gitOutput->setText(output.trimmed());
@@ -571,6 +580,9 @@ void CommitForm::pushImpl() {
         qDebug() << QString("ExitCode=%1, output=%2\ncommand=%3")
                         .arg(exitCode)
                         .arg(output, QString("git ") + args.join(' '));
-        return;
     }
+
+    updateGitStatus();
+    ui->pushButton->setText(t);
+    ui->pushButton->setEnabled(true);
 };

@@ -484,6 +484,8 @@ void GitPlugin::on_gitCommitDoubleClicked(const QModelIndex &mi) {
     manager->handleCommandAsync(GlobalCommands::DisplayText, args);
 }
 
+
+// FIXME: this should return a future, and not be "sync" but "async".
 std::tuple<QString, int> GitPlugin::runGit(const QStringList &args) {
     // qDebug() << "git " << args.join(" ");
     QProcess p;
