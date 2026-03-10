@@ -448,8 +448,8 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         }
         auto score = p->canOpenFile(fullFilePath);
         if (score == 1) {
-            // qDebug() << "Text editor plugin says this is not a text file" << score <<
-            // fullFilePath;
+            auto langInfo = ::Qutepart::chooseLanguage({}, {}, "filename.txt");
+            updateEditor(tr("Not a text file"), highlighter);
             break;
         }
 
