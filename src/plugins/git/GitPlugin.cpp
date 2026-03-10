@@ -228,20 +228,24 @@ void GitPlugin::diffFileHandler() {
         if (exitCode != 0 || diff.isEmpty()) {
             return;
         }
-        detectRepoRoot(filename).then(this, [this, clientName, position, diff](const std::tuple<QString, int> &res2) {
-            auto [repoRoot, exitCode2] = res2;
-            if (exitCode2 != 0 || repoRoot.isEmpty()) {
-                return;
-            }
-            CommandArgs args = {
-                {GlobalArguments::FileName, QString("%1.diff").arg(clientName)},
-                {GlobalArguments::Content, diff},
-                {GlobalArguments::ReadOnly, true},
-                {GlobalArguments::Position, position},
-                {GlobalArguments::SourceDirectory, repoRoot},
-            };
-            getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
-        });
+
+        // Fix compilation under (some?) clang
+        auto diffStr = diff;
+        detectRepoRoot(filename).then(
+            this, [this, clientName, position, diffStr](const std::tuple<QString, int> &res2) {
+                auto [repoRoot, exitCode2] = res2;
+                if (exitCode2 != 0 || repoRoot.isEmpty()) {
+                    return;
+                }
+                CommandArgs args = {
+                    {GlobalArguments::FileName, QString("%1.diff").arg(clientName)},
+                    {GlobalArguments::Content, diffStr},
+                    {GlobalArguments::ReadOnly, true},
+                    {GlobalArguments::Position, position},
+                    {GlobalArguments::SourceDirectory, repoRoot},
+                };
+                getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
+            });
     });
 }
 
@@ -254,7 +258,7 @@ void GitPlugin::revertFileHandler() {
     auto filename = client->mdiClientFileName();
     auto clientName = client->mdiClientName;
 
-    getDiff(filename).then(this, [this, filename, client, clientName](const std::tuple<QString, int> &res) {
+    getDiff(filename).then(this, [this, filename, clientName](const std::tuple<QString, int> &res) {
         auto [diff, exitCode] = res;
         if (exitCode != 0 || diff.isEmpty()) {
             return;
@@ -271,10 +275,10 @@ void GitPlugin::revertFileHandler() {
         }
         auto fi = QFileInfo(filename);
         auto args = QStringList{"-C", fi.absolutePath(), "restore", fi.fileName()};
-        runGit(args).then(this, [this, client, filename](const std::tuple<QString, int> &res2) {
-            if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
-                editor->loadFile(filename);
-                editor->loadContent(false);
+        runGit(args).then(this, [filename](const std::tuple<QString, int> &res2) {
+            auto [output, exitCode] = res2;
+            if (exitCode != 0) {
+                qDebug() << "Failed restoring" << exitCode << output;
             }
         });
     });
@@ -411,22 +415,23 @@ void GitPlugin::commitDisplayHandler(const QModelIndex &mi) {
     auto sha1 = widget->currentSha1;
     auto lastDir = getConfig().getGitLastDir();
 
-    runGit({"-C", lastDir, "show", sha1, "--", filename}).then(this, [this, manager, filename, sha1, lastDir](const std::tuple<QString, int> &res) {
-        auto [diff, exitCode] = res;
-        if (exitCode != 0) {
-            // TODO display this error
-            return;
-        }
-        auto shortSha1 = shortGitSha1(sha1);
-        auto displayName = QString("%1-%2.diff").arg(shortSha1, filename);
-        CommandArgs args = {
-            {GlobalArguments::FileName, displayName},
-            {GlobalArguments::Content, diff},
-            {GlobalArguments::ReadOnly, true},
-            {GlobalArguments::SourceDirectory, lastDir},
-        };
-        manager->handleCommandAsync(GlobalCommands::DisplayText, args);
-    });
+    runGit({"-C", lastDir, "show", sha1, "--", filename})
+        .then(this, [manager, filename, sha1, lastDir](const std::tuple<QString, int> &res) {
+            auto [diff, exitCode] = res;
+            if (exitCode != 0) {
+                // TODO display this error
+                return;
+            }
+            auto shortSha1 = shortGitSha1(sha1);
+            auto displayName = QString("%1-%2.diff").arg(shortSha1, filename);
+            CommandArgs args = {
+                {GlobalArguments::FileName, displayName},
+                {GlobalArguments::Content, diff},
+                {GlobalArguments::ReadOnly, true},
+                {GlobalArguments::SourceDirectory, lastDir},
+            };
+            manager->handleCommandAsync(GlobalCommands::DisplayText, args);
+        });
 }
 
 void GitPlugin::logHandler(GitLog log, const QString &filename) {
