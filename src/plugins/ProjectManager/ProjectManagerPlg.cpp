@@ -1276,7 +1276,7 @@ void ProjectManagerPlugin::projectFile_modified(const QString &path) {
             return;
         }
         *inMemoryConfig = *onDiskConfig;
-    } else {
+    } else if (!QFile::exists(path)) {
         if (inMemoryConfig) {
             const auto sourceDir = inMemoryConfig->sourceDir;
             configWatcher.removePath(path);
@@ -1285,6 +1285,10 @@ void ProjectManagerPlugin::projectFile_modified(const QString &path) {
         } else {
             qDebug() << "Config file" << path << "modified/deleted, but was not tracked in memory.";
         }
+    } else {
+        qDebug("Config file %s modified but not parsable (size %lld). Ignoring.",
+               path.toStdString().data(), QFileInfo(path).size());
+        return;
     }
     newProjectSelected(gui->projectComboBox->currentIndex());
 
