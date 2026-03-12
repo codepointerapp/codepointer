@@ -443,9 +443,12 @@ void ProjectSearch::searchButton_clicked() {
 
                 if (totalFound != 0) {
                     // Remember - this is a worker thread, we cannot directly modify the UI
-                    QMetaObject::invokeMethod(this, [this, totalFound]() {
-                        ui->message->setText(QString("Found %1 times").arg(totalFound));
-                    }, Qt::QueuedConnection);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, totalFound]() {
+                            ui->message->setText(QString("Found %1 times").arg(totalFound));
+                        },
+                        Qt::QueuedConnection);
                 }
             } else {
                 delete foundData;

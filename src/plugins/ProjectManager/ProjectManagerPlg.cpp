@@ -840,7 +840,7 @@ void ProjectManagerPlugin::saveConfig(QSettings &settings) {
     IPlugin::saveConfig(settings);
 }
 
-int ProjectManagerPlugin::canHandleCommand(const QString &command, const CommandArgs &) const {
+int ProjectManagerPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &) const {
     if (command == GlobalCommands::LoadedFile) {
         return true;
     }
@@ -891,7 +891,8 @@ auto verifyRunnable(const QString &fileName) -> bool {
     return false;
 }
 
-CommandArgs ProjectManagerPlugin::handleCommand(const QString &command, const CommandArgs &args) {
+QFuture<CommandArgs> ProjectManagerPlugin::handleCommandAsync(const QString &command,
+                                                              const CommandArgs &args) {
     if (command == GlobalCommands::LoadedFile) {
         auto client = args.value(GlobalArguments::Client).value<qmdiClient *>();
         auto filename = args[GlobalArguments::FileName].toString();

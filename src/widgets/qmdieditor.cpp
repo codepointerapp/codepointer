@@ -43,6 +43,7 @@
 #include <QToolBar>
 #include <QToolTip>
 #include <QTreeView>
+#include <QtConcurrent>
 
 #include <pluginmanager.h>
 #include <qmdiserver.h>
@@ -63,30 +64,32 @@
 #define PLATFORM_LINE_ENDING "\n"
 #endif
 
-auto static getCorrespondingFile(const QString &fileName) -> QString {
-    auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
-    auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
+auto static getCorrespondingFile(const QString &fileName) -> QFuture<QString> {
+    return QtConcurrent::run([fileName]() {
+        auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
+        auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
 
-    auto fileInfo = QFileInfo(fileName);
-    auto baseName = fileInfo.baseName();
-    auto dirPath = fileInfo.absolutePath();
+        auto fileInfo = QFileInfo(fileName);
+        auto baseName = fileInfo.baseName();
+        auto dirPath = fileInfo.absolutePath();
 
-    if (cExtensions.contains(fileInfo.suffix(), Qt::CaseInsensitive)) {
-        for (const auto &headerExt : headerExtensions) {
-            auto headerFileName = dirPath + QDir::separator() + baseName + "." + headerExt;
-            if (QFileInfo::exists(headerFileName)) {
-                return headerFileName;
+        if (cExtensions.contains(fileInfo.suffix(), Qt::CaseInsensitive)) {
+            for (const auto &headerExt : headerExtensions) {
+                auto headerFileName = dirPath + QDir::separator() + baseName + "." + headerExt;
+                if (QFileInfo::exists(headerFileName)) {
+                    return headerFileName;
+                }
+            }
+        } else if (headerExtensions.contains(fileInfo.suffix(), Qt::CaseInsensitive)) {
+            for (const auto &cExt : cExtensions) {
+                auto cFileName = dirPath + QDir::separator() + baseName + "." + cExt;
+                if (QFileInfo::exists(cFileName)) {
+                    return cFileName;
+                }
             }
         }
-    } else if (headerExtensions.contains(fileInfo.suffix(), Qt::CaseInsensitive)) {
-        for (const auto &cExt : cExtensions) {
-            auto cFileName = dirPath + QDir::separator() + baseName + "." + cExt;
-            if (QFileInfo::exists(cFileName)) {
-                return cFileName;
-            }
-        }
-    }
-    return {};
+        return QString{};
+    });
 }
 
 auto static runningUnderGnome() -> bool {
@@ -559,7 +562,7 @@ void qmdiEditor::on_client_unmerged(qmdiHost *host) {
 
     auto pluginManager = dynamic_cast<PluginManager *>(host);
     // clang-format off
-    auto result = pluginManager->handleCommand(GlobalCommands::ClosedFile, {
+    auto result = pluginManager->handleCommandAsync(GlobalCommands::ClosedFile, {
         {GlobalArguments::FileName, mdiClientFileName()},
         {GlobalArguments::Client, QVariant::fromValue(this)},
     });
@@ -616,16 +619,16 @@ void qmdiEditor::setupActions() {
     actionCut->setShortcut(QKeySequence::Cut);
     actionPaste->setShortcut(QKeySequence::Paste);
     actionFind->setShortcut(QKeySequence::Find);
-    
-    // Gnome uses control+g for find next, which steals our git shortcuts 
+
+    // Gnome uses control+g for find next, which steals our git shortcuts
     if (!runningUnderGnome()) {
         actionFindNext->setShortcut(QKeySequence::FindNext);
     }
     // this is usually "control+r, which we use for running a target
     // actionReplace->setShortcut(QKeySequence::Replace);
     actionReplace->setShortcut(QKeySequence(Qt::ControlModifier | Qt::Key_H));
-    
-    actionFindPrev->setShortcut(QKeySequence::FindPrevious);    
+
+    actionFindPrev->setShortcut(QKeySequence::FindPrevious);
     actionGotoLine->setShortcut(QKeySequence(Qt::ControlModifier | Qt::Key_L));
     actionCapitalize->setShortcut(QKeySequence(Qt::ControlModifier | Qt::Key_U));
     actionLowerCase->setShortcut(QKeySequence(Qt::ControlModifier | Qt::ShiftModifier | Qt::Key_U));
@@ -1268,7 +1271,7 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
     fileSystemWatcher->addPath(newFileName);
 
     auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
-    pluginManager->handleCommand(
+    pluginManager->handleCommandAsync(
         GlobalCommands::SavedFile,
         {
             {GlobalArguments::FileName, mdiClientFileName()},
@@ -1362,14 +1365,15 @@ void qmdiEditor::fileMessage_clicked(const QString &s) {
 }
 
 void qmdiEditor::toggleHeaderImpl() {
-    auto otherFile = getCorrespondingFile(fileName);
-    otherFile = QDir::toNativeSeparators(otherFile);
-    if (!otherFile.isEmpty()) {
-        auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
-        if (pluginManager) {
-            pluginManager->openFile(otherFile);
+    getCorrespondingFile(fileName).then(this, [this](const QString &otherFile) {
+        auto nativeFile = QDir::toNativeSeparators(otherFile);
+        if (!nativeFile.isEmpty()) {
+            auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+            if (pluginManager) {
+                pluginManager->openFile(nativeFile);
+            }
         }
-    }
+    });
 }
 
 void qmdiEditor::loadContent(bool useBackup) {
@@ -1485,7 +1489,7 @@ void qmdiEditor::loadContent(bool useBackup) {
     auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     pluginManager->openFile("loaded:" + fileName);
     // clang-format off
-    /*auto result =*/ pluginManager->handleCommand(GlobalCommands::LoadedFile, {
+    auto result = pluginManager->handleCommandAsync(GlobalCommands::LoadedFile, {
         {GlobalArguments::FileName, mdiClientFileName()},
         {GlobalArguments::Client, QVariant::fromValue(static_cast<qmdiClient*>(this)) }
     });
