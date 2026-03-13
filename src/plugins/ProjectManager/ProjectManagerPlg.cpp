@@ -850,6 +850,9 @@ int ProjectManagerPlugin::canHandleAsyncCommand(const QString &command, const Co
     if (command == GlobalCommands::ClosedFile) {
         return true;
     }
+    if (command == GlobalCommands::FindMatchingFile) {
+        return true;
+    }
     return false;
 }
 
@@ -891,6 +894,9 @@ auto verifyRunnable(const QString &fileName) -> bool {
     return false;
 }
 
+static const QStringList cExtensions = {"c", "cpp", "cxx", "cc", "c++"};
+static const QStringList headerExtensions = {"h", "hpp", "hh"};
+
 QFuture<CommandArgs> ProjectManagerPlugin::handleCommandAsync(const QString &command,
                                                               const CommandArgs &args) {
     if (command == GlobalCommands::LoadedFile) {
@@ -919,6 +925,33 @@ QFuture<CommandArgs> ProjectManagerPlugin::handleCommandAsync(const QString &com
             }
         }
         return {};
+    }
+    if (command == GlobalCommands::FindMatchingFile) {
+        auto filename = args[GlobalArguments::FileName].toString();
+        auto allFiles = gui->filesList->getAllFiles();
+        auto fileInfo = QFileInfo(filename);
+        auto baseName = fileInfo.baseName();
+        auto suffix = fileInfo.suffix().toLower();
+        auto targetExtensions = QStringList();
+
+        if (cExtensions.contains(suffix)) {
+            targetExtensions = headerExtensions;
+        } else if (headerExtensions.contains(suffix)) {
+            targetExtensions = cExtensions;
+        }
+
+        if (!targetExtensions.isEmpty()) {
+            for (const auto &file : allFiles) {
+                auto fi = QFileInfo(file);
+                if (fi.baseName() == baseName && targetExtensions.contains(fi.suffix().toLower())) {
+                    auto fullFileName =
+                        gui->filesList->getDir() + QDir::separator() + fi.filePath();
+                    fullFileName = QDir::cleanPath(fullFileName);
+                    return QtFuture::makeReadyValueFuture(
+                        CommandArgs{{GlobalArguments::FileName, fullFileName}});
+                }
+            }
+        }
     }
     return {};
 }

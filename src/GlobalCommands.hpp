@@ -42,6 +42,9 @@ inline constexpr const char *KeywordTooltip = "KeywordTooltip";
 // Open a new editor, with the attached document
 inline constexpr const char *DisplayText = "DisplayText";
 
+// Used when pressing F4 on the editor
+inline constexpr const char *FindMatchingFile = "FindMatchingFile";
+
 } // namespace GlobalCommands
 
 namespace GlobalArguments {

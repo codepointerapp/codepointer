@@ -64,32 +64,41 @@
 #define PLATFORM_LINE_ENDING "\n"
 #endif
 
-auto static getCorrespondingFile(const QString &fileName) -> QFuture<QString> {
-    return QtConcurrent::run([fileName]() {
-        auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
-        auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
+auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
+auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
 
-        auto fileInfo = QFileInfo(fileName);
-        auto baseName = fileInfo.baseName();
-        auto dirPath = fileInfo.absolutePath();
+auto static getCorrespondingFile(PluginManager *manager, const QString &fileName)
+    -> QFuture<QString> {
 
-        if (cExtensions.contains(fileInfo.suffix(), Qt::CaseInsensitive)) {
-            for (const auto &headerExt : headerExtensions) {
-                auto headerFileName = dirPath + QDir::separator() + baseName + "." + headerExt;
-                if (QFileInfo::exists(headerFileName)) {
-                    return headerFileName;
-                }
-            }
-        } else if (headerExtensions.contains(fileInfo.suffix(), Qt::CaseInsensitive)) {
-            for (const auto &cExt : cExtensions) {
-                auto cFileName = dirPath + QDir::separator() + baseName + "." + cExt;
-                if (QFileInfo::exists(cFileName)) {
-                    return cFileName;
-                }
+    // First - choose easy solution, file aside the original one
+    auto fileInfo = QFileInfo(fileName);
+    auto baseName = fileInfo.baseName();
+    auto dirPath = fileInfo.absolutePath();
+
+    if (cExtensions.contains(fileInfo.suffix(), Qt::CaseInsensitive)) {
+        for (const auto &headerExt : headerExtensions) {
+            auto headerFileName = dirPath + QDir::separator() + baseName + "." + headerExt;
+            if (QFileInfo::exists(headerFileName)) {
+                return QtFuture::makeReadyValueFuture(headerFileName);
             }
         }
-        return QString{};
-    });
+    } else if (headerExtensions.contains(fileInfo.suffix(), Qt::CaseInsensitive)) {
+        for (const auto &cExt : cExtensions) {
+            auto cFileName = dirPath + QDir::separator() + baseName + "." + cExt;
+            if (QFileInfo::exists(cFileName)) {
+                return QtFuture::makeReadyValueFuture(cFileName);
+            }
+        }
+    }
+
+    // Did not work, lets ask someone - find me the corresponding file
+    // This should be the project manager replying to this, from currently
+    // active project. Or maybe from all active projects.
+    return manager->handleCommandAsync(GlobalCommands::FindMatchingFile,
+                                       {
+                                           {GlobalArguments::FileName, fileName},
+                                       })
+        .then([](const CommandArgs &args) { return args.value(GlobalArguments::FileName).toString(); });
 }
 
 auto static runningUnderGnome() -> bool {
@@ -1365,7 +1374,8 @@ void qmdiEditor::fileMessage_clicked(const QString &s) {
 }
 
 void qmdiEditor::toggleHeaderImpl() {
-    getCorrespondingFile(fileName).then(this, [this](const QString &otherFile) {
+    auto manager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    getCorrespondingFile(manager, fileName).then(this, [this](const QString &otherFile) {
         auto nativeFile = QDir::toNativeSeparators(otherFile);
         if (!nativeFile.isEmpty()) {
             auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
