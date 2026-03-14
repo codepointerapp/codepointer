@@ -108,6 +108,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void transformBlockCase();
     void toggleHeaderImpl();
     void loadContent(bool useBackup);
+    void reformatContent();
 
     void chooseHighliter(const QString &newText);
     void chooseIndenter(const QAction *action);

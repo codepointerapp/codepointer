@@ -94,11 +94,14 @@ auto static getCorrespondingFile(PluginManager *manager, const QString &fileName
     // Did not work, lets ask someone - find me the corresponding file
     // This should be the project manager replying to this, from currently
     // active project. Or maybe from all active projects.
-    return manager->handleCommandAsync(GlobalCommands::FindMatchingFile,
-                                       {
-                                           {GlobalArguments::FileName, fileName},
-                                       })
-        .then([](const CommandArgs &args) { return args.value(GlobalArguments::FileName).toString(); });
+    return manager
+        ->handleCommandAsync(GlobalCommands::FindMatchingFile,
+                             {
+                                 {GlobalArguments::FileName, fileName},
+                             })
+        .then([](const CommandArgs &args) {
+            return args.value(GlobalArguments::FileName).toString();
+        });
 }
 
 auto static runningUnderGnome() -> bool {
@@ -266,6 +269,9 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
 
     textEditor->setLineWrapMode(QPlainTextEdit::LineWrapMode::NoWrap);
 
+    auto reformatCodeAction = new QAction(tr("Reformat code"), this);
+    connect(reformatCodeAction, &QAction::triggered, this, &qmdiEditor::reformatContent);
+
     banner = new QWidget(this);
     banner->hide();
     banner->setObjectName("banner");
@@ -297,6 +303,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     textOperationsMenu->addAction(textEditor->moveLineDownAction());
     textOperationsMenu->addAction(textEditor->toggleCommentAction());
     textOperationsMenu->addSeparator();
+    textOperationsMenu->addAction(reformatCodeAction);
     textOperationsMenu->addAction(actionToggleHeader);
 
     bookmarksMenu = new QMenu(tr("Bookmarks"), this);
@@ -328,6 +335,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     this->menus["&Edit"]->addMenu(foldingMenu);
     this->menus["&Edit"]->addAction(actionTogglePreview);
     this->menus["&Edit"]->addAction(textEditor->findMatchingBracketAction());
+    this->menus["&Edit"]->addAction(reformatCodeAction);
 
     this->menus["&Search"]->addAction(actionFind);
     this->menus["&Search"]->addAction(actionFindNext);
@@ -1197,6 +1205,8 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
     setModificationsLookupEnabled(false);
     hideBannerMessage();
 
+    reformatContent();
+
     auto file = QFile(newFileName);
     if (!file.open(QIODevice::WriteOnly)) {
         qDebug() << "Could not open file for saving" << newFileName;
@@ -1498,16 +1508,31 @@ void qmdiEditor::loadContent(bool useBackup) {
 
     auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     pluginManager->openFile("loaded:" + fileName);
-    // clang-format off
-    auto result = pluginManager->handleCommandAsync(GlobalCommands::LoadedFile, {
-        {GlobalArguments::FileName, mdiClientFileName()},
-        {GlobalArguments::Client, QVariant::fromValue(static_cast<qmdiClient*>(this)) }
-    });
-    // clang-format
+    auto result = pluginManager->handleCommandAsync(
+        GlobalCommands::LoadedFile,
+        {
+            {GlobalArguments::FileName, mdiClientFileName()},
+            {GlobalArguments::Client, QVariant::fromValue(static_cast<qmdiClient *>(this))},
+        });
 
     updateClientName();
     setState(savedState);
     updateInternalMappings(savedState[StateConstants::BASE_DIR].toString());
+}
+
+void qmdiEditor::reformatContent() {
+    auto manager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    auto args = CommandArgs{
+        {GlobalArguments::FileName, mdiClientFileName()},
+        {GlobalArguments::Content, textEditor->toPlainText()},
+    };
+    manager->handleCommandAsync(GlobalCommands::ReformatCode, args)
+        .then(this, [this](CommandArgs args) {
+            // TODO
+            auto c = args[GlobalArguments::Content].toString();
+            // qDebug() << c;
+            textEditor->setPlainText(c);
+        });
 }
 
 void qmdiEditor::chooseHighliter(const QString &newText) {
@@ -1537,15 +1562,16 @@ void qmdiEditor::findText(const QString &text) {
     textEditor->setTextCursor(c);
 }
 
-void qmdiEditor::updateInternalMappings(const QString& baseDir) {
+void qmdiEditor::updateInternalMappings(const QString &baseDir) {
     diffMetadata.mappings.clear();
     diffMetadata.baseDir = baseDir;
 
-    if (!mdiClientName.endsWith(".diff",Qt::CaseInsensitive) && mdiClientName.endsWith(".patch", Qt::CaseInsensitive)) {
+    if (!mdiClientName.endsWith(".diff", Qt::CaseInsensitive) &&
+        mdiClientName.endsWith(".patch", Qt::CaseInsensitive)) {
         return;
     }
 
-    auto extractFileName = [](QString& line) -> QString {
+    auto extractFileName = [](QString &line) -> QString {
         auto pos = line.indexOf(' ');
         if (pos < 0) {
             return {};
@@ -1556,14 +1582,13 @@ void qmdiEditor::updateInternalMappings(const QString& baseDir) {
             return {};
         }
         // Strip leading a/ or b/
-        if (path.size() >= 2 &&(path[0] == 'a' || path[0] == 'b') &&path[1] == '/') {
-            path.remove(0,2);
+        if (path.size() >= 2 && (path[0] == 'a' || path[0] == 'b') && path[1] == '/') {
+            path.remove(0, 2);
         }
         return path;
     };
 
-    auto parse_hunk_header = [](const QString& line) -> std::pair<int, int>
-    {
+    auto parse_hunk_header = [](const QString &line) -> std::pair<int, int> {
         // Example: "@@ -12,7 +34,9 @@"
         auto old_start = 0;
         auto new_start = 0;
@@ -1619,14 +1644,14 @@ void qmdiEditor::updateInternalMappings(const QString& baseDir) {
 
         auto i = line.lineNumber();
         if (text.startsWith(' ')) {
-            diffMetadata.mappings[i] = {baseDir + "/" + current_file,old_line,new_line};
+            diffMetadata.mappings[i] = {baseDir + "/" + current_file, old_line, new_line};
             old_line += 1;
             new_line += 1;
         } else if (text.startsWith('-')) {
-            diffMetadata.mappings[i] = {baseDir + "/" + current_file,old_line,-1};
+            diffMetadata.mappings[i] = {baseDir + "/" + current_file, old_line, -1};
             old_line += 1;
         } else if (text.startsWith('+')) {
-            diffMetadata.mappings[i] = {baseDir + "/" + current_file,-1,new_line};
+            diffMetadata.mappings[i] = {baseDir + "/" + current_file, -1, new_line};
             new_line += 1;
         }
     }

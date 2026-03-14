@@ -1,0 +1,61 @@
+[
+  {
+    "name": "clang-format",
+    "exts": ["c","h","cpp","hpp","cc","cxx"],
+    "binary": "clang-format",
+    "stdin": true,
+    "stdout": true,
+    "requires_filepath": true,
+    "args": [
+      "-style=file",
+      "-fallback-style=none",
+      "--assume-filename",
+      "$filepath"
+    ]
+  },
+  {
+    "name": "prettier",
+    "exts": ["js","jsx","ts","tsx","json","css","html"],
+    "binary": "prettier",
+    "stdin": true,
+    "stdout": true,
+    "requires_filepath": true,
+    "args": [
+      "--stdin-filepath",
+      "$filepath"
+    ]
+  },
+  {
+    "name": "black",
+    "exts": ["py"],
+    "binary": "black",
+    "stdin": true,
+    "stdout": true,
+    "args": ["-"]
+  },
+  {
+    "name": "gofmt",
+    "exts": ["go"],
+    "binary": "gofmt",
+    "stdin": true,
+    "stdout": true,
+    "args": []
+  },
+  {
+    "name": "rustfmt",
+    "exts": ["rs"],
+    "binary": "rustfmt",
+    "stdin": true,
+    "stdout": true,
+    "args": ["--emit","stdout"]
+  },
+  {
+    "name": "dotnet-format",
+    "exts": ["cs"],
+    "binary": "dotnet",
+    "stdin": false,
+    "stdout": false,
+    "tempfile": true,
+    "args": ["format","$filepath"]
+  }
+]

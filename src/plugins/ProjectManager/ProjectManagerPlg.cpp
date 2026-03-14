@@ -909,7 +909,7 @@ QFuture<CommandArgs> ProjectManagerPlugin::handleCommandAsync(const QString &com
         auto client = args.value(GlobalArguments::Client).value<qmdiClient *>();
         auto filename = args[GlobalArguments::FileName].toString();
         fixClientsMenu(client, filename);
-        saveFileExternalActions(client);
+        // saveFileExternalActions(client);
         return {};
     }
     if (command == GlobalCommands::ClosedFile) {

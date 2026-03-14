@@ -18,6 +18,7 @@
 
 #include "pluginmanager.h"
 #include "plugins/CTags/CTagsPlugin.hpp"
+#include "plugins/CodeFormat/CodeFormat.hpp"
 #include "plugins/ProjectManager/ProjectManagerPlg.h"
 #include "plugins/SplitTabsPlugin/SplitTabsPlugin.hpp"
 #include "plugins/Terminal/TerminalPlugin.hpp"
@@ -132,6 +133,7 @@ int main(int argc, char *argv[]) {
     pluginManager.addPlugin(split);
     pluginManager.addPlugin(textEditorPlugin);
     pluginManager.addPlugin(helpPlugin);
+    pluginManager.addPlugin(new CodeFormatPlugin);
     pluginManager.addPlugin(new CTagsPlugin);
     pluginManager.addPlugin(new FileSystemBrowserPlugin);
     pluginManager.addPlugin(new ProjectManagerPlugin);

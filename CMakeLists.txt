@@ -68,8 +68,7 @@ else()
     download_breeze_icons(6.4.0)
 endif()
 
-find_package(Qt6 COMPONENTS Widgets PrintSupport Network Svg Xml)
-find_package(Qt6 REQUIRED COMPONENTS Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -125,6 +124,8 @@ set(codepointer_sources
     src/widgets/AutoShrinkLabel.cpp
     src/widgets/AutoShrinkLabel.hpp
 
+    src/plugins/CodeFormat/CodeFormat.cpp
+    src/plugins/CodeFormat/CodeFormat.hpp
     src/plugins/texteditor/texteditor_plg.cpp
     src/plugins/texteditor/texteditor_plg.h
     src/plugins/texteditor/thememanager.cpp
@@ -187,10 +188,13 @@ set(codepointer_sources
 
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.svg" DESTINATION "${CMAKE_BINARY_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.ico" DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}")
+
 
 configure_file(codepointer.qrc.in ${CMAKE_BINARY_DIR}/codepointer.qrc)
 configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop)
-add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc)
+add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
+    indenters.json)
 
 if (!MINGW)
     set_property(TARGET codepointerPROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)

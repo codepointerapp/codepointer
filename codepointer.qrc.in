@@ -2,6 +2,7 @@
     <qresource prefix="/">
         <file>@CODEPOINTER_ICON@.svg</file>
         <file>@CODEPOINTER_ICON@.ico</file>
+        <file>indenters.json</file>
     </qresource>
 </RCC>
 

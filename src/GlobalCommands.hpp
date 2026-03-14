@@ -45,6 +45,9 @@ inline constexpr const char *DisplayText = "DisplayText";
 // Used when pressing F4 on the editor
 inline constexpr const char *FindMatchingFile = "FindMatchingFile";
 
+// Used when pressing F4 on the editor
+inline constexpr const char *ReformatCode = "ReformatCode";
+
 } // namespace GlobalCommands
 
 namespace GlobalArguments {
