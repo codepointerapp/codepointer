@@ -15,8 +15,8 @@ struct Formatter {
     QStringList args;
     QStringList extensions;
 
-    bool stdin;
-    bool stdout;
+    bool processStdin;
+    bool processStdout;
     bool requiresFilepath;
     bool tempfile;
 

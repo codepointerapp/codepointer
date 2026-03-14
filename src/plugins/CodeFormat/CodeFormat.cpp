@@ -16,8 +16,8 @@ Formatter *Formatter::fromJson(const QJsonObject &obj) {
 
     f->name = m.value("name").toString();
     f->binary = m.value("binary").toString();
-    f->stdin = m.value("stdin", false).toBool();
-    f->stdout = m.value("stdout", false).toBool();
+    f->processStdin = m.value("stdin", false).toBool();
+    f->processStdout = m.value("stdout", false).toBool();
     f->requiresFilepath = m.value("requires_filepath", false).toBool();
     f->tempfile = m.value("tempfile", false).toBool();
     f->extensions = m.value("exts").toStringList();
@@ -48,14 +48,14 @@ bool FormatterRegistry::loadFromFile(const QString &jsonFile) {
     auto arr = doc.array();
     m_indenters.clear();
     m_extIndex.clear();
-    for (const auto &v : arr) {
+    for (auto &v : std::as_const(arr)) {
         if (!v.isObject()) {
             continue;
         }
 
         auto t = Formatter::fromJson(v.toObject());
         m_indenters.append(t);
-        for (auto const &ext : t->extensions) {
+        for (auto &ext : std::as_const(t->extensions)) {
             m_extIndex.insert(ext.toLower(), t);
         }
     }
@@ -67,7 +67,8 @@ const Formatter *FormatterRegistry::getForFile(const QString &filePath) const {
     auto info = QFileInfo(filePath);
     auto ext = info.suffix().toLower();
     if (!m_extIndex.contains(ext)) {
-        qDebug() << "FormatterRegistry: no indenter found for suffix" << ext << "of" << filePath << "m_extIndex keys:" << m_extIndex.keys();
+        qDebug() << "FormatterRegistry: no indenter found for suffix" << ext << "of" << filePath
+                 << "m_extIndex keys:" << m_extIndex.keys();
         return nullptr;
     }
     auto lll = m_extIndex[ext];
@@ -120,6 +121,7 @@ void CodeFormatPlugin::on_client_merged(qmdiHost *host) {
     w->connect(w, &QFileSystemWatcher::fileChanged, this, [this]() {
         auto dataDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
         auto fullFileName = dataDir + QDir::separator() + "indenters.json";
+        fullFileName = QDir::toNativeSeparators(fullFileName);
 
         qDebug() << "Reloading" << fullFileName;
         userRegistry.clear();
@@ -168,7 +170,7 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
     for (auto &p : patterns) {
         p = p.trimmed();
     }
-    for (const auto &pattern : patterns) {
+    for (const auto &pattern : std::as_const(patterns)) {
         auto regex = QRegularExpression(QRegularExpression::wildcardToRegularExpression(pattern),
                                         QRegularExpression::CaseInsensitiveOption);
         if (regex.match(baseName).hasMatch()) {
@@ -211,7 +213,7 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
         result[GlobalArguments::ExitCode] = 0;
 
         args.reserve(indenter->args.size());
-        for (auto arg : indenter->args) {
+        for (const auto &arg : indenter->args) {
             QString a = arg;
             args.append(a.replace("$filepath", fileName));
         }
@@ -237,7 +239,7 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
             result[GlobalArguments::ErrorMessage] = tr("Failed running %1").arg(fullCommand);
             return result;
         }
-        if (indenter->stdin) {
+        if (indenter->processStdin) {
             proc.write(input.toUtf8());
             proc.closeWriteChannel();
         }
@@ -249,15 +251,15 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
         }
 
         if (proc.exitCode() != 0) {
-            auto stderr = proc.readAllStandardError();
+            auto processStderr = proc.readAllStandardError();
             qDebug() << "CodeFormatPlugin:" << indenter->binary << "code:" << proc.exitCode();
-            qDebug() << "CodeFormatPlugin stderr:" << stderr;
+            qDebug() << "CodeFormatPlugin stderr:" << processStderr;
             result[GlobalArguments::ExitCode] = proc.exitCode();
-            result[GlobalArguments::ErrorMessage] = stderr;
+            result[GlobalArguments::ErrorMessage] = processStderr;
             return result;
         }
 
-        if (indenter->stdout) {
+        if (indenter->processStdout) {
             auto out = proc.readAllStandardOutput();
             if (!out.isEmpty()) {
                 result[GlobalArguments::Content] = QString::fromUtf8(out);
@@ -266,7 +268,7 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
                 qDebug() << "CodeFormatPlugin: stdout is empty for" << indenter->binary;
             }
         }
-        if (!indenter->stdout && indenter->tempfile) {
+        if (!indenter->processStdout && indenter->tempfile) {
             auto file = QFile(fileName);
             if (file.open(QIODevice::ReadOnly)) {
                 result[GlobalArguments::Content] = QString::fromUtf8(file.readAll());

@@ -86,8 +86,8 @@ static auto regenerateKits(const std::filesystem::path &directoryPath) -> void {
                                   KitDetector::platformUnix);
 }
 
-static auto getCommandInterpreter(const QString &externalCommand)
-    -> std::tuple<QString, QStringList> {
+static auto
+getCommandInterpreter(const QString &externalCommand) -> std::tuple<QString, QStringList> {
     QString interpreter;
     QStringList command;
 
@@ -155,7 +155,7 @@ auto static setupPty(QProcess &process, int &masterFd) -> bool {
 }
 
 void ProjectBuildModel::addConfig(std::shared_ptr<ProjectBuildConfig> config) {
-    int row = configs.size();
+    auto row = configs.size();
     beginInsertRows(QModelIndex(), row, row);
     configs.push_back(config);
     endInsertRows();
@@ -788,7 +788,7 @@ void ProjectManagerPlugin::loadConfig(QSettings &settings) {
     auto dirsToLoad = getConfig().getOpenDirs();
 
     gui->projectComboBox->blockSignals(true);
-    for (auto const &d : dirsToLoad) {
+    for (auto const &d : std::as_const(dirsToLoad)) {
         addProjectFromDir(d);
     }
     gui->projectComboBox->blockSignals(false);

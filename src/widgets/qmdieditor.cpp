@@ -1611,17 +1611,17 @@ QFuture<void> qmdiEditor::reformatContent() {
         .then(this, [this](CommandArgs args) {
             auto exitCode = args[GlobalArguments::ExitCode].toInt();
             if (exitCode != 0) {
-                auto stderr = args[GlobalArguments::ErrorMessage].toString();
+                auto processStderr = args[GlobalArguments::ErrorMessage].toString();
 
                 switch (exitCode) {
                 case GlobalResults::ExecutableNotFound:
-                    this->displayBannerMessage(stderr, 15);
+                    this->displayBannerMessage(processStderr, 15);
                     break;
                 case GlobalResults::ExecutableError:
-                    this->displayBannerMessage(stderr, 25);
+                    this->displayBannerMessage(processStderr, 25);
                     break;
                 case GlobalResults::Crashed:
-                    this->displayBannerMessage(stderr, 35);
+                    this->displayBannerMessage(processStderr, 35);
                     break;
                 case GlobalResults::NotSupported:
                     break;
