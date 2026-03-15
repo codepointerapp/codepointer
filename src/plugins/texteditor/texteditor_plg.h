@@ -39,6 +39,7 @@ class TextEditorPlugin : public IPlugin {
         CONFIG_DEFINE(Theme, QString)
         CONFIG_DEFINE(AutoPreview, bool)
         CONFIG_DEFINE(SeachHistory, QStringList)
+        CONFIG_DEFINE(FormatBehaviour, FormatCodeOnSave)
         qmdiPluginConfig *config;
     };
     Config &getConfig() {

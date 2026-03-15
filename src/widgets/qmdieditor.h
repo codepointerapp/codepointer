@@ -130,6 +130,8 @@ class qmdiEditor : public QWidget, public qmdiClient {
   public:
     QString originalLineEnding = "\n";
     EndLineStyle endLineStyle = EndLineStyle::KeepOriginalEndline;
+    FormatCodeOnSave formatOnSave = FormatCodeOnSave::Never;
+
     bool trimSpacesOnSave = false;
     bool autoPreview = true;
 

@@ -198,6 +198,68 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
     }
 }
 
+class PlainTextEditStateGuard {
+  public:
+    explicit PlainTextEditStateGuard(QPlainTextEdit *editor) : m_editor(editor) {
+        if (!m_editor) {
+            return;
+        }
+
+        auto cursor = m_editor->textCursor();
+        m_line = cursor.blockNumber();
+        m_column = cursor.positionInBlock();
+        if (cursor.anchor() >= cursor.position()) {
+            m_anchorLine = cursor.blockNumber();
+            m_anchorColumn = cursor.positionInBlock();
+        } else {
+            auto block = m_editor->document()->findBlock(cursor.anchor());
+            m_anchorLine = block.blockNumber();
+            m_anchorColumn = cursor.anchor() - block.position();
+        }
+    }
+
+    ~PlainTextEditStateGuard() { restore(); }
+
+    void restore() {
+        if (!m_editor || m_restored) {
+            return;
+        }
+
+        m_restored = true;
+
+        auto doc = m_editor->document();
+        auto newCursor = QTextCursor(doc);
+        auto maxLine = doc->blockCount() - 1;
+        auto caretLine = std::min(m_line, maxLine);
+        auto caretBlock = doc->findBlockByNumber(caretLine);
+        newCursor.setPosition(caretBlock.position());
+
+        auto caretMaxColumn = caretBlock.length() - 1;
+        newCursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor,
+                               std::min(m_column, caretMaxColumn));
+
+        auto anchorMaxLine = doc->blockCount() - 1;
+        auto selLine = std::min(m_anchorLine, anchorMaxLine);
+        auto anchorBlock = doc->findBlockByNumber(selLine);
+        auto anchorMaxColumn = anchorBlock.length() - 1;
+        auto anchorPos = anchorBlock.position() + std::min(m_anchorColumn, anchorMaxColumn);
+
+        newCursor.setPosition(anchorPos, QTextCursor::KeepAnchor);
+        m_editor->setTextCursor(newCursor);
+    }
+
+    PlainTextEditStateGuard(const PlainTextEditStateGuard &) = delete;
+    PlainTextEditStateGuard &operator=(const PlainTextEditStateGuard &) = delete;
+
+  private:
+    QPlainTextEdit *m_editor = nullptr;
+    int m_line = 0;
+    int m_column = 0;
+    int m_anchorLine = 0;
+    int m_anchorColumn = 0;
+    bool m_restored = false;
+};
+
 namespace Qutepart {
 QStringList getAvailableHighlihters() {
     extern QMap<QString, QString> languageNameToXmlFileName;
@@ -850,37 +912,10 @@ void qmdiEditor::on_fileChanged(const QString &filename) {
 }
 
 void qmdiEditor::reload() {
-    auto oldCursor = textEditor->textCursor();
-    auto line = oldCursor.blockNumber();
-    auto column = oldCursor.positionInBlock();
-    auto anchorLine = oldCursor.anchor() >= oldCursor.position()
-                          ? oldCursor.blockNumber()
-                          : textEditor->document()->findBlock(oldCursor.anchor()).blockNumber();
-    auto anchorColumn = oldCursor.anchor() >= oldCursor.position()
-                            ? oldCursor.positionInBlock()
-                            : oldCursor.anchor() -
-                                  textEditor->document()->findBlock(oldCursor.anchor()).position();
+    PlainTextEditStateGuard guard(textEditor);
 
     documentHasBeenLoaded = false;
     loadContent(false);
-
-    auto doc = textEditor->document();
-    auto newCursor = QTextCursor(doc);
-    auto maxLine = doc->blockCount() - 1;
-    auto caretLine = std::min(line, maxLine);
-    auto caretBlock = doc->findBlockByNumber(caretLine);
-    newCursor.setPosition(caretBlock.position());
-
-    auto caretMaxColumn = caretBlock.length() - 1;
-    newCursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor,
-                           std::min(column, caretMaxColumn));
-    auto anchorMaxLine = doc->blockCount() - 1;
-    auto selLine = std::min(anchorLine, anchorMaxLine);
-    auto anchorBlock = doc->findBlockByNumber(selLine);
-    auto anchorMaxColumn = anchorBlock.length() - 1;
-    auto anchorPos = anchorBlock.position() + std::min(anchorColumn, anchorMaxColumn);
-    newCursor.setPosition(anchorPos, QTextCursor::KeepAnchor);
-    textEditor->setTextCursor(newCursor);
 }
 
 void qmdiEditor::hideTimer_timeout() {
@@ -1205,11 +1240,36 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
     setModificationsLookupEnabled(false);
     hideBannerMessage();
 
-    reformatContent();
+    auto needToReformat = false;
+    switch (formatOnSave) {
+    case FormatCodeOnSave::Never:
+        needToReformat = false;
+        break;
+    case FormatCodeOnSave::Always:
+        needToReformat = true;
+        break;
+    case FormatCodeOnSave::InProjects:
+        // TODO - can we support this at all? Or should the feature be removed?
+        /*
+                    if (auto project = projectModel->findProjectForFile(fileName)) {
+                        // FIXME: original code from ProjectManager has this line:
+                        // if (!project || !fileName.startsWith(project->sourceDir)) {
+                        needToReformat = true;
+                    }
+        */
+        break;
+    }
+
+    if (needToReformat) {
+        reformatContent();
+    } else {
+        displayBannerMessage(tr("Not reformatting code"), 60);
+    }
 
     auto file = QFile(newFileName);
     if (!file.open(QIODevice::WriteOnly)) {
         qDebug() << "Could not open file for saving" << newFileName;
+        displayBannerMessage(tr("Could not save file"), 60);
         return false;
     }
 
@@ -1244,13 +1304,13 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
         block = block.next();
         if (block.isValid()) {
             switch (this->endLineStyle) {
-            case UnixEndLine:
+            case EndLineStyle::UnixEndLine:
                 textStream << "\n";
                 break;
-            case WindowsEndLine:
+            case EndLineStyle::WindowsEndLine:
                 textStream << "\r\n";
                 break;
-            case KeepOriginalEndline:
+            case EndLineStyle::KeepOriginalEndline:
                 textStream << originalLineEnding;
                 break;
             }
@@ -1268,9 +1328,8 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
                 auto newPermissions = currentPermissions | QFileDevice::ExeUser;
                 if (!file.setPermissions(newPermissions)) {
                     qWarning() << "Failed to add executable permission.";
+                    displayBannerMessage(tr("Failed to add executable permission."), 60);
                 }
-
-                qDebug() << "Set executable bit";
             }
         }
     }
@@ -1297,6 +1356,7 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
             {GlobalArguments::Client, QVariant::fromValue(static_cast<qmdiClient *>(this))},
         });
 
+    textEditor->document()->setModified(false);
     QApplication::restoreOverrideCursor();
     return true;
 }
@@ -1528,10 +1588,16 @@ void qmdiEditor::reformatContent() {
     };
     manager->handleCommandAsync(GlobalCommands::ReformatCode, args)
         .then(this, [this](CommandArgs args) {
-            // TODO
             auto c = args[GlobalArguments::Content].toString();
-            // qDebug() << c;
-            textEditor->setPlainText(c);
+            PlainTextEditStateGuard guard(textEditor);
+            QTextCursor cursor(textEditor->document());
+            cursor.beginEditBlock();
+            cursor.select(QTextCursor::Document);
+            cursor.removeSelectedText();
+            cursor.insertText(c);
+            cursor.endEditBlock();
+            textEditor->document()->setModified(false);
+            textEditor->setFocus();
         });
 }
 

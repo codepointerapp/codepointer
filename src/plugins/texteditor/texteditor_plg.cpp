@@ -182,6 +182,17 @@ TextEditorPlugin::TextEditorPlugin() {
                                      .setDefaultValue(QStringList())
                                      .setUserEditable(false)
                                      .build());
+
+    auto values2 = QStringList() << tr("Never format") << tr("Always format")
+                                 << tr("When file is in a project");
+
+    config.configItems.push_back(qmdiConfigItem::Builder()
+                                     .setDisplayName(tr("Format on save"))
+                                     .setKey(Config::FormatBehaviourKey)
+                                     .setType(qmdiConfigItem::OneOf)
+                                     .setPossibleValue(values2)
+                                     .setDefaultValue(FormatCodeOnSave::InProjects)
+                                     .build());
 }
 
 TextEditorPlugin::~TextEditorPlugin() {}
@@ -522,6 +533,7 @@ void TextEditorPlugin::applySettings(qmdiEditor *editor) {
     editor->endLineStyle = getConfig().getLineEndingSave();
     editor->trimSpacesOnSave = getConfig().getTrimSpaces();
     editor->autoPreview = getConfig().getAutoPreview();
+    editor->formatOnSave = getConfig().getFormatBehaviour();
     editor->setEditorFont(newFont);
     editor->repaint();
 
