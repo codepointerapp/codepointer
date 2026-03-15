@@ -126,34 +126,30 @@ QFuture<QString> CodeFormatPlugin::runFormat(const QString &fileName, const QStr
         }
         proc.start(indenter->binary, args);
         if (!proc.waitForStarted()) {
-            qDebug() << "--------" << "waitForStarted failed";
+            qDebug() << "CodeFormatPlugin: waitForStarted failed";
             return input;
         }
-
         if (indenter->stdin) {
             proc.write(input.toUtf8());
             proc.closeWriteChannel();
         }
         if (!proc.waitForFinished()) {
-            qDebug() << "--------" << "waitForFinished failed";
+            qDebug() << "CodeFormatPlugin: waitForFinished failed";
             return input;
         }
         if (indenter->stdout) {
             QByteArray out = proc.readAllStandardOutput();
             if (!out.isEmpty()) {
-                qDebug() << "--------" << "READING FROM STDOUT";
                 return QString::fromUtf8(out);
             }
         }
         if (!indenter->stdout && indenter->tempfile) {
             auto file = QFile(fileName);
             if (file.open(QIODevice::ReadOnly)) {
-                qDebug() << "--------" << "READING FROM FILE";
                 return QString::fromUtf8(file.readAll());
             }
         }
-
-        qDebug() << "--------" << "DAFUC";
+        qDebug() << "CodeFormatPlugin: We should not arrive here, returing original string";
         return input;
     });
 }
