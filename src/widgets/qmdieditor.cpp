@@ -15,6 +15,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -431,6 +432,39 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     connect(autoSaveTimer, &QTimer::timeout, this, &qmdiEditor::autoSave);
     connect(textEditor, &QPlainTextEdit::textChanged, this, [this]() { autoSaveTimer->start(); });
 
+    // Why a timer for on change?
+    // If we issue a "git checkout" - we get notificaiton when git resets the
+    // file, we read - and get a "0" sized file. Then later on git would write
+    // the correct content - and we get no new notification.
+    // Now we read an empty file.
+    fileChangedTimer = new QTimer(this);
+    fileChangedTimer->setSingleShot(true);
+    fileChangedTimer->setInterval(200);
+    connect(fileChangedTimer, &QTimer::timeout, this, [this]() {
+        if (!fileModifications || fileName.isEmpty()) {
+            return;
+        }
+
+        auto isModified = textEditor->document()->isModified();
+        if (!isModified) {
+            reload();
+            return;
+        }
+
+        auto f = QFileInfo(fileName);
+        auto message = QString();
+        if (f.exists()) {
+            message = QString("%1 <a href=':reload' title='%2'>%3</a>")
+                          .arg(tr("File has been modified outside the editor"),
+                               tr("Clicking this links will revert all changes to this editor"),
+                               tr("Click here to reload"));
+        } else {
+            message = tr("File has been deleted outside the editor.");
+        }
+        displayBannerMessage(message, -1);
+    });
+
+    // Generate random UID - this is used for namking the backup file.
     QByteArray randomData;
     for (auto i = 0; i < 16; ++i) {
         randomData.append(static_cast<char>(QRandomGenerator::global()->bounded(256)));
@@ -665,6 +699,7 @@ void qmdiEditor::setupActions() {
 
     actionSave = new QAction(QIcon::fromTheme("document-save"), tr("&Save"), this);
     actionSaveAs = new QAction(QIcon::fromTheme("document-save-as"), tr("Save &as..."), this);
+    actionSaveNoFormat = new QAction(tr("Save without formatting"), this);
     actionUndo = new QAction(QIcon::fromTheme("edit-undo"), tr("&Undo"), this);
     actionRedo = new QAction(QIcon::fromTheme("edit-redo"), tr("&Redo"), this);
     actionCopy = new QAction(QIcon::fromTheme("edit-copy"), tr("&Copy"), this);
@@ -689,9 +724,11 @@ void qmdiEditor::setupActions() {
     addAction(actionChangeCase );
     addAction(actionToggleHeader );
     addAction(actionTogglePreview );
+    addAction(actionSaveNoFormat);
 
     actionSave->setShortcut(QKeySequence::Save);
     actionSaveAs->setShortcut(QKeySequence::SaveAs);
+    actionSaveNoFormat->setShortcut(QKeySequence(Qt::ControlModifier | Qt::MetaModifier | Qt::Key_S));
     actionUndo->setShortcut(QKeySequence::Undo);
     actionRedo->setShortcut(QKeySequence::Redo);
     actionCopy->setShortcut(QKeySequence::Copy);
@@ -726,6 +763,7 @@ void qmdiEditor::setupActions() {
 
     actionSave->setObjectName("qmdiEditor::actionSave");
     actionSaveAs->setObjectName("qmdiEditor::actionSaveAs");
+    actionSaveNoFormat->setObjectName("qmdiEditor::actionSaveNoFormat");
     actionUndo->setObjectName("qmdiEditor::actionUndo");
     actionRedo->setObjectName("qmdiEditor::actionRedo");
     actionCopy->setObjectName("qmdiEditor::actionCopy");
@@ -744,6 +782,7 @@ void qmdiEditor::setupActions() {
 
     actionSave->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     actionSaveAs->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    actionSaveNoFormat->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     actionUndo->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     actionRedo->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     actionCopy->setShortcutContext(Qt::WidgetWithChildrenShortcut);
@@ -794,8 +833,9 @@ void qmdiEditor::setupActions() {
 
     connect(comboChangeHighlighter, &QComboBox::currentTextChanged, this,
             &qmdiEditor::chooseHighliter);
-    connect(actionSave, &QAction::triggered, this, &qmdiEditor::doSave);
-    connect(actionSaveAs, &QAction::triggered, this, &qmdiEditor::doSaveAs);
+    connect(actionSave, &QAction::triggered, this, [this](){ doSave(); });
+    connect(actionSaveAs, &QAction::triggered, this, [this](){ doSaveAs(); });
+    connect(actionSaveNoFormat, &QAction::triggered, this, &qmdiEditor::doSaveNoFormat);
     connect(actionUndo, &QAction::triggered, textEditor, &QPlainTextEdit::undo);
     connect(actionRedo, &QAction::triggered, textEditor, &QPlainTextEdit::redo);
     connect(actionCopy, &QAction::triggered, textEditor, &Qutepart::Qutepart::multipleCursorCopy);
@@ -884,31 +924,10 @@ bool qmdiEditor::isJSONDocument() const {
 }
 
 void qmdiEditor::on_fileChanged(const QString &filename) {
-    if (this->fileName != filename) {
+    if (this->fileName != filename || !fileModifications) {
         return;
     }
-
-    if (!fileModifications) {
-        return;
-    }
-
-    auto isModified = textEditor->document()->isModified();
-    if (!isModified) {
-        reload();
-        return;
-    }
-
-    QFileInfo f(filename);
-    QString message;
-    if (f.exists()) {
-        message = QString("%1 <a href=':reload' title='%2'>%3</a>")
-                      .arg(tr("File has been modified outside the editor"),
-                           tr("Clicking this links will revert all changes to this editor"),
-                           tr("Click here to reload"));
-    } else {
-        message = tr("File has been deleted outside the editor.");
-    }
-    displayBannerMessage(message, -1);
+    fileChangedTimer->start();
 }
 
 void qmdiEditor::reload() {
@@ -1186,18 +1205,18 @@ void qmdiEditor::setPlainText(const QString &plainText) {
     documentHasBeenLoaded = true;
 }
 
-bool qmdiEditor::doSave() {
+bool qmdiEditor::doSave(bool forceNoFormat) {
     if (fileName.isEmpty()) {
-        return doSaveAs();
+        return doSaveAs(forceNoFormat);
     } else {
         if (!documentHasBeenLoaded) {
             return true;
         }
-        return saveFile(fileName, false);
+        return saveFile(fileName, false, forceNoFormat);
     }
 }
 
-bool qmdiEditor::doSaveAs() {
+bool qmdiEditor::doSaveAs(bool forceNoFormat) {
     static QString lastDirectory;
     auto s = QFileDialog::getSaveFileName(this, tr("Save file"), lastDirectory);
     if (s.isEmpty()) {
@@ -1212,8 +1231,10 @@ bool qmdiEditor::doSaveAs() {
 
     auto f = QFileInfo(s);
     lastDirectory = f.dir().absolutePath();
-    return saveFile(s, makeExecutable);
+    return saveFile(s, makeExecutable, forceNoFormat);
 }
+
+void qmdiEditor::doSaveNoFormat() { doSave(true); }
 
 bool qmdiEditor::loadFile(const QString &newFileName) {
     fileName = QDir::toNativeSeparators(newFileName);
@@ -1230,7 +1251,7 @@ bool qmdiEditor::loadFile(const QString &newFileName) {
     return true;
 }
 
-bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
+bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool forceNoFormat) {
     auto sl = fileSystemWatcher->directories();
     if (!sl.isEmpty()) {
         fileSystemWatcher->removePaths(sl);
@@ -1241,29 +1262,37 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
     hideBannerMessage();
 
     auto needToReformat = false;
-    switch (formatOnSave) {
-    case FormatCodeOnSave::Never:
-        needToReformat = false;
-        break;
-    case FormatCodeOnSave::Always:
-        needToReformat = true;
-        break;
-    case FormatCodeOnSave::InProjects:
-        // TODO - can we support this at all? Or should the feature be removed?
-        /*
-                    if (auto project = projectModel->findProjectForFile(fileName)) {
-                        // FIXME: original code from ProjectManager has this line:
-                        // if (!project || !fileName.startsWith(project->sourceDir)) {
-                        needToReformat = true;
-                    }
-        */
-        break;
+    if (!forceNoFormat) {
+        switch (formatOnSave) {
+        case FormatCodeOnSave::Never:
+            needToReformat = false;
+            break;
+        case FormatCodeOnSave::Always:
+            needToReformat = true;
+            break;
+        case FormatCodeOnSave::InProjects:
+            // TODO - can we support this at all? Or should the feature be removed?
+            /*
+                        if (auto project = projectModel->findProjectForFile(fileName)) {
+                            // FIXME: original code from ProjectManager has this line:
+                            // if (!project || !fileName.startsWith(project->sourceDir)) {
+                            needToReformat = true;
+                        }
+            */
+            break;
+        }
     }
 
     if (needToReformat) {
-        reformatContent();
+        QEventLoop loop;
+        reformatContent().then([&loop] { loop.quit(); });
+        loop.exec();
     } else {
-        displayBannerMessage(tr("Not reformatting code"), 60);
+        if (forceNoFormat) {
+            displayBannerMessage(tr("Force saving without formatting"), 0);
+        } else {
+            displayBannerMessage(tr("Not reformatting code"), 60);
+        }
     }
 
     auto file = QFile(newFileName);
@@ -1335,15 +1364,10 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
     }
     file.close();
 
-    textEditor->document()->setModified(false);
-    updateClientName();
-
     fileSystemWatcher->removePath(fileName);
     fileName = newFileName;
-    mdiClientName = getShortFileName();
     textEditor->removeModifications();
     setModificationsLookupEnabled(modificationsEnabledState);
-    mdiServer->updateClientName(this);
     updateFileDetails();
     saveBackup();
     fileSystemWatcher->addPath(newFileName);
@@ -1357,6 +1381,7 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable) {
         });
 
     textEditor->document()->setModified(false);
+    updateClientName();
     QApplication::restoreOverrideCursor();
     return true;
 }
@@ -1500,6 +1525,8 @@ void qmdiEditor::loadContent(bool useBackup) {
 
     QElapsedTimer timer;
     timer.start();
+    qDebug() << "qmdiEditor::loadContent loading " << file.fileName() << " with size "
+             << file.size();
     this->originalLineEnding = getLineEnding(file, originalLineEnding);
     auto textStream = QTextStream(&file);
     textStream.seek(0);
@@ -1522,8 +1549,7 @@ void qmdiEditor::loadContent(bool useBackup) {
         auto cursor = QTextCursor(doc);
 
         cursor.beginEditBlock();
-        cursor.select(QTextCursor::Document);
-        cursor.removeSelectedText();
+        textEditor->clear();
         cursor.insertText(textStream.readAll());
         cursor.endEditBlock();
 
@@ -1580,13 +1606,13 @@ void qmdiEditor::loadContent(bool useBackup) {
     updateInternalMappings(savedState[StateConstants::BASE_DIR].toString());
 }
 
-void qmdiEditor::reformatContent() {
+QFuture<void> qmdiEditor::reformatContent() {
     auto manager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     auto args = CommandArgs{
         {GlobalArguments::FileName, mdiClientFileName()},
         {GlobalArguments::Content, textEditor->toPlainText()},
     };
-    manager->handleCommandAsync(GlobalCommands::ReformatCode, args)
+    return manager->handleCommandAsync(GlobalCommands::ReformatCode, args)
         .then(this, [this](CommandArgs args) {
             auto c = args[GlobalArguments::Content].toString();
             PlainTextEditStateGuard guard(textEditor);
@@ -1596,7 +1622,6 @@ void qmdiEditor::reformatContent() {
             cursor.removeSelectedText();
             cursor.insertText(c);
             cursor.endEditBlock();
-            textEditor->document()->setModified(false);
             textEditor->setFocus();
         });
 }

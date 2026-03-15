@@ -99,16 +99,17 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void newDocument();
     void setPlainText(const QString &plainText);
     void reload();
-    bool doSave();
-    bool doSaveAs();
+    bool doSave(bool forceNoFormat = false);
+    bool doSaveAs(bool forceNoFormat = false);
     bool loadFile(const QString &fileName);
-    bool saveFile(const QString &fileName, bool makeExecutable);
+    bool saveFile(const QString &fileName, bool makeExecutable, bool forceNoFormat = false);
+    void doSaveNoFormat();
     void transformBlockToUpper();
     void transformBlockToLower();
     void transformBlockCase();
     void toggleHeaderImpl();
     void loadContent(bool useBackup);
-    void reformatContent();
+    QFuture<void> reformatContent();
 
     void chooseHighliter(const QString &newText);
     void chooseIndenter(const QAction *action);
@@ -222,6 +223,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     int m_timerHideout;
     bool fileModifications = true;
     QTimer *loadingTimer = nullptr;
+    QTimer *fileChangedTimer = nullptr;
     bool documentHasBeenLoaded = true;
 
     qmdiClientState savedState;
@@ -250,6 +252,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
 
     QAction *actionSave = nullptr;
     QAction *actionSaveAs = nullptr;
+    QAction *actionSaveNoFormat = nullptr;
     QAction *actionUndo = nullptr;
     QAction *actionRedo = nullptr;
     QAction *actionCopy = nullptr;
