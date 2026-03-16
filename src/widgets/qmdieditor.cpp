@@ -1284,9 +1284,12 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
     }
 
     if (needToReformat) {
-        QEventLoop loop;
-        reformatContent().then([&loop] { loop.quit(); });
-        loop.exec();
+        auto future = reformatContent();
+        if (!future.isFinished()) {
+            QEventLoop loop;
+            future.then([&loop] { loop.quit(); });
+            loop.exec();
+        }
     } else {
         if (forceNoFormat) {
             displayBannerMessage(tr("Force saving without formatting"), 0);
@@ -1612,14 +1615,17 @@ QFuture<void> qmdiEditor::reformatContent() {
         {GlobalArguments::FileName, mdiClientFileName()},
         {GlobalArguments::Content, textEditor->toPlainText()},
     };
+
     return manager->handleCommandAsync(GlobalCommands::ReformatCode, args)
         .then(this, [this](CommandArgs args) {
             auto c = args[GlobalArguments::Content].toString();
+            if (c == textEditor->toPlainText()) {
+                return;
+            }
             PlainTextEditStateGuard guard(textEditor);
             QTextCursor cursor(textEditor->document());
             cursor.beginEditBlock();
-            cursor.select(QTextCursor::Document);
-            cursor.removeSelectedText();
+            textEditor->clear();
             cursor.insertText(c);
             cursor.endEditBlock();
             textEditor->setFocus();
