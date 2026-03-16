@@ -1,61 +1,305 @@
 [
-  {
-    "name": "clang-format",
-    "exts": ["c","h","cpp","hpp","cc","cxx"],
-    "binary": "clang-format",
-    "stdin": true,
-    "stdout": true,
-    "requires_filepath": true,
-    "args": [
-      "-style=file",
-      "-fallback-style=none",
-      "--assume-filename",
-      "$filepath"
-    ]
-  },
-  {
-    "name": "prettier",
-    "exts": ["js","jsx","ts","tsx","json","css","html"],
-    "binary": "prettier",
-    "stdin": true,
-    "stdout": true,
-    "requires_filepath": true,
-    "args": [
-      "--stdin-filepath",
-      "$filepath"
-    ]
-  },
-  {
-    "name": "black",
-    "exts": ["py"],
-    "binary": "black",
-    "stdin": true,
-    "stdout": true,
-    "args": ["-"]
-  },
-  {
-    "name": "gofmt",
-    "exts": ["go"],
-    "binary": "gofmt",
-    "stdin": true,
-    "stdout": true,
-    "args": []
-  },
-  {
-    "name": "rustfmt",
-    "exts": ["rs"],
-    "binary": "rustfmt",
-    "stdin": true,
-    "stdout": true,
-    "args": ["--emit","stdout"]
-  },
-  {
-    "name": "dotnet-format",
-    "exts": ["cs"],
-    "binary": "dotnet",
-    "stdin": false,
-    "stdout": false,
-    "tempfile": true,
-    "args": ["format","$filepath"]
-  }
+    {
+        "name": "Markdown - rumdl",
+        "exts": [
+            "md"
+        ],
+        "binary": "rumdl",
+        "stdin": true,
+        "stdout": true,
+        "requires_filepath": true,
+        "args": [
+            "fmt",
+            "--quiet",
+            "--stdin-filename",
+            "$filepath",
+            "-"
+        ],
+        "download": {
+            "homepage": "https://github.com/rvben/rumdl",
+            "install": {
+                "macos": "brew install rumdl"
+            }
+        }
+    },
+    {
+        "name": "C/C++/clang-format",
+        "exts": [
+            "c",
+            "h",
+            "cpp",
+            "hpp",
+            "cc",
+            "cxx"
+        ],
+        "binary": "clang-format",
+        "stdin": true,
+        "stdout": true,
+        "requires_filepath": true,
+        "args": [
+            "-style=file",
+            "-fallback-style=none",
+            "--assume-filename",
+            "$filepath"
+        ],
+        "download": {
+            "homepage": "https://clang.llvm.org/docs/ClangFormat.html",
+            "win64": "https://github.com/llvm/llvm-project/releases",
+            "linux64": "https://github.com/llvm/llvm-project/releases",
+            "macos": "https://github.com/llvm/llvm-project/releases",
+            "install": {
+                "win64": "choco install llvm",
+                "macos": "brew install clang-format"
+            }
+        }
+    },
+    {
+        "name": "JS/TS/HTML - prettier",
+        "exts": [
+            "js",
+            "jsx",
+            "ts",
+            "tsx",
+            "json",
+            "css",
+            "html"
+        ],
+        "binary": "prettier",
+        "stdin": true,
+        "stdout": true,
+        "requires_filepath": true,
+        "args": [
+            "--stdin-filepath",
+            "$filepath"
+        ],
+        "download": {
+            "homepage": "https://prettier.io",
+            "install": {
+                "win64": "npm install -g prettier",
+                "linux64": "npm install -g prettier",
+                "macos": "npm install -g prettier"
+            }
+        }
+    },
+    {
+        "name": "Python - black",
+        "exts": [
+            "py"
+        ],
+        "binary": "black",
+        "stdin": true,
+        "stdout": true,
+        "args": [
+            "-"
+        ],
+        "download": {
+            "homepage": "https://github.com/psf/black",
+            "install": {
+                "win64": "pip install black",
+                "linux64": "pip install black",
+                "macos": "pip install black"
+            }
+        }
+    },
+    {
+        "name": "GoLang - gofmt",
+        "exts": [
+            "go"
+        ],
+        "binary": "gofmt",
+        "stdin": true,
+        "stdout": true,
+        "args": [],
+        "download": {
+            "homepage": "https://pkg.go.dev/cmd/gofmt"
+        }
+    },
+    {
+        "name": "Rust - rustfmt",
+        "exts": [
+            "rs"
+        ],
+        "binary": "rustfmt",
+        "stdin": true,
+        "stdout": true,
+        "args": [
+            "--emit",
+            "stdout"
+        ],
+        "download": {
+            "homepage": "https://github.com/rust-lang/rustfmt",
+            "install": {
+                "win64": "rustup component add rustfmt",
+                "linux64": "rustup component add rustfmt",
+                "macos": "rustup component add rustfmt"
+            }
+        }
+    },
+    {
+        "name": "CSharp - dotnet-format",
+        "exts": [
+            "cs"
+        ],
+        "binary": "dotnet",
+        "stdin": false,
+        "stdout": false,
+        "tempfile": true,
+        "args": [
+            "format",
+            "$filepath"
+        ],
+        "download": {
+            "homepage": "https://github.com/dotnet/format",
+            "install": {
+                "win64": "dotnet tool install -g dotnet-format",
+                "linux64": "dotnet tool install -g dotnet-format",
+                "macos": "dotnet tool install -g dotnet-format"
+            }
+        }
+    },
+    {
+        "name": "Shell - shfmt",
+        "exts": [
+            "sh",
+            "bash"
+        ],
+        "binary": "shfmt",
+        "stdin": true,
+        "stdout": true,
+        "args": [],
+        "download": {
+            "homepage": "https://github.com/mvdan/sh",
+            "win64": "https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.8.0_windows_amd64.exe",
+            "linux64": "https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.8.0_linux_amd64",
+            "macos": "https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.8.0_darwin_amd64",
+            "install": {
+                "win64": "choco install shfmt",
+                "macos": "brew install shfmt"
+            }
+        }
+    },
+    {
+        "name": "Lua - stylua",
+        "exts": [
+            "lua"
+        ],
+        "binary": "stylua",
+        "stdin": true,
+        "stdout": true,
+        "args": [
+            "-"
+        ],
+        "download": {
+            "homepage": "https://github.com/JohnnyMorganz/StyLua",
+            "win64": "https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-windows-x86_64.zip",
+            "linux64": "https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-linux-x86_64.zip",
+            "macos": "https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-macos-x86_64.zip",
+            "install": {
+                "win64": "choco install stylua",
+                "linux64": "cargo install stylua",
+                "macos": "brew install stylua"
+            }
+        }
+    },
+    {
+        "name": "YAML - yamlfmt",
+        "exts": [
+            "yaml",
+            "yml"
+        ],
+        "binary": "yamlfmt",
+        "stdin": true,
+        "stdout": true,
+        "args": [],
+        "download": {
+            "homepage": "https://github.com/google/yamlfmt",
+            "win64": "https://github.com/google/yamlfmt/releases/latest/download/yamlfmt_windows_amd64.exe",
+            "linux64": "https://github.com/google/yamlfmt/releases/latest/download/yamlfmt_Linux_x86_64",
+            "macos": "https://github.com/google/yamlfmt/releases/latest/download/yamlfmt_Darwin_x86_64"
+        }
+    },
+    {
+        "name": "SQL - sql-formatter",
+        "exts": [
+            "sql"
+        ],
+        "binary": "sql-formatter",
+        "stdin": true,
+        "stdout": true,
+        "args": [],
+        "download": {
+            "homepage": "https://github.com/sql-formatter-org/sql-formatter",
+            "install": {
+                "win64": "npm install -g sql-formatter",
+                "linux64": "npm install -g sql-formatter",
+                "macos": "npm install -g sql-formatter"
+            }
+        }
+    },
+    {
+        "name": "PHP - php-cs-fixer",
+        "exts": [
+            "php"
+        ],
+        "binary": "php-cs-fixer",
+        "stdin": false,
+        "stdout": false,
+        "tempfile": true,
+        "args": [
+            "fix",
+            "$filepath"
+        ],
+        "download": {
+            "homepage": "https://github.com/PHP-CS-Fixer/PHP-CS-Fixer",
+            "win64": "https://cs.symfony.com/download/php-cs-fixer-v3.phar",
+            "linux64": "https://cs.symfony.com/download/php-cs-fixer-v3.phar",
+            "macos": "https://cs.symfony.com/download/php-cs-fixer-v3.phar",
+            "install": {
+                "linux64": "curl -L https://cs.symfony.com/download/php-cs-fixer-v3.phar -o php-cs-fixer && chmod +x php-cs-fixer",
+                "macos": "brew install php-cs-fixer"
+            }
+        }
+    },
+    {
+        "name": "Terraform - terraform fmt",
+        "exts": [
+            "tf",
+            "tfvars"
+        ],
+        "binary": "terraform",
+        "stdin": false,
+        "stdout": false,
+        "args": [
+            "fmt",
+            "$filepath"
+        ],
+        "download": {
+            "homepage": "https://developer.hashicorp.com/terraform",
+            "win64": "https://releases.hashicorp.com/terraform/",
+            "linux64": "https://releases.hashicorp.com/terraform/",
+            "macos": "https://releases.hashicorp.com/terraform/",
+            "install": {
+                "macos": "brew install terraform"
+            }
+        }
+    },
+    {
+        "name": "TOML - taplo",
+        "exts": [
+            "toml"
+        ],
+        "binary": "taplo",
+        "stdin": true,
+        "stdout": true,
+        "args": [
+            "fmt",
+            "-"
+        ],
+        "download": {
+            "homepage": "https://github.com/tamasfe/taplo",
+            "win64": "https://github.com/tamasfe/taplo/releases/latest/download/taplo-windows-x86_64.zip",
+            "linux64": "https://github.com/tamasfe/taplo/releases/latest/download/taplo-linux-x86_64.gz",
+            "macos": "https://github.com/tamasfe/taplo/releases/latest/download/taplo-darwin-x86_64.gz"
+        }
+    }
 ]
