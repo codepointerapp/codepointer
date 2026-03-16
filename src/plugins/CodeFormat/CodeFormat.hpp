@@ -7,6 +7,7 @@
 #include <QVector>
 
 #include "iplugin.h"
+#include "pluginmanager.h"
 
 struct Formatter {
     QString name;
@@ -34,6 +35,14 @@ class FormatterRegistry {
 };
 
 class CodeFormatPlugin : public IPlugin {
+    struct Config {
+        CONFIG_DEFINE(ExtraPaths, QStringList)
+        qmdiPluginConfig *config;
+    };
+    Config &getConfig() {
+        static Config configObject{&this->config};
+        return configObject;
+    }
     FormatterRegistry builtInRegistry;
 
   public:
@@ -48,6 +57,6 @@ class CodeFormatPlugin : public IPlugin {
     virtual QFuture<CommandArgs> handleCommandAsync(const QString &command,
                                                     const CommandArgs &args) override;
 
-    QFuture<QString> runFormat(const QString &fileName, const QString &input,
-                               const Formatter *indenter);
+    QFuture<CommandArgs> runFormat(const QString &fileName, const QString &input,
+                                   const Formatter *indenter);
 };

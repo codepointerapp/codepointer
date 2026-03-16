@@ -44,9 +44,6 @@
         ],
         "download": {
             "homepage": "https://clang.llvm.org/docs/ClangFormat.html",
-            "win64": "https://github.com/llvm/llvm-project/releases",
-            "linux64": "https://github.com/llvm/llvm-project/releases",
-            "macos": "https://github.com/llvm/llvm-project/releases",
             "install": {
                 "win64": "choco install llvm",
                 "macos": "brew install clang-format"
@@ -109,7 +106,11 @@
         "binary": "gofmt",
         "stdin": true,
         "stdout": true,
-        "args": [],
+        "requires_filepath": true,
+        "args": [
+          "-srcdir",
+          "$filepath"
+        ],
         "download": {
             "homepage": "https://pkg.go.dev/cmd/gofmt"
         }

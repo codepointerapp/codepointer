@@ -1,5 +1,6 @@
 #include "CodeFormat.hpp"
 #include "GlobalCommands.hpp"
+#include "pluginmanager.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -81,6 +82,15 @@ CodeFormatPlugin::CodeFormatPlugin() {
     sVersion = "0.0.1";
     autoEnabled = true;
     alwaysEnabled = false;
+
+    config.pluginName = tr("Code format");
+    config.configItems.push_back(
+        qmdiConfigItem::Builder()
+            .setDisplayName(tr("More paths for format tools"))
+            .setDescription(tr("If a format tool is not on the stardard PATH, add it here"))
+            .setKey(Config::ExtraPathsKey)
+            .setType(qmdiConfigItem::StringList)
+            .build());
 }
 
 void CodeFormatPlugin::on_client_merged(qmdiHost *host) {
@@ -116,33 +126,44 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
         return QtFuture::makeReadyValueFuture(args);
     }
 
-    return runFormat(fileName, content, indenter)
-        .then(this, [args](const QString &formattedContent) mutable {
-            CommandArgs out = args;
-            out[GlobalArguments::Content] = formattedContent;
-            return out;
-        });
+    return runFormat(fileName, content, indenter);
 }
 
-// FIXME: report errors upstream, both exit code and output.
-//        why? I case a user wants to define its own indenter - he would like to know why it fails
-//        and what the indenter spit into stderr for example.
-QFuture<QString> CodeFormatPlugin::runFormat(const QString &fileName, const QString &input,
-                                             const Formatter *indenter) {
-    return QtConcurrent::run([fileName, input, indenter]() -> QString {
+QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const QString &input,
+                                                 const Formatter *indenter) {
+    return QtConcurrent::run([this, fileName, input, indenter]() -> CommandArgs {
         QProcess proc;
         QStringList args;
+        CommandArgs result;
+
+        result[GlobalArguments::Content] = input;
+        result[GlobalArguments::ExitCode] = 0;
 
         args.reserve(indenter->args.size());
         for (auto arg : indenter->args) {
             args.append(arg.replace("$filepath", fileName));
         }
 
-        qDebug() << "CodeFormatPlugin: running" << indenter->binary << args.join(" ");
-        proc.start(indenter->binary, args);
+        auto paths = getConfig().getExtraPaths();
+        paths.append(QString::fromLocal8Bit(qgetenv("PATH")).split(QDir::listSeparator()));
+        auto program = QStandardPaths::findExecutable(indenter->binary, paths);
+
+        if (program.isEmpty()) {
+            qDebug() << "CodeFormatPlugin: executable not found:" << indenter->binary;
+            result[GlobalArguments::ExitCode] = -1;
+            result[GlobalArguments::ErrorMessage] =
+                tr("Executable not found: %1").arg(indenter->binary);
+            return result;
+        }
+
+        auto fullCommand = program + " " + args.join(" ");
+        qDebug() << "CodeFormatPlugin: running" << fullCommand;
+        proc.start(program, args);
         if (!proc.waitForStarted()) {
-            qDebug() << "CodeFormatPlugin: waitForStarted failed for" << indenter->binary;
-            return input;
+            qDebug() << "CodeFormatPlugin: waitForStarted failed for" << fullCommand;
+            result[GlobalArguments::ExitCode] = -1;
+            result[GlobalArguments::ErrorMessage] = tr("Failed running %1").arg(fullCommand);
+            return result;
         }
         if (indenter->stdin) {
             proc.write(input.toUtf8());
@@ -150,20 +171,25 @@ QFuture<QString> CodeFormatPlugin::runFormat(const QString &fileName, const QStr
         }
         if (!proc.waitForFinished()) {
             qDebug() << "CodeFormatPlugin: waitForFinished failed for" << indenter->binary;
-            return input;
+            result[GlobalArguments::ExitCode] = -2;
+            result[GlobalArguments::ErrorMessage] = tr("Command crashed %1").arg(fullCommand);
+            return result;
         }
-        
+
         if (proc.exitCode() != 0) {
-            qDebug() << "CodeFormatPlugin:" << indenter->binary << "exited with code" << proc.exitCode();
-            qDebug() << "CodeFormatPlugin stderr:" << proc.readAllStandardError();
-            // If it failed, we probably want to return the original input
-            return input;
+            auto stderr = proc.readAllStandardError();
+            qDebug() << "CodeFormatPlugin:" << indenter->binary << "code:" << proc.exitCode();
+            qDebug() << "CodeFormatPlugin stderr:" << stderr;
+            result[GlobalArguments::ExitCode] = proc.exitCode();
+            result[GlobalArguments::ErrorMessage] = stderr;
+            return result;
         }
 
         if (indenter->stdout) {
-            QByteArray out = proc.readAllStandardOutput();
+            auto out = proc.readAllStandardOutput();
             if (!out.isEmpty()) {
-                return QString::fromUtf8(out);
+                result[GlobalArguments::Content] = QString::fromUtf8(out);
+                return result;
             } else {
                 qDebug() << "CodeFormatPlugin: stdout is empty for" << indenter->binary;
             }
@@ -171,10 +197,13 @@ QFuture<QString> CodeFormatPlugin::runFormat(const QString &fileName, const QStr
         if (!indenter->stdout && indenter->tempfile) {
             auto file = QFile(fileName);
             if (file.open(QIODevice::ReadOnly)) {
-                return QString::fromUtf8(file.readAll());
+                result[GlobalArguments::Content] = QString::fromUtf8(file.readAll());
+                return result;
             }
         }
-        qDebug() << "CodeFormatPlugin: fallthrough for" << indenter->binary << "returning original string";
-        return input;
+        qDebug() << "CodeFormatPlugin: fallthrough for" << indenter->binary
+                 << "returning original string";
+        result[GlobalArguments::ExitCode] = -3;
+        return result;
     });
 }

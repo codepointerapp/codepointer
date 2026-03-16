@@ -72,4 +72,6 @@ inline constexpr const char *Content = "Content";
 inline constexpr const char *ReadOnly = "ReadOnly";
 inline constexpr const char *Position = "Position";
 inline constexpr const char *FoldTopLevel = "FoldTopLevel";
+inline constexpr const char *ExitCode = "ExitCode";
+inline constexpr const char *ErrorMessage = "ErrorMessage";
 } // namespace GlobalArguments
