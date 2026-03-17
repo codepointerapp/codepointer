@@ -1271,7 +1271,7 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
             needToReformat = true;
             break;
         case FormatCodeOnSave::InProjects:
-            // TODO - can we support this at all? Or should the feature be removed?
+            // FIXME: - can we support this at all? Or should the feature be removed?
             /*
                         if (auto project = projectModel->findProjectForFile(fileName)) {
                             // FIXME: original code from ProjectManager has this line:
@@ -1279,6 +1279,7 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
                             needToReformat = true;
                         }
             */
+            needToReformat = true;
             break;
         }
     }
@@ -1293,8 +1294,6 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
     } else {
         if (forceNoFormat) {
             displayBannerMessage(tr("Force saving without formatting"), 0);
-        } else {
-            displayBannerMessage(tr("Not reformatting code"), 60);
         }
     }
 
