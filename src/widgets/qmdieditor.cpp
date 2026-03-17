@@ -1552,7 +1552,7 @@ void qmdiEditor::loadContent(bool useBackup) {
         auto cursor = QTextCursor(doc);
 
         cursor.beginEditBlock();
-        textEditor->clear();
+        cursor.select(QTextCursor::Document);
         cursor.insertText(textStream.readAll());
         cursor.endEditBlock();
 
@@ -1622,11 +1622,14 @@ QFuture<void> qmdiEditor::reformatContent() {
             if (c == textEditor->toPlainText()) {
                 return;
             }
-            PlainTextEditStateGuard guard(textEditor);
+            
             QTextCursor cursor(textEditor->document());
             cursor.beginEditBlock();
-            textEditor->clear();
-            cursor.insertText(c);
+            {
+                PlainTextEditStateGuard guard(textEditor);
+                cursor.select(QTextCursor::Document);
+                cursor.insertText(c);
+            }
             cursor.endEditBlock();
             textEditor->setFocus();
         });
@@ -1826,7 +1829,7 @@ void qmdiEditor::updateIndenterMenu() {
 }
 
 void qmdiEditor::updateHighlighterMenu() {
-    // todo
+    // FIXME: implement this or remove
 }
 
 void qmdiEditor::updatePreview() {
