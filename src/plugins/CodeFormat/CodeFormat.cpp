@@ -97,7 +97,19 @@ void CodeFormatPlugin::on_client_merged(qmdiHost *host) {
     IPlugin::on_client_merged(host);
 
     builtInRegistry.loadFromFile(":indenters.json");
-    qDebug() << "CodeFormatPlugin: Loaded built in indenters registry, found ";
+    qDebug() << "CodeFormatPlugin: Loaded built in indenters registry, found "
+             << builtInRegistry.count();
+
+    auto dataDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    auto fullFileName = dataDir + QDir::separator() + "indenters.json";
+
+    userRegistry.loadFromFile(fullFileName);
+    if (userRegistry.count() != 0) {
+        qDebug() << "CodeFormatPlugin: Loaded user in indenters registry, found "
+                 << userRegistry.count() << "from" << fullFileName;
+    } else {
+        qDebug() << "CodeFormatPlugin: User registry not found " << fullFileName;
+    }
 }
 
 void CodeFormatPlugin::loadConfig(QSettings &settings) { IPlugin::loadConfig(settings); }
@@ -119,7 +131,12 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
 
     auto fileName = args[GlobalArguments::FileName].toString();
     auto content = args[GlobalArguments::Content].toString();
-    auto indenter = builtInRegistry.getForFile(fileName);
+    auto indenter = userRegistry.getForFile(fileName);
+
+    if (!indenter) {
+        qDebug() << "CodeFormatPlugin: No user indenter - using internal one";
+        indenter = builtInRegistry.getForFile(fileName);
+    }
 
     if (!indenter) {
         qDebug() << "CodeFormatPlugin: no formatter for file" << fileName << "suffix:" << QFileInfo(fileName).suffix();

@@ -44,6 +44,7 @@ class CodeFormatPlugin : public IPlugin {
         return configObject;
     }
     FormatterRegistry builtInRegistry;
+    FormatterRegistry userRegistry;
 
   public:
     CodeFormatPlugin();
