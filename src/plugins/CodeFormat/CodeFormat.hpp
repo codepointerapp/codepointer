@@ -38,6 +38,7 @@ class FormatterRegistry {
 class CodeFormatPlugin : public IPlugin {
     struct Config {
         CONFIG_DEFINE(ExtraPaths, QStringList)
+        CONFIG_DEFINE(IgnoredFiles, QString)
         qmdiPluginConfig *config;
     };
     Config &getConfig() {

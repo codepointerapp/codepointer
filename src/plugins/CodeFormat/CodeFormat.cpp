@@ -97,18 +97,24 @@ CodeFormatPlugin::CodeFormatPlugin() {
             .setKey(Config::ExtraPathsKey)
             .setType(qmdiConfigItem::StringList)
             .build());
+    config.configItems.push_back(
+        qmdiConfigItem::Builder()
+            .setDisplayName(tr("Filenames not to format"))
+            .setDescription(tr("Comma separated list (for example: *.md, README.txt)"))
+            .setKey(Config::IgnoredFilesKey)
+            .setType(qmdiConfigItem::String)
+            .build());
 }
 
 void CodeFormatPlugin::on_client_merged(qmdiHost *host) {
     IPlugin::on_client_merged(host);
 
     builtInRegistry.loadFromFile(":indenters.json");
-    qDebug() << "CodeFormatPlugin: Loaded built in indenters registry, found "
+    qDebug() << "CodeFormatPlugin: Loaded built in indenters registry, found"
              << builtInRegistry.count();
 
     auto dataDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     auto fullFileName = dataDir + QDir::separator() + "indenters.json";
-
     auto w = new QFileSystemWatcher(this);
     w->addPath(fullFileName);
     w->connect(w, &QFileSystemWatcher::fileChanged, this, [this]() {
@@ -152,17 +158,39 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
         return {};
     }
 
+    auto ignoreList = getConfig().getIgnoredFiles();
     auto fileName = args[GlobalArguments::FileName].toString();
+    auto baseName = QFileInfo(fileName).fileName();
+    auto matches = false;
+
+    // Split by ';' or ','
+    auto patterns = ignoreList.split(QRegularExpression("[;,]"), Qt::SkipEmptyParts);
+    for (auto &p : patterns) {
+        p = p.trimmed();
+    }
+    for (const auto &pattern : patterns) {
+        auto regex = QRegularExpression(QRegularExpression::wildcardToRegularExpression(pattern),
+                                        QRegularExpression::CaseInsensitiveOption);
+        if (regex.match(baseName).hasMatch()) {
+            matches = true;
+            break;
+        }
+    }
+    if (matches) {
+        qDebug() << "CodeFormatPlugin: filename is flagged, not formatting per request";
+        return {};
+    }
+
     auto content = args[GlobalArguments::Content].toString();
     auto indenter = userRegistry.getForFile(fileName);
-
     if (!indenter) {
         qDebug() << "CodeFormatPlugin: No user indenter - using internal one";
         indenter = builtInRegistry.getForFile(fileName);
     }
 
     if (!indenter) {
-        qDebug() << "CodeFormatPlugin: no formatter for file" << fileName << "suffix:" << QFileInfo(fileName).suffix();
+        qDebug() << "CodeFormatPlugin: no formatter for file" << fileName
+                 << "suffix:" << QFileInfo(fileName).suffix();
         return QtFuture::makeReadyValueFuture(args);
     }
 
