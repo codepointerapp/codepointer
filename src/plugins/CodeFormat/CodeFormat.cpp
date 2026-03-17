@@ -181,7 +181,8 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
         return {};
     }
 
-    auto content = args[GlobalArguments::Content].toString();
+    auto result = CommandArgs();
+    auto content = result[GlobalArguments::Content].toString();
     auto indenter = userRegistry.getForFile(fileName);
     if (!indenter) {
         qDebug() << "CodeFormatPlugin: No user indenter - using internal one";
@@ -191,7 +192,8 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
     if (!indenter) {
         qDebug() << "CodeFormatPlugin: no formatter for file" << fileName
                  << "suffix:" << QFileInfo(fileName).suffix();
-        return QtFuture::makeReadyValueFuture(args);
+        result[GlobalArguments::ExitCode] = GlobalResults::NotSupported;
+        return QtFuture::makeReadyValueFuture(result);
     }
 
     return runFormat(fileName, content, indenter);
@@ -218,7 +220,7 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
 
         if (program.isEmpty()) {
             qDebug() << "CodeFormatPlugin: executable not found:" << indenter->binary;
-            result[GlobalArguments::ExitCode] = -1;
+            result[GlobalArguments::ExitCode] = GlobalResults::ExecutableNotFound;
             result[GlobalArguments::ErrorMessage] =
                 tr("Executable not found: %1").arg(indenter->binary);
             return result;
@@ -229,7 +231,7 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
         proc.start(program, args);
         if (!proc.waitForStarted()) {
             qDebug() << "CodeFormatPlugin: waitForStarted failed for" << fullCommand;
-            result[GlobalArguments::ExitCode] = -1;
+            result[GlobalArguments::ExitCode] = GlobalResults::ExecutableError;
             result[GlobalArguments::ErrorMessage] = tr("Failed running %1").arg(fullCommand);
             return result;
         }
@@ -239,7 +241,7 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
         }
         if (!proc.waitForFinished()) {
             qDebug() << "CodeFormatPlugin: waitForFinished failed for" << indenter->binary;
-            result[GlobalArguments::ExitCode] = -2;
+            result[GlobalArguments::ExitCode] = GlobalResults::Crashed;
             result[GlobalArguments::ErrorMessage] = tr("Command crashed %1").arg(fullCommand);
             return result;
         }

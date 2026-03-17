@@ -486,8 +486,8 @@ QString qmdiEditor::getShortFileName() {
 
     // the name of the object for it's mdi server
     // is the file name alone, without the directory
-    int i = fileName.lastIndexOf('/');
-    QString s;
+    auto i = fileName.lastIndexOf('/');
+    auto s = QString();
     if (i != -1) {
         s = fileName.mid(i + 1);
     } else {
@@ -1620,8 +1620,11 @@ QFuture<void> qmdiEditor::reformatContent() {
         .then(this, [this](CommandArgs args) {
             auto exitCode = args[GlobalArguments::ExitCode].toInt();
             if (exitCode != 0) {
-                auto stderr = args[GlobalArguments::ErrorMessage].toString();
-                this->displayBannerMessage(stderr, 15);
+                // Not supported means no indenter was found.
+                if (exitCode != GlobalResults::NotSupported) {
+                    auto stderr = args[GlobalArguments::ErrorMessage].toString();
+                    this->displayBannerMessage(stderr, 15);
+                }
                 return;
             }
 
@@ -1629,8 +1632,8 @@ QFuture<void> qmdiEditor::reformatContent() {
             if (c == textEditor->toPlainText()) {
                 return;
             }
-            
-            QTextCursor cursor(textEditor->document());
+
+            auto cursor = QTextCursor(textEditor->document());
             cursor.beginEditBlock();
             {
                 PlainTextEditStateGuard guard(textEditor);

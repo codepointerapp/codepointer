@@ -75,3 +75,10 @@ inline constexpr const char *FoldTopLevel = "FoldTopLevel";
 inline constexpr const char *ExitCode = "ExitCode";
 inline constexpr const char *ErrorMessage = "ErrorMessage";
 } // namespace GlobalArguments
+
+namespace GlobalResults {
+constexpr const int ExecutableNotFound = -1;
+constexpr const int ExecutableError = -2;
+constexpr const int Crashed = -3;
+constexpr const int NotSupported = -4;
+} // namespace GlobalResults
