@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QProcess>
 #include <QtConcurrent>
+#include <qfilesystemwatcher.h>
 
 Formatter *Formatter::fromJson(const QJsonObject &obj) {
     const QVariantMap m = obj.toVariantMap();
@@ -75,6 +76,11 @@ const Formatter *FormatterRegistry::getForFile(const QString &filePath) const {
 
 int FormatterRegistry::count() const { return m_indenters.size(); }
 
+void FormatterRegistry::clear() {
+    m_extIndex.clear();
+    m_indenters.clear();
+}
+
 CodeFormatPlugin::CodeFormatPlugin() {
     name = tr("Code format support");
     author = tr("Diego Iastrubni <diegoiast@gmail.com>");
@@ -102,6 +108,23 @@ void CodeFormatPlugin::on_client_merged(qmdiHost *host) {
 
     auto dataDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     auto fullFileName = dataDir + QDir::separator() + "indenters.json";
+
+    auto w = new QFileSystemWatcher(this);
+    w->addPath(fullFileName);
+    w->connect(w, &QFileSystemWatcher::fileChanged, this, [this]() {
+        auto dataDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        auto fullFileName = dataDir + QDir::separator() + "indenters.json";
+
+        qDebug() << "Reloading" << fullFileName;
+        userRegistry.clear();
+        userRegistry.loadFromFile(fullFileName);
+        if (userRegistry.count() != 0) {
+            qDebug() << "CodeFormatPlugin: Loaded user in indenters registry, found "
+                     << userRegistry.count() << "from" << fullFileName;
+        } else {
+            qDebug() << "CodeFormatPlugin: User registry not found " << fullFileName;
+        }
+    });
 
     userRegistry.loadFromFile(fullFileName);
     if (userRegistry.count() != 0) {

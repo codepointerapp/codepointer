@@ -28,6 +28,7 @@ class FormatterRegistry {
     bool loadFromFile(const QString &jsonFile);
     const Formatter *getForFile(const QString &filePath) const;
     int count() const;
+    void clear();
 
   private:
     QVector<Formatter *> m_indenters;
