@@ -1618,6 +1618,13 @@ QFuture<void> qmdiEditor::reformatContent() {
 
     return manager->handleCommandAsync(GlobalCommands::ReformatCode, args)
         .then(this, [this](CommandArgs args) {
+            auto exitCode = args[GlobalArguments::ExitCode].toInt();
+            if (exitCode != 0) {
+                auto stderr = args[GlobalArguments::ErrorMessage].toString();
+                this->displayBannerMessage(stderr, 15);
+                return;
+            }
+
             auto c = args[GlobalArguments::Content].toString();
             if (c == textEditor->toPlainText()) {
                 return;
