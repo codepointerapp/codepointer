@@ -181,8 +181,7 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
         return {};
     }
 
-    auto result = CommandArgs();
-    auto content = result[GlobalArguments::Content].toString();
+    auto content = args[GlobalArguments::Content].toString();
     auto indenter = userRegistry.getForFile(fileName);
     if (!indenter) {
         qDebug() << "CodeFormatPlugin: No user indenter - using internal one";
@@ -192,6 +191,8 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
     if (!indenter) {
         qDebug() << "CodeFormatPlugin: no formatter for file" << fileName
                  << "suffix:" << QFileInfo(fileName).suffix();
+        CommandArgs result;
+        result[GlobalArguments::Content] = content;
         result[GlobalArguments::ExitCode] = GlobalResults::NotSupported;
         return QtFuture::makeReadyValueFuture(result);
     }
@@ -211,7 +212,8 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
 
         args.reserve(indenter->args.size());
         for (auto arg : indenter->args) {
-            args.append(arg.replace("$filepath", fileName));
+            QString a = arg;
+            args.append(a.replace("$filepath", fileName));
         }
 
         auto paths = getConfig().getExtraPaths();
