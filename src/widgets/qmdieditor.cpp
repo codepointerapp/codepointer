@@ -1271,15 +1271,7 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
             needToReformat = true;
             break;
         case FormatCodeOnSave::InProjects:
-            // FIXME: - can we support this at all? Or should the feature be removed?
-            /*
-                        if (auto project = projectModel->findProjectForFile(fileName)) {
-                            // FIXME: original code from ProjectManager has this line:
-                            // if (!project || !fileName.startsWith(project->sourceDir)) {
-                            needToReformat = true;
-                        }
-            */
-            needToReformat = true;
+            needToReformat = isFileInProject().result();
             break;
         }
     }
@@ -1619,10 +1611,20 @@ QFuture<void> qmdiEditor::reformatContent() {
         .then(this, [this](CommandArgs args) {
             auto exitCode = args[GlobalArguments::ExitCode].toInt();
             if (exitCode != 0) {
-                // Not supported means no indenter was found.
-                if (exitCode != GlobalResults::NotSupported) {
-                    auto stderr = args[GlobalArguments::ErrorMessage].toString();
+                auto stderr = args[GlobalArguments::ErrorMessage].toString();
+
+                switch (exitCode) {
+                case GlobalResults::ExecutableNotFound:
                     this->displayBannerMessage(stderr, 15);
+                    break;
+                case GlobalResults::ExecutableError:
+                    this->displayBannerMessage(stderr, 25);
+                    break;
+                case GlobalResults::Crashed:
+                    this->displayBannerMessage(stderr, 35);
+                    break;
+                case GlobalResults::NotSupported:
+                    break;
                 }
                 return;
             }
@@ -1642,6 +1644,24 @@ QFuture<void> qmdiEditor::reformatContent() {
             cursor.endEditBlock();
             textEditor->setFocus();
         });
+}
+
+QFuture<bool> qmdiEditor::isFileInProject() {
+    return getProjectDetails().then([](const CommandArgs &args) {
+        return args.value(GlobalArguments::Value).toBool();
+    });
+}
+
+QFuture<CommandArgs> qmdiEditor::getProjectDetails() {
+    auto manager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    if (!manager) {
+        return QtFuture::makeReadyValueFuture(CommandArgs());
+    }
+
+    return manager->handleCommandAsync(GlobalCommands::GetProjectForFile,
+                                       {
+                                           {GlobalArguments::FileName, mdiClientFileName()},
+                                       });
 }
 
 void qmdiEditor::chooseHighliter(const QString &newText) {

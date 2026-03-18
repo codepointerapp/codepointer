@@ -110,6 +110,8 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void toggleHeaderImpl();
     void loadContent(bool useBackup);
     QFuture<void> reformatContent();
+    QFuture<bool> isFileInProject();
+    QFuture<CommandArgs> getProjectDetails();
 
     void chooseHighliter(const QString &newText);
     void chooseIndenter(const QAction *action);

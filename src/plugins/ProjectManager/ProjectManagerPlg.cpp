@@ -830,6 +830,9 @@ int ProjectManagerPlugin::canHandleAsyncCommand(const QString &command, const Co
     if (command == GlobalCommands::FindMatchingFile) {
         return true;
     }
+    if (command == GlobalCommands::GetProjectForFile) {
+        return true;
+    }
     return false;
 }
 
@@ -928,6 +931,18 @@ QFuture<CommandArgs> ProjectManagerPlugin::handleCommandAsync(const QString &com
                 }
             }
         }
+    }
+    if (command == GlobalCommands::GetProjectForFile) {
+        auto filename = args[GlobalArguments::FileName].toString();
+        auto project = projectModel->findProjectForFile(filename);
+        auto out = CommandArgs();
+
+        out[GlobalArguments::Value] = project != nullptr;
+        if (project) {
+            out[GlobalArguments::ProjectName] = project->name;
+            out[GlobalArguments::SourceDirectory] = project->sourceDir;
+        }
+        return QtFuture::makeReadyValueFuture(out);
     }
     return {};
 }

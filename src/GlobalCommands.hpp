@@ -48,6 +48,9 @@ inline constexpr const char *FindMatchingFile = "FindMatchingFile";
 // Used when pressing F4 on the editor
 inline constexpr const char *ReformatCode = "ReformatCode";
 
+// Check if a file belongs to any loaded project and return its details
+inline constexpr const char *GetProjectForFile = "GetProjectForFile";
+
 } // namespace GlobalCommands
 
 namespace GlobalArguments {
