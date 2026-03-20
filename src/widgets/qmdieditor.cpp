@@ -68,8 +68,8 @@
 auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
 auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
 
-auto static getCorrespondingFile(PluginManager *manager, const QString &fileName)
-    -> QFuture<QString> {
+auto static getCorrespondingFile(PluginManager *manager,
+                                 const QString &fileName) -> QFuture<QString> {
 
     // First - choose easy solution, file aside the original one
     auto fileInfo = QFileInfo(fileName);
@@ -433,7 +433,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     connect(textEditor, &QPlainTextEdit::textChanged, this, [this]() { autoSaveTimer->start(); });
 
     // Why a timer for on change?
-    // If we issue a "git checkout" - we get notificaiton when git resets the
+    // If we issue a "git checkout" - we get notification when git resets the
     // file, we read - and get a "0" sized file. Then later on git would write
     // the correct content - and we get no new notification.
     // Now we read an empty file.
@@ -1647,9 +1647,8 @@ QFuture<void> qmdiEditor::reformatContent() {
 }
 
 QFuture<bool> qmdiEditor::isFileInProject() {
-    return getProjectDetails().then([](const CommandArgs &args) {
-        return args.value(GlobalArguments::Value).toBool();
-    });
+    return getProjectDetails().then(
+        [](const CommandArgs &args) { return args.value(GlobalArguments::Value).toBool(); });
 }
 
 QFuture<CommandArgs> qmdiEditor::getProjectDetails() {
