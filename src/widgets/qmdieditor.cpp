@@ -479,6 +479,49 @@ qmdiEditor::~qmdiEditor() {
     mdiServer = nullptr;
 }
 
+bool qmdiEditor::saveClientConent() {
+    deleteBackup();
+    return doSave();
+}
+
+bool qmdiEditor::canCloseClient(CloseReason reason) {
+    if (textEditor->isReadOnly()) {
+        saveBackup();
+        return true;
+    }
+
+    if (!textEditor->document()->isModified()) {
+        deleteBackup();
+        return true;
+    }
+
+    if (reason == CloseReason::ApplicationQuit) {
+        if (textEditor->document()->isModified()) {
+            saveBackup();
+        }
+        return true;
+    }
+
+    QMessageBox msgBox(QMessageBox::Warning, mdiClientName,
+                       tr("The document has been modified.\nDo you want to save your changes?"),
+                       QMessageBox::Yes | QMessageBox::Default, this);
+
+    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    msgBox.setDefaultButton(QMessageBox::Yes);
+
+    int ret = msgBox.exec();
+
+    if (ret == QMessageBox::Yes) {
+        return doSave();
+    } else if (ret == QMessageBox::Cancel) {
+        return false;
+    }
+    deleteBackup();
+    return true;
+}
+
+QString qmdiEditor::mdiClientFileName() { return fileName; }
+
 QString qmdiEditor::getShortFileName() {
     if (fileName.isEmpty()) {
         return tr("NO NAME");
@@ -548,44 +591,6 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
     menu->exec(globalPosition);
     delete menu;
 }
-
-bool qmdiEditor::canCloseClient(CloseReason reason) {
-    if (textEditor->isReadOnly()) {
-        saveBackup();
-        return true;
-    }
-
-    if (!textEditor->document()->isModified()) {
-        deleteBackup();
-        return true;
-    }
-
-    if (reason == CloseReason::ApplicationQuit) {
-        if (textEditor->document()->isModified()) {
-            saveBackup();
-        }
-        return true;
-    }
-
-    QMessageBox msgBox(QMessageBox::Warning, mdiClientName,
-                       tr("The document has been modified.\nDo you want to save your changes?"),
-                       QMessageBox::Yes | QMessageBox::Default, this);
-
-    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
-    msgBox.setDefaultButton(QMessageBox::Yes);
-
-    int ret = msgBox.exec();
-
-    if (ret == QMessageBox::Yes) {
-        return doSave();
-    } else if (ret == QMessageBox::Cancel) {
-        return false;
-    }
-    deleteBackup();
-    return true;
-}
-
-QString qmdiEditor::mdiClientFileName() { return fileName; }
 
 /**
  * @brief Return status of editor
@@ -1201,7 +1206,6 @@ void qmdiEditor::newDocument() { loadFile(""); }
 
 void qmdiEditor::setPlainText(const QString &plainText) {
     textEditor->setPlainText(plainText);
-    // textEditor->document()->setModified(true);
     documentHasBeenLoaded = true;
 }
 

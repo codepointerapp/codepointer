@@ -657,6 +657,7 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
     connect(projectSearch, &QAction::triggered, this, [searchPanel, this]() {
         auto currentEditor = dynamic_cast<qmdiEditor *>(getManager()->currentClient());
         if (currentEditor) {
+            // FIXME: need api for getting selected text from mdi client
             auto text = currentEditor->getSelectedText();
             if (!text.isEmpty()) {
                 searchPanelUI->setSearchPattern(text);
@@ -1137,7 +1138,7 @@ void ProjectManagerPlugin::do_runExecutable(const ExecutableInfo *info) {
         qDebug() << "ProjectManagerPlugin::do_runExecutable() - info is null";
         return;
     }
-
+    getManager()->saveSettings();
     auto project = getCurrentConfig();
     auto executablePath = QDir::toNativeSeparators(findExecForPlatform(info->executables));
     auto workingDirectory = info->runDirectory.isEmpty() ? project->buildDir : info->runDirectory;
@@ -1175,6 +1176,7 @@ void ProjectManagerPlugin::do_runExecutable(const ExecutableInfo *info) {
 
 void ProjectManagerPlugin::do_runTask(const TaskInfo *task) {
     auto platform = PLATFORM_CURRENT;
+    getManager()->saveSettings();
 
     if (!task->commands.contains(platform) || task->commands.value(platform).isEmpty()) {
         auto msg = QString("do_runTask: No valid commands for platform ") + platform;
@@ -1253,7 +1255,7 @@ void ProjectManagerPlugin::runTask_clicked() {
     }
     auto manager = getManager();
     auto count = manager->visibleTabs();
-    for (auto i = size_t(0); i < count; i++) {
+    for (auto i = 0; i < count; i++) {
         auto client = manager->getMdiClient(i);
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
             editor->removeMetaData();
@@ -1359,7 +1361,7 @@ auto ProjectManagerPlugin::addProjectFromDir(const QString &dirName) -> void {
 auto ProjectManagerPlugin::saveAllDocuments() -> bool {
     for (auto i = 0; i < mdiServer->getClientsCount(); i++) {
         auto c = mdiServer->getClient(i);
-        if (!c->canCloseClient(CloseReason::CloseTab)) {
+        if (!c->saveClientConent()) {
             return false;
         }
     }
