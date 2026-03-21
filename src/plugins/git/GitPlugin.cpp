@@ -13,8 +13,8 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QStringListModel>
-#include <QtConcurrent>
 #include <QTimer>
+#include <QtConcurrent>
 
 #include <iplugin.h>
 
@@ -23,7 +23,6 @@
 #include "ui_GitCommit.h"
 #include "widgets/AutoShrinkLabel.hpp"
 #include "widgets/BoldItemDelegate.hpp"
-#include "widgets/qmdieditor.h"
 
 #include "plugins/git/CommitDelegate.hpp"
 #include "plugins/git/CommitForm.hpp"
@@ -223,30 +222,31 @@ void GitPlugin::diffFileHandler() {
     auto clientName = client->mdiClientName;
     auto position = manager->getMdiServer()->getClientIndex(client);
 
-    getDiff(filename).then(this, [this, filename, clientName, position](const std::tuple<QString, int> &res) {
-        auto [diff, exitCode] = res;
-        if (exitCode != 0 || diff.isEmpty()) {
-            return;
-        }
+    getDiff(filename).then(
+        this, [this, filename, clientName, position](const std::tuple<QString, int> &res) {
+            auto [diff, exitCode] = res;
+            if (exitCode != 0 || diff.isEmpty()) {
+                return;
+            }
 
-        // Fix compilation under (some?) clang
-        auto diffStr = diff;
-        detectRepoRoot(filename).then(
-            this, [this, clientName, position, diffStr](const std::tuple<QString, int> &res2) {
-                auto [repoRoot, exitCode2] = res2;
-                if (exitCode2 != 0 || repoRoot.isEmpty()) {
-                    return;
-                }
-                CommandArgs args = {
-                    {GlobalArguments::FileName, QString("%1.diff").arg(clientName)},
-                    {GlobalArguments::Content, diffStr},
-                    {GlobalArguments::ReadOnly, true},
-                    {GlobalArguments::Position, position},
-                    {GlobalArguments::SourceDirectory, repoRoot},
-                };
-                getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
-            });
-    });
+            // Fix compilation under (some?) clang
+            auto diffStr = diff;
+            detectRepoRoot(filename).then(
+                this, [this, clientName, position, diffStr](const std::tuple<QString, int> &res2) {
+                    auto [repoRoot, exitCode2] = res2;
+                    if (exitCode2 != 0 || repoRoot.isEmpty()) {
+                        return;
+                    }
+                    CommandArgs args = {
+                        {GlobalArguments::FileName, QString("%1.diff").arg(clientName)},
+                        {GlobalArguments::Content, diffStr},
+                        {GlobalArguments::ReadOnly, true},
+                        {GlobalArguments::Position, position},
+                        {GlobalArguments::SourceDirectory, repoRoot},
+                    };
+                    getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
+                });
+        });
 }
 
 void GitPlugin::revertFileHandler() {
@@ -290,34 +290,35 @@ void GitPlugin::refreshBranchesHandler() {
         return;
     }
 
-    runGit({"-C", repoRoot, "branch", "-a"}).then(this, [this](const std::tuple<QString, int> &res) {
-        auto [output, exitCode] = res;
-        auto branches = output.split('\n', Qt::SkipEmptyParts);
-        form->branchListCombo->clear();
-        auto activeIndex = -1;
-        auto delegate = static_cast<BoldItemDelegate *>(form->branchListCombo->itemDelegate());
-        for (auto const &line : std::as_const(branches)) {
-            auto isActive = line.startsWith('*');
-            auto branchName = line.mid(2).trimmed();
-            if (branchName.isEmpty()) {
-                continue;
+    runGit({"-C", repoRoot, "branch", "-a"})
+        .then(this, [this](const std::tuple<QString, int> &res) {
+            auto [output, exitCode] = res;
+            auto branches = output.split('\n', Qt::SkipEmptyParts);
+            form->branchListCombo->clear();
+            auto activeIndex = -1;
+            auto delegate = static_cast<BoldItemDelegate *>(form->branchListCombo->itemDelegate());
+            for (auto const &line : std::as_const(branches)) {
+                auto isActive = line.startsWith('*');
+                auto branchName = line.mid(2).trimmed();
+                if (branchName.isEmpty()) {
+                    continue;
+                }
+
+                form->branchListCombo->addItem(branchName);
+                if (isActive) {
+                    delegate->boldItemStr = branchName;
+                    activeIndex = form->branchListCombo->count() - 1;
+                }
             }
 
-            form->branchListCombo->addItem(branchName);
-            if (isActive) {
-                delegate->boldItemStr = branchName;
-                activeIndex = form->branchListCombo->count() - 1;
+            if (activeIndex != -1) {
+                form->branchListCombo->setCurrentIndex(activeIndex);
             }
-        }
-
-        if (activeIndex != -1) {
-            form->branchListCombo->setCurrentIndex(activeIndex);
-        }
-        form->diffBranchButton->setEnabled(true);
-        form->newBranchButton->setEnabled(true);
-        form->deleteBranchButton->setEnabled(true);
-        form->checkoutBranchButton->setEnabled(true);
-    });
+            form->diffBranchButton->setEnabled(true);
+            form->newBranchButton->setEnabled(true);
+            form->deleteBranchButton->setEnabled(true);
+            form->checkoutBranchButton->setEnabled(true);
+        });
 }
 
 void GitPlugin::diffBranchHandler() {
@@ -329,21 +330,22 @@ void GitPlugin::diffBranchHandler() {
     auto filename = client->mdiClientFileName();
     auto repoRoot = QFileInfo(filename).absolutePath();
     auto branch = form->branchListCombo->currentText();
-    runGit({"diff", branch}).then(this, [this, branch, repoRoot](const std::tuple<QString, int> &res) {
-        auto [diff, exitCode] = res;
-        if (diff.isEmpty()) {
-            return;
-        }
+    runGit({"diff", branch})
+        .then(this, [this, branch, repoRoot](const std::tuple<QString, int> &res) {
+            auto [diff, exitCode] = res;
+            if (diff.isEmpty()) {
+                return;
+            }
 
-        CommandArgs args = {
-            {GlobalArguments::FileName, QString("diff-%1.diff").arg(branch)},
-            {GlobalArguments::Content, diff},
-            {GlobalArguments::ReadOnly, true},
-            {GlobalArguments::FoldTopLevel, true},
-            {GlobalArguments::SourceDirectory, repoRoot},
-        };
-        getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
-    });
+            CommandArgs args = {
+                {GlobalArguments::FileName, QString("diff-%1.diff").arg(branch)},
+                {GlobalArguments::Content, diff},
+                {GlobalArguments::ReadOnly, true},
+                {GlobalArguments::FoldTopLevel, true},
+                {GlobalArguments::SourceDirectory, repoRoot},
+            };
+            getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
+        });
 }
 
 void GitPlugin::newBranchHandler() {
@@ -541,8 +543,6 @@ void GitPlugin::on_gitCommitDoubleClicked(const QModelIndex &mi) {
     });
 }
 
-
-// FIXME: this should return a future, and not be "sync" but "async".
 QFuture<std::tuple<QString, int>> GitPlugin::runGit(const QStringList &args) {
     return QtConcurrent::run([this, args] {
         QProcess p;

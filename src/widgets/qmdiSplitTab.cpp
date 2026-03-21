@@ -233,9 +233,9 @@ qmdiSplitTab::qmdiSplitTab(QWidget *parent) : SplitTabWidget(parent) {
 }
 
 qmdiSplitTab::~qmdiSplitTab() {
-    auto count = getClientsCount();
-    for (int i = 0; i < count; ++i) {
-        if (auto client = getClient(i)) {
+    auto count = qmdiSplitTab::getClientsCount();
+    for (auto i = 0; i < count; ++i) {
+        if (auto client = qmdiSplitTab::getClient(i)) {
             client->mdiServer = nullptr;
         }
     }
@@ -299,6 +299,8 @@ bool qmdiSplitTab::event(QEvent *ev) {
         if (manager) {
             connect(manager, &PluginManager::minimizedModeChanged, this, [this](bool status) {
                 auto manager = dynamic_cast<PluginManager *>(parentWidget());
+                assert(manager);
+
                 SplitTabWidget::onSplitCountMaybeChanged();
                 keepSingleClient = status;
                 if (status && loadingFinished) {
