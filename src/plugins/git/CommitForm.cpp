@@ -114,8 +114,8 @@ auto GitStatusTableModel::data(const QModelIndex &index, int role) const -> QVar
     }
 }
 
-auto GitStatusTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
-    -> bool {
+auto GitStatusTableModel::setData(const QModelIndex &index, const QVariant &value,
+                                  int role) -> bool {
     if (!index.isValid()) {
         return false;
     }
@@ -142,8 +142,8 @@ auto GitStatusTableModel::flags(const QModelIndex &index) const -> Qt::ItemFlags
     return f;
 }
 
-auto GitStatusTableModel::headerData(int section, Qt::Orientation orientation, int role) const
-    -> QVariant {
+auto GitStatusTableModel::headerData(int section, Qt::Orientation orientation,
+                                     int role) const -> QVariant {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) {
         return {};
     }
@@ -270,8 +270,8 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
         };
 
         auto manager = git->getManager();
-        auto plugin = manager->findPlugin("TextEditorPlugin");
-        if (auto p = dynamic_cast<TextEditorPlugin *>(plugin)) {
+        auto editorPlugin = manager->findPlugin("TextEditorPlugin");
+        if (auto p = dynamic_cast<TextEditorPlugin *>(editorPlugin)) {
 
             auto client = p->fileNewEditor();
             client->mdiServer = git->mdiServer;
@@ -294,6 +294,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 e->setHighlighter("markdown.xml");
                 e->setDrawSolidEdge(true);
                 e->setLineLengthEdge(72);
+                e->setSoftLineWrapping(true);
                 e->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
                 replaceWidget(ui->commitMessage, e);
