@@ -28,7 +28,7 @@ struct TaskInfo {
     QString tooltip;
     QString runDirectory;
 
-    // This is used to note a build. Usually completion is rescaned after a good build
+    // This is used to note a build. Usually completion is rescanned after a good build
     bool isBuild = false;
 
     // key: platform, value: list of commands
