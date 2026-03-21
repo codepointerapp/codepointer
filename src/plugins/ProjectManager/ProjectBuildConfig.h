@@ -3,15 +3,16 @@
 #include <QHash>
 #include <QString>
 
-auto constexpr PLATFORM_LINUX = "linux";
-auto constexpr PLATFORM_WINDOWS = "windows";
+[[maybe_unused]] auto constexpr PLATFORM_LINUX = "linux";
+[[maybe_unused]] auto constexpr PLATFORM_WINDOWS = "windows";
+[[maybe_unused]] auto constexpr PLATFORM_MACOS = "macos";
 
 #if defined(_WIN32)
-auto constexpr PLATFORM_CURRENT = "windows";
+auto constexpr PLATFORM_CURRENT = PLATFORM_WINDOWS;
 #elif defined(linux)
-auto constexpr PLATFORM_CURRENT = "linux";
+auto constexpr PLATFORM_CURRENT = PLATFORM_LINUX;
 #elif defined(__APPLE__)
-auto constexpr PLATFORM_CURRENT = "osx";
+auto constexpr PLATFORM_CURRENT = PLATFORM_MACOS;
 #endif
 
 struct ExecutableInfo {
@@ -24,11 +25,19 @@ struct ExecutableInfo {
 
 struct TaskInfo {
     QString name;
-    QHash<QString, QStringList> commands; // key: platform, value: list of commands
+    QString tooltip;
     QString runDirectory;
+
+    // This is used to note a build. Usually completion is rescaned after a good build
     bool isBuild = false;
 
+    // key: platform, value: list of commands
+    QHash<QString, QStringList> commands;
+
     bool operator==(const TaskInfo &other) const;
+
+    // Compute tooltip, according to current platform
+    QString getTooltip() const;
 };
 
 enum class ProjectType { cmake, cargo, golang, meson, unknown };
@@ -57,8 +66,8 @@ struct ProjectBuildConfig {
     static auto tryGuessFromMeson(const QString &fileName) -> std::shared_ptr<ProjectBuildConfig>;
     static auto buildFromDirectory(const QString &dirName) -> std::shared_ptr<ProjectBuildConfig>;
     static auto buildFromFile(const QString &fileName) -> std::shared_ptr<ProjectBuildConfig>;
-    static auto buildFromJsonFile(const QString &jsonFileName)
-        -> std::shared_ptr<ProjectBuildConfig>;
+    static auto
+    buildFromJsonFile(const QString &jsonFileName) -> std::shared_ptr<ProjectBuildConfig>;
     static auto canLoadFile(const QString &filename) -> bool;
 
     auto updateBinaries() -> void;

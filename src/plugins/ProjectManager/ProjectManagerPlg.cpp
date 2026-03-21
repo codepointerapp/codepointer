@@ -1410,9 +1410,7 @@ auto ProjectManagerPlugin::updateTasksUI(std::shared_ptr<ProjectBuildConfig> bui
             }
         }
         auto taskName = buildConfig->tasksInfo[taskIndex].name;
-        auto platform = PLATFORM_CURRENT;
-        auto commands = buildConfig->tasksInfo[taskIndex].commands.value(platform);
-        auto taskCommand = commands.isEmpty() ? "" : commands.first();
+        auto taskCommand = buildConfig->tasksInfo[taskIndex].getTooltip();
         selectedTaskIndex = taskIndex;
         this->gui->taskButton->setEnabled(true);
         this->gui->taskButton->setText(taskName);

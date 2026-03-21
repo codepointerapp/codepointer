@@ -64,7 +64,7 @@ auto getExecutablesFromCMakeFileAPI(const QString &buildDir) -> StringHash {
     auto objects = indexObj["objects"].toArray();
 
     auto codemodelFile = QString();
-    for (const auto &entry : objects) {
+    for (const auto &entry : std::as_const(objects)) {
         auto obj = entry.toObject();
         if (obj["kind"].toString() == "codemodel") {
             codemodelFile = obj["jsonFile"].toString();
@@ -95,7 +95,8 @@ auto getExecutablesFromCMakeFileAPI(const QString &buildDir) -> StringHash {
 
     auto targets = configurations[0].toObject()["targets"].toArray();
     for (auto const &target : std::as_const(targets)) {
-        auto targetFile = target.toObject()["jsonFile"].toString();
+        auto obj = target.toObject();
+        auto targetFile = obj["jsonFile"].toString();
         if (targetFile.isEmpty()) {
             continue;
         }
@@ -134,7 +135,7 @@ auto static cargoListBinUnits(const QString &metaData) -> StringHash {
 
     auto targetDir = QDir(targetDirStr);
     auto packages = rootObj.value("packages").toArray();
-    for (const auto &packageVal : packages) {
+    for (const auto &packageVal : std::as_const(packages)) {
         if (!packageVal.isObject()) {
             continue;
         }
@@ -142,7 +143,7 @@ auto static cargoListBinUnits(const QString &metaData) -> StringHash {
         auto packageObj = packageVal.toObject();
         auto targets = packageObj.value("targets").toArray();
 
-        for (const auto &targetVal : targets) {
+        for (const auto &targetVal : std::as_const(targets)) {
             if (!targetVal.isObject()) {
                 continue;
             }
@@ -227,8 +228,20 @@ bool TaskInfo::operator==(const TaskInfo &other) const {
         this->name == other.name &&
         this->commands == other.commands &&
         this->isBuild == other.isBuild &&
+        this->tooltip == other.tooltip &&
         this->runDirectory == other.runDirectory;
     /* clang-format on */
+}
+
+QString TaskInfo::getTooltip() const
+{
+    if (!tooltip.isEmpty()) {
+        return tooltip;
+    }
+
+    auto platform = PLATFORM_CURRENT;
+    auto platFormCommands = commands.value(platform);
+    return commands.isEmpty() ? "" : platFormCommands.first();
 }
 
 auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
@@ -254,6 +267,7 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
     {
         auto t = TaskInfo();
         t.name = "CMake (configure/Debug)";
+        t.tooltip = "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Debug";
         t.commands.insert(
             PLATFORM_LINUX,
             {"mkdir -p ${build_directory}/.cmake/api/v1/query/",
@@ -284,6 +298,7 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
     {
         auto t = TaskInfo();
         t.name = "CMake (configure/Release)";
+        t.tooltip = "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Release";
         t.commands.insert(
             PLATFORM_LINUX,
             {"mkdir -p ${build_directory}/.cmake/api/v1/query/",
@@ -351,6 +366,7 @@ auto ProjectBuildConfig::tryGuessFromCargo(const QString &fileName)
     auto cargoBuild = "cargo build";
     auto cargoBuildRelease = "cargo build --release";
     auto cargoUpdate = "cargo update";
+    auto cargoClean = "cargo clean";
     auto cargoListPackages =
         "(cargo metadata --format-version=1 --no-deps > ${build_directory}/cargo-metadata.json)";
 
@@ -374,10 +390,10 @@ auto ProjectBuildConfig::tryGuessFromCargo(const QString &fileName)
     }
     {
         auto t = TaskInfo();
-        t.name = "cargo clean";
+        t.name = cargoClean;
         t.runDirectory = "${source_directory}";
-        t.commands.insert(PLATFORM_LINUX, {cargoUpdate});
-        t.commands.insert(PLATFORM_WINDOWS, {cargoUpdate});
+        t.commands.insert(PLATFORM_LINUX, {cargoClean});
+        t.commands.insert(PLATFORM_WINDOWS, {cargoClean});
         value->tasksInfo.push_back(t);
     }
     {
@@ -556,9 +572,10 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
             auto const placeholder = v.toArray();
             for (const auto &vv : placeholder) {
                 ExecutableInfo execInfo;
+                auto obj = vv.toObject();
                 execInfo.name = vv.toObject().value("name").toString();
-                execInfo.executables = toHash(vv.toObject()["executables"]);
-                execInfo.runDirectory = vv.toObject()["runDirectory"].toString();
+                execInfo.executables = toHash(obj["executables"]);
+                execInfo.runDirectory = obj["runDirectory"].toString();
                 info.push_back(execInfo);
             };
         }
@@ -574,6 +591,10 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
                 auto value = obj["commands"];
                 taskInfo.name = obj["name"].toString();
 
+                if (obj.contains("tooltip")) {
+                    taskInfo.tooltip = obj["tooltip"].toString();
+                }
+
                 if (value.isString()) {
                     auto cmd = QStringList(value.toString());
                     taskInfo.commands.insert(PLATFORM_LINUX, cmd);
@@ -581,8 +602,8 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
 
                 } else if (value.isArray()) {
                     auto cmdList = QStringList();
-                    auto const placeholder = value.toArray();
-                    for (auto const &cmd : placeholder) {
+                    auto const pp = value.toArray();
+                    for (auto const &cmd : pp) {
                         cmdList << cmd.toString();
                     }
                     taskInfo.commands.insert(PLATFORM_LINUX, cmdList);
@@ -599,8 +620,8 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
                             taskInfo.commands.insert(PLATFORM_WINDOWS, cmd);
                         } else if (innerVal.isArray()) {
                             QStringList cmdList;
-                            auto const placeholder = innerVal.toArray();
-                            for (auto const &cmd : placeholder) {
+                            auto const pp = innerVal.toArray();
+                            for (auto const &cmd : pp) {
                                 cmdList << cmd.toString();
                             }
                             taskInfo.commands.insert(PLATFORM_LINUX, cmdList);
@@ -824,7 +845,7 @@ auto ProjectBuildConfig::saveToFile(const QString &jsonFileName) -> void {
                     taskObj["commands"] = firstCommand.first();
                 } else {
                     auto commandsArray = QJsonArray();
-                    for (const auto &cmd : firstCommand) {
+                    for (const auto &cmd : std::as_const(firstCommand)) {
                         commandsArray.append(cmd);
                     }
                     taskObj["commands"] = commandsArray;
