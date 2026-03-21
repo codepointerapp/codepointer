@@ -847,13 +847,14 @@ auto verifyRunnable(const QString &fileName) -> bool {
     }
 
 #ifdef Q_OS_WIN
-    // Common directly runnable extensions
-    static const auto runnableExts = QStringList{".exe", ".bat", ".cmd", ".ps1", ".com"};
-    for (const auto &ext : runnableExts) {
-        if (info.suffix().compare(ext.mid(1), Qt::CaseInsensitive) == 0) {
-            return true;
-        }
+    static const auto runnableExts =
+        QStringList{".exe", ".bat", ".cmd", ".ps1", ".com", "py", "js"};
+    if (runnableExts.contains(info.suffix(), Qt::CaseInsensitive)) {
+        return true;
     }
+
+#if 0
+    BUG: this will return true for basically everything.
 
     // Ask Windows: is there a registered handler for this file type?
     auto wFile = reinterpret_cast<LPCWSTR>(fileName.utf16());
@@ -865,6 +866,8 @@ auto verifyRunnable(const QString &fileName) -> bool {
     if (reinterpret_cast<INT_PTR>(result) > 32) {
         return true;
     }
+#endif
+
 #else
     // Linux / macOS
     if (info.isExecutable()) {
@@ -1051,6 +1054,7 @@ void ProjectManagerPlugin::newProjectSelected(int index) {
 
     updateTasksUI(buildConfig);
     updateExecutablesUI(buildConfig);
+    getManager()->saveSettings();
 }
 
 void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QString &program,
@@ -1275,7 +1279,8 @@ void ProjectManagerPlugin::clearProject_clicked() {
     msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     msgBox.setDefaultButton(QMessageBox::No);
 
-    int ret = msgBox.exec();
+    getManager()->saveSettings();
+    auto ret = msgBox.exec();
     switch (ret) {
     case QMessageBox::Yes: {
         // TODO - run this in a thread?
