@@ -167,7 +167,7 @@ pip install aqtinstall
 aqt install-qt linux desktop 6.10.2 -m all -O ~/qt
 aqt install-tool linux desktop tools_qtcreator_gui -O ~/qt
 ```
-Alternativelly - you can use the Qt Online installer (its easier on Windows).
+Alternatively - you can use the Qt Online installer (its easier on Windows).
 
 Download the source code, and start building (first exports can be added into
 your `~/.bashrc`
@@ -227,6 +227,39 @@ The solution is to run:
 ```
 NO_STRIP=true ./build.sh
 ```
+
+## Building in Visual Studio
+
+You should open the directory as new project, as CodePointer does not provide
+an SLN file.
+
+Noe open `CmakeUserPresets.json`, and modify the object `Qt-Debug`, a
+
+```json
+    {
+      "name": "Qt-Debug",
+      "inherits": "Qt-Default",
+      "binaryDir": "c:/build/codepointer/out/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-DQT_QML_DEBUG -DCODEPOINTER_WORK_OFFLINE -DBUILD_VERSION",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.10.2/msvc2022_64/lib/cmake"
+      },
+      "environment": {
+        "QML_DEBUG_ARGS": "-qmljsdebugger=file:{9163b5fa-92a7-4403-b90c-b79e23f79dae},block"
+      }
+    },
+```
+
+Note the modified flags:
+1. `binaryDir`: by default CMake will use the source dir. Which on Windows 
+    tends to be a OneDrive dir. Setting a local path will fix configuration issues.
+1. `CMAKE_CXX_FLAGS` - these are normal flags, to build locally (optional), and 
+   set the build type, also optional.
+1. `CMAKE_PREFIX_PATH` - this is how you tell CMake about the qt location. Fix it to your 
+   installation.
+
+Don't forget to modify the startup item.
 
 ## Building on macOS
 
