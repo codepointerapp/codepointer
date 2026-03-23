@@ -1055,7 +1055,6 @@ void ProjectManagerPlugin::newProjectSelected(int index) {
 
     updateTasksUI(buildConfig);
     updateExecutablesUI(buildConfig);
-    getManager()->saveSettings();
 }
 
 void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QString &program,
