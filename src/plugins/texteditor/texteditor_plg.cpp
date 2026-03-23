@@ -167,8 +167,8 @@ TextEditorPlugin::TextEditorPlugin() {
                                      .setDisplayName(tr("Display font"))
                                      .setKey(Config::FontKey)
                                      .setType(qmdiConfigItem::Font)
-                                     .setDefaultValue(monospacedFont)
-                                     .setValue(monospacedFont)
+                                     .setDefaultValue(monospacedFont.toString())
+                                     .setValue(monospacedFont.toString())
                                      .build());
     config.configItems.push_back(qmdiConfigItem::Builder()
                                      .setKey(Config::ThemeKey)
