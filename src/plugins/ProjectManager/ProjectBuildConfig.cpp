@@ -233,8 +233,7 @@ bool TaskInfo::operator==(const TaskInfo &other) const {
     /* clang-format on */
 }
 
-QString TaskInfo::getTooltip() const
-{
+QString TaskInfo::getTooltip() const {
     if (!tooltip.isEmpty()) {
         return tooltip;
     }

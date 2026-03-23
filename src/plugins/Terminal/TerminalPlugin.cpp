@@ -5,6 +5,7 @@
  * License MIT
  */
 
+#include <KodoTerm/KodoTerm.hpp>
 #include <QCheckBox>
 #include <QDockWidget>
 #include <QFontDatabase>
@@ -12,7 +13,6 @@
 #include <QPushButton>
 #include <QSettings>
 #include <fontwidget.hpp>
-#include <KodoTerm/KodoTerm.hpp>
 #include <qmdidialogevents.hpp>
 
 #include "plugins/Terminal/TerminalPlugin.hpp"
