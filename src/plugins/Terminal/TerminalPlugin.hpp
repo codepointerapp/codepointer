@@ -58,5 +58,6 @@ class TerminalPlugin : public IPlugin {
     struct {
         TerminalTheme theme;
         QString themeFile;
+        QString fontString;
     } tempConfig;
 };
