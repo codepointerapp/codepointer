@@ -96,7 +96,7 @@ CodeFormatPlugin::CodeFormatPlugin() {
             .setDisplayName(tr("More paths for format tools"))
             .setDescription(tr("If a format tool is not on the standard PATH, add it here"))
             .setKey(Config::ExtraPathsKey)
-            .setType(qmdiConfigItem::StringList)
+            .setType(qmdiConfigItem::PathList)
             .build());
     config.configItems.push_back(
         qmdiConfigItem::Builder()
