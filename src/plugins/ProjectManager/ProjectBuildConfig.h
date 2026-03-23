@@ -66,8 +66,8 @@ struct ProjectBuildConfig {
     static auto tryGuessFromMeson(const QString &fileName) -> std::shared_ptr<ProjectBuildConfig>;
     static auto buildFromDirectory(const QString &dirName) -> std::shared_ptr<ProjectBuildConfig>;
     static auto buildFromFile(const QString &fileName) -> std::shared_ptr<ProjectBuildConfig>;
-    static auto
-    buildFromJsonFile(const QString &jsonFileName) -> std::shared_ptr<ProjectBuildConfig>;
+    static auto buildFromJsonFile(const QString &jsonFileName)
+        -> std::shared_ptr<ProjectBuildConfig>;
     static auto canLoadFile(const QString &filename) -> bool;
 
     auto updateBinaries() -> void;

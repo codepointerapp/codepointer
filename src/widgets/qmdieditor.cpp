@@ -68,8 +68,8 @@
 auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
 auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
 
-auto static getCorrespondingFile(PluginManager *manager,
-                                 const QString &fileName) -> QFuture<QString> {
+auto static getCorrespondingFile(PluginManager *manager, const QString &fileName)
+    -> QFuture<QString> {
 
     // First - choose easy solution, file aside the original one
     auto fileInfo = QFileInfo(fileName);
