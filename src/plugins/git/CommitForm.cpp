@@ -610,7 +610,7 @@ void CommitForm::pushImpl() {
     ui->gitOutput->clear();
 
     auto args = QStringList{"-C", repoRoot, "push"};
-    if (ui->amendCheckbox->isChecked()) {
+    if (ui->forcePushCheckbox->isChecked()) {
         args << "--force";
     }
 
