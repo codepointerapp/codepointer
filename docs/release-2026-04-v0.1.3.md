@@ -21,3 +21,4 @@
 * Projet search: display amount of apperances of text - <https://github.com/codepointerapp/codepointer/issues/182>
 * git: multiple cursors not working on commit dialog - <https://github.com/codepointerapp/codepointer/issues/181>
 * Extend file formatters - <https://github.com/codepointerapp/codepointer/issues/174>
+* TerminalPlugin: fix fonts issue - <https://github.com/codepointerapp/codepointer/issues/185>
