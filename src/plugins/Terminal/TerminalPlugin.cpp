@@ -5,6 +5,7 @@
  * License MIT
  */
 
+#include <QCheckBox>
 #include <QDockWidget>
 #include <QFontDatabase>
 #include <QKeySequence>
@@ -13,6 +14,7 @@
 #include <fontwidget.hpp>
 
 #include <KodoTerm/KodoTerm.hpp>
+#include <QDebug>
 #include <qmdidialogevents.hpp>
 
 #include "plugins/Terminal/TerminalPlugin.hpp"
@@ -73,8 +75,8 @@ TerminalPlugin::TerminalPlugin() {
                                      .setDisplayName(tr("Display font"))
                                      .setKey(Config::TerminalFontKey)
                                      .setType(qmdiConfigItem::Font)
-                                     .setDefaultValue(monospacedFont)
-                                     .setValue(monospacedFont)
+                                     .setDefaultValue(monospacedFont.toString())
+                                     .setValue(monospacedFont.toString())
                                      .build());
 
     // -> start hack
@@ -150,15 +152,25 @@ TerminalPlugin::TerminalPlugin() {
                     promptPreviewLabel = label;
                     promptPreviewLabel->setAutoFillBackground(true);
                     promptPreviewLabel->setFrameStyle(QFrame::Panel);
-                    promptPreviewLabel->setFont(getConfig().getTerminalFont());
+                    {
+                        QFont f;
+                        f.fromString(getConfig().getTerminalFont());
+                        f.setStyleStrategy(getConfig().getAntiAlias() ? QFont::PreferAntialias
+                                                                      : QFont::NoAntialias);
+                        promptPreviewLabel->setFont(f);
+                    }
                     updateTerminalPreview();
                 }
 
                 if (item.key == Config::TerminalFontKey) {
                     auto f = qobject_cast<FontWidget *>(widget);
                     connect(f, &FontWidget::fontUpdated, f, [this, f]() {
-                        promptPreviewLabel->setFont(f->font());
+                        QFont font = f->font();
+                        font.setStyleStrategy(getConfig().getAntiAlias() ? QFont::PreferAntialias
+                                                                         : QFont::NoAntialias);
+                        promptPreviewLabel->setFont(font);
                         updateTerminalPreview();
+                        tempConfig.fontString = font.toString();
                     });
                 }
 
@@ -179,6 +191,21 @@ TerminalPlugin::TerminalPlugin() {
                     KodoTerm::populateThemeMenu(themeMenu, tr("iTerm"),
                                                 TerminalTheme::ThemeFormat::ITerm, themeCallback);
                     button->setMenu(themeMenu);
+                }
+
+                if (item.key == Config::AntiAliasKey) {
+                    auto checkbox = qobject_cast<QCheckBox *>(widget);
+                    if (checkbox) {
+                        connect(checkbox, &QCheckBox::toggled, this, [this](bool checked) {
+                            if (promptPreviewLabel) {
+                                QFont f = promptPreviewLabel->font();
+                                f.setStyleStrategy(checked ? QFont::PreferAntialias
+                                                           : QFont::NoAntialias);
+                                promptPreviewLabel->setFont(f);
+                                promptPreviewLabel->update();
+                            }
+                        });
+                    }
                 }
                 Q_UNUSED(dialog);
             });
@@ -202,7 +229,14 @@ void TerminalPlugin::on_client_unmerged(qmdiHost *) { delete terminalDock; }
 void TerminalPlugin::loadConfig(QSettings &settings) {
 
     IPlugin::loadConfig(settings);
+    qDebug() << "TerminalPlugin::saveConfig - Loaded font:" << getConfig().getTerminalFont();
+
     configurationHasBeenModified();
+}
+
+void TerminalPlugin::saveConfig(QSettings &settings) {
+    qDebug() << "TerminalPlugin::saveConfig - Saving font:" << getConfig().getTerminalFont();
+    IPlugin::saveConfig(settings);
 }
 
 void TerminalPlugin::configurationHasBeenModified() {
@@ -213,9 +247,12 @@ void TerminalPlugin::configurationHasBeenModified() {
     // Not on this case. We set the button for the config, instead of registering
     // a widget. This means that this data is handled by the dialog itself.
     getConfig().setThemeFile(tempConfig.themeFile);
+    if (!tempConfig.fontString.isEmpty()) {
+        getConfig().setTerminalFont(tempConfig.fontString);
+    }
 
     consoleConfig.setDefaults();
-    consoleConfig.font = getConfig().getTerminalFont();
+    consoleConfig.font.fromString(getConfig().getTerminalFont());
     consoleConfig.tripleClickSelectsLine = getConfig().getTrippleClickClick();
     consoleConfig.copyOnSelect = getConfig().getCopyOnSelect();
     consoleConfig.pasteOnMiddleClick = getConfig().getPasteOnMiddleClick();

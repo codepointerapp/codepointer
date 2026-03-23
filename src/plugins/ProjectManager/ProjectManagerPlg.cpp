@@ -277,8 +277,8 @@ ProjectManagerPlugin::ProjectManagerPlugin() {
                                      .setDisplayName(tr("Console font"))
                                      .setKey(Config::ConsoleFontKey)
                                      .setType(qmdiConfigItem::Font)
-                                     .setDefaultValue(monospacedFont)
-                                     .setValue(monospacedFont)
+                                     .setDefaultValue(monospacedFont.toString())
+                                     .setValue(monospacedFont.toString())
                                      .build());
 
     /*
@@ -1055,7 +1055,7 @@ void ProjectManagerPlugin::newProjectSelected(int index) {
 
     updateTasksUI(buildConfig);
     updateExecutablesUI(buildConfig);
-    getManager()->saveSettings();
+    // getManager()->saveSettings();
 }
 
 void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QString &program,
