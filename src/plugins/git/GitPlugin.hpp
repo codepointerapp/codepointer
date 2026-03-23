@@ -48,6 +48,7 @@ class GitPlugin : public IPlugin {
     void deleteBranchHandler();
     void commitDisplayHandler(const QModelIndex &mi);
     void commitHandler();
+    void commitAmendHandler();
     void logHandler(GitPlugin::GitLog log, const QString &filename);
     void on_gitCommitClicked(const QModelIndex &mi);
     void on_gitCommitDoubleClicked(const QModelIndex &mi);
@@ -65,6 +66,7 @@ class GitPlugin : public IPlugin {
     QAction *logProject = nullptr;
     QAction *revert = nullptr;
     QAction *commit = nullptr;
+    QAction *commitAmend = nullptr;
     QAction *stash = nullptr;
     QAction *branches = nullptr;
     QString gitBinary = "git";

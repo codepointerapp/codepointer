@@ -80,6 +80,13 @@
           </widget>
          </item>
          <item>
+          <widget class="QCheckBox" name="amendCheckbox">
+           <property name="text">
+            <string>&amp;Amend</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="horizontalSpacer">
            <property name="orientation">
             <enum>Qt::Orientation::Horizontal</enum>
@@ -91,6 +98,13 @@
             </size>
            </property>
           </spacer>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="forcePushCheckbox">
+           <property name="text">
+            <string>&amp;Force</string>
+           </property>
+          </widget>
          </item>
          <item>
           <widget class="QPushButton" name="pushButton">

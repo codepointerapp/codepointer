@@ -113,6 +113,7 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     logProject = new QAction(tr("git log project/dir"), this);
     revert = new QAction(tr("git revert"), this);
     commit = new QAction(tr("git commit"), this);
+    commitAmend = new QAction(tr("git commit amend"), this);
     stash = new QAction(tr("git stash"), this);
     branches = new QAction(tr("git branch"), this);
 
@@ -126,6 +127,8 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     revert->setShortcut(QKeySequence("Ctrl+G, U"));
     commit->setToolTip(tr("Record changes to the repository"));
     commit->setShortcut(QKeySequence("Ctrl+G, C"));
+    commitAmend->setToolTip(tr("Amend the last commit"));
+    commitAmend->setShortcut(QKeySequence("Ctrl+G, A"));
     stash->setToolTip(tr("tash away changes to dirty working directory"));
     branches->setToolTip(tr("List, create, or delete branches"));
 
@@ -134,6 +137,7 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     connect(diffFile, &QAction::triggered, this, &GitPlugin::diffFileHandler);
     connect(revert, &QAction::triggered, this, &GitPlugin::revertFileHandler);
     connect(commit, &QAction::triggered, this, &GitPlugin::commitHandler);
+    connect(commitAmend, &QAction::triggered, this, &GitPlugin::commitAmendHandler);
 
     auto menuName = "&Git";
     host->menus.addActionGroup(menuName, "&Project");
@@ -142,6 +146,7 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     menus[menuName]->addAction(logProject);
     menus[menuName]->addAction(revert);
     menus[menuName]->addAction(commit);
+    menus[menuName]->addAction(commitAmend);
     menus[menuName]->addAction(stash);
     menus[menuName]->addAction(branches);
 
@@ -406,6 +411,30 @@ void GitPlugin::commitHandler() {
             return;
         }
         auto commitForm = new CommitForm(repoRoot, this, manager);
+        mdiServer->addClient(commitForm);
+    });
+}
+
+void GitPlugin::commitAmendHandler() {
+    auto manager = getManager();
+    auto client = manager->getMdiServer()->getCurrentClient();
+    if (!client) {
+        return;
+    }
+    auto filename = client->mdiClientFileName();
+    if (filename.isEmpty()) {
+        qDebug() << "Cannot commit on an empty file" << filename;
+        return;
+    }
+
+    detectRepoRoot(filename).then(this, [this, manager](const std::tuple<QString, int> &res) {
+        auto [repoRoot, exitCode] = res;
+        if (exitCode != 0 || repoRoot.isEmpty()) {
+            qDebug() << "Filename is not in any git repo";
+            return;
+        }
+        auto commitForm = new CommitForm(repoRoot, this, manager);
+        commitForm->setAmend(true);
         mdiServer->addClient(commitForm);
     });
 }

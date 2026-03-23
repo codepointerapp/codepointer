@@ -31,6 +31,7 @@ class CommitForm : public QWidget, public qmdiClient {
     void revertSelectionImpl();
     void commitImpl();
     void pushImpl();
+    void setAmend(bool amend);
 
   private:
     Ui::CommitForm *ui;

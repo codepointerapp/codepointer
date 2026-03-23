@@ -321,6 +321,18 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     connect(ui->pushButton, &QAbstractButton::clicked, this, &CommitForm::pushImpl);
     connect(ui->revertSelectedButton, &QAbstractButton::clicked, this,
             &CommitForm::revertSelectionImpl);
+    connect(ui->amendCheckbox, &QCheckBox::toggled, this, [this](bool checked) {
+        if (checked) {
+            git->runGit({"-C", repoRoot, "log", "-1", "--pretty=%B"})
+                .then(this, [this](const std::tuple<QString, int> &res) {
+                    auto [msg, exitCode] = res;
+                    if (exitCode == 0) {
+                        ui->commitMessage->setPlainText(msg.trimmed());
+                    }
+                });
+        }
+        ui->commitButton->setEnabled(checked || !model->checkedEntries().isEmpty());
+    });
     connect(ui->tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             [this](const QItemSelection &selected, const QItemSelection &) {
                 if (selected.indexes().size() == 0) {
@@ -342,7 +354,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
 
                 auto hasSelection = !model->checkedEntries().isEmpty();
                 ui->revertSelectedButton->setEnabled(hasSelection);
-                ui->commitButton->setEnabled(hasSelection);
+                ui->commitButton->setEnabled(hasSelection || ui->amendCheckbox->isChecked());
             });
     connect(model, &QAbstractItemModel::modelReset, this,
             [this]() { ui->revertSelectedButton->setEnabled(false); });
@@ -543,26 +555,18 @@ void CommitForm::revertSelectionImpl() {
 
 void CommitForm::commitImpl() {
     auto const &checked = model->checkedEntries();
-    if (checked.isEmpty()) {
+    if (checked.isEmpty() && !ui->amendCheckbox->isChecked()) {
         return;
     }
 
-    auto args = QStringList{"-C", repoRoot, "add"};
-    for (auto const &c : checked) {
-        args.push_back(c.filename);
-    }
-
-    ui->gitOutput->clear();
-    git->runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
-        auto [output, exitCode] = res;
-        if (exitCode != 0) {
-            ui->gitOutput->setText(output.trimmed());
-            qDebug() << QString("ExitCode=%1, output=%2").arg(exitCode).arg(output);
-            return;
-        }
-
+    auto doCommit = [this]() {
         auto commitLogFileName = createTempFileWithContent(ui->commitMessage->toPlainText());
-        auto commitArgs = QStringList{"-C", repoRoot, "commit", "-F", commitLogFileName};
+        auto commitArgs = QStringList{"-C", repoRoot, "commit"};
+        if (ui->amendCheckbox->isChecked()) {
+            commitArgs << "--amend";
+        }
+        commitArgs << "-F" << commitLogFileName;
+
         git->runGit(commitArgs)
             .then(this, [this, commitLogFileName](const std::tuple<QString, int> &res2) {
                 auto [output2, exitCode2] = res2;
@@ -572,10 +576,31 @@ void CommitForm::commitImpl() {
                     qDebug() << QString("ExitCode=%1, output=%2").arg(exitCode2).arg(output2);
                 } else {
                     ui->commitMessage->clear();
+                    ui->amendCheckbox->setChecked(false);
                 }
                 updateGitStatus();
             });
-    });
+    };
+
+    if (checked.isEmpty()) {
+        doCommit();
+    } else {
+        auto args = QStringList{"-C", repoRoot, "add"};
+        for (auto const &c : checked) {
+            args.push_back(c.filename);
+        }
+
+        ui->gitOutput->clear();
+        git->runGit(args).then(this, [this, doCommit](const std::tuple<QString, int> &res) {
+            auto [output, exitCode] = res;
+            if (exitCode != 0) {
+                ui->gitOutput->setText(output.trimmed());
+                qDebug() << QString("ExitCode=%1, output=%2").arg(exitCode).arg(output);
+                return;
+            }
+            doCommit();
+        });
+    }
 }
 
 void CommitForm::pushImpl() {
@@ -585,6 +610,10 @@ void CommitForm::pushImpl() {
     ui->gitOutput->clear();
 
     auto args = QStringList{"-C", repoRoot, "push"};
+    if (ui->forcePushCheckbox->isChecked()) {
+        args << "--force";
+    }
+
     git->runGit(args).then(this, [this, t](const std::tuple<QString, int> &result) {
         auto [output, exitCode] = result;
         if (exitCode != 0) {
@@ -598,3 +627,5 @@ void CommitForm::pushImpl() {
         ui->pushButton->setEnabled(true);
     });
 };
+
+void CommitForm::setAmend(bool amend) { ui->amendCheckbox->setChecked(amend); }
