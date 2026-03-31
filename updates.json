@@ -1,30 +1,30 @@
 {
     "updates": {
         "windows": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.2",
-            "latest-version": "0.1.2",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.2/codepointer-v0.1.2-x86_64.exe",
-            "changelog": "Terminal support, better search options",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.3",
+            "latest-version": "0.1.3",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.3/codepointer-v0.1.3-x86_64.exe",
+            "changelog": "F4 updates, better file reformat, project reload, commit update, terminal updates",
             "mandatory": true
         },
         "windows-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.3-beta1",
-            "latest-version": "0.1.3-beta1",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.3-beta1/codepointer-v0.1.3-beta1-x86_64.exe",
-            "changelog": "F4 updates, better file reformat, project reload, commit updates, terminal updates",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.3",
+            "latest-version": "0.1.3",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.3/codepointer-v0.1.3-x86_64.exe",
+            "changelog": "F4 updates, better file reformat, project reload, commit update, terminal updates",
             "mandatory": true
         },
         "linux": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.2",
-            "latest-version": "0.1.2",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.2/codepointer-v0.1.2-x86_64.AppImage",
-            "changelog": "Terminal support, better search options",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.3",
+            "latest-version": "0.1.3",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.3/codepointer-v0.1.3-x86_64.AppImage",
+            "changelog": "F4 updates, better file reformat, project reload, commit update, terminal updates",
             "mandatory": true
         },
         "linux-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.3-beta1",
-            "latest-version": "0.1.3-beta1",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.3-beta1/codepointer-v0.1.3-beta1-x86_64.AppImage",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.3",
+            "latest-version": "0.1.3",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.3/codepointer-v0.1.3-x86_64.AppImage",
             "changelog": "F4 updates, better file reformat, project reload, commit update, terminal updates",
             "mandatory": true
         }
