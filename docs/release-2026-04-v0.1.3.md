@@ -1,15 +1,15 @@
-**Full Changelog**: <https://github.com/diegoiast/codepointer/codepointer/v0.1.2...v0.1.3-alpha1>
+**Full Changelog**: <https://github.com/diegoiast/codepointer/codepointer/v0.1.2...v0.1.3>
 
-# March 2026 - release v0.1.3 - sssiiixxxx seeevveeeennn!!111
+# April 2026 - release v0.1.3 - sssiiixxxx seeevveeeennn!!111
 
-![CodePointer with the new commit form](codepointer-v0.1.2-commit.png)
+![CodePointer with the new commit form](docs/codepointer-v0.1.2-commit.png)
 
 1. Git commit updates. The commit editor is the same as the main editor
-   making the commits easier. All keyboard shorcuts and completions will work. You can
-   also commit ammed, and push force from the commit interface.
+   making the commits easier. All keyboard shortcuts and completions will work. You can
+   also commit amed, and push force from the commit interface.
 2. When searching in files - the amount of times the text is found, will be
-   dislpayed.
-3. Terminal font bug is fixed. 
+   displayed.
+3. Terminal font bug is fixed.
 
 ## Changelog
 
