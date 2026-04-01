@@ -41,6 +41,11 @@ set(COMMAND_PALLETE_ENABLE_TESTS OFF)
 
 option(CODEPOINTER_WORK_OFFLINE OFF)
 
+# Disable testing for tree-sitter to avoid "ts-test" target collision between grammars
+set(OLD_BUILD_TESTING ${BUILD_TESTING})
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING ${OLD_BUILD_TESTING} CACHE BOOL "" FORCE)
+
 if (CODEPOINTER_WORK_OFFLINE)
     # For this to work, you need to make these libraries available yourself.
     # On Linux/macOS, you can run the script `get-code.sh`. Tested also on
@@ -65,8 +70,14 @@ else()
     CPMAddPackage("gh:dridk/QJsonModel#f5fa5988c0ee52fff39a42973c964d5480951f86")
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#8e7017f7fbdc2b4b1a26ed1eef9ebcba6a50639c")
     CPMAddPackage("gh:Dax89/QHexView#beadd087413a46e7ed97afbab9dab1323ab1d033")
-    download_breeze_icons(6.4.0)
+    # download_breeze_icons(6.4.0)
 endif()
+
+
+message(STATUS "aaa tree_sitter_SOURCE_DIR = ${tree_sitter_SOURCE_DIR}")
+message(STATUS "aaa tree_sitter_cpp_SOURCE_DIR = ${tree_sitter_cpp_SOURCE_DIR}")
+# message(STATUS "aaa tree_sitter_c_SOURCE_DIR = ${tree_sitter_c_SOURCE_DIR}")
+
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
 set(CMAKE_AUTOMOC ON)
@@ -162,6 +173,17 @@ set(codepointer_sources
     src/plugins/CTags/CTagsPlugin.hpp
     src/plugins/CTags/CTagsLoader.cpp
     src/plugins/CTags/CTagsLoader.hpp
+
+    src/plugins/TreeSitter/tree-sitter/lib/src/lib.c
+    src/plugins/TreeSitter/tree-sitter-c/src/parser.c
+    src/plugins/TreeSitter/tree-sitter-cpp/src/parser.c
+    src/plugins/TreeSitter/tree-sitter-cpp/src/scanner.c
+
+    src/plugins/TreeSitter/TreeSitterPlugin.cpp
+    src/plugins/TreeSitter/TreeSitterPlugin.hpp
+    src/plugins/TreeSitter/TreeSitterEngine.cpp
+    src/plugins/TreeSitter/TreeSitterEngine.hpp
+
     src/plugins/SplitTabsPlugin/SplitTabsPlugin.cpp
     src/plugins/SplitTabsPlugin/SplitTabsPlugin.hpp
     src/plugins/git/CommitDelegate.hpp
@@ -190,14 +212,13 @@ file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.svg" DESTINATION "${CMAKE_BINARY_DIR
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.ico" DESTINATION "${CMAKE_BINARY_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}")
 
-
 configure_file(codepointer.qrc.in ${CMAKE_BINARY_DIR}/codepointer.qrc)
 configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop)
 add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
     indenters.json)
 
 if (!MINGW)
-    set_property(TARGET codepointerPROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    set_property(TARGET codepointer PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
 target_compile_definitions(codepointer PRIVATE -DCODEPOINTER_APP_NAME="${CODEPOINTER_APP_NAME}")
@@ -216,7 +237,12 @@ endif()
 target_include_directories(codepointer PUBLIC
     ${qmdilib_SOURCE_DIR}/demos/plugin-demo
     ${qutepart_SOURCE_DIR}/include
+    src/plugins/TreeSitter/tree-sitter/lib/include
     src
+)
+set_source_files_properties(
+    src/plugins/TreeSitter/tree-sitter/lib/src/lib.c
+    PROPERTIES COMPILE_FLAGS "/W0"
 )
 target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent Qt6::Network Qt6::Svg Qt6::Xml
     qmdilib
