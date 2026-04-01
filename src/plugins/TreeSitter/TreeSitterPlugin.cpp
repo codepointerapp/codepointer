@@ -7,6 +7,10 @@
 #include <QFuture>
 #include <QPromise>
 #include <QThreadPool>
+#include <QTextStream>
+#include <QtConcurrent>
+#include <QThread>
+#include <QElapsedTimer>
 
 TreeSitterPlugin::TreeSitterPlugin() {
     name = tr("Tree-sitter Support");
@@ -26,6 +30,8 @@ int TreeSitterPlugin::canHandleAsyncCommand(const QString &command, const Comman
         return 101;
     } else if (command == GlobalCommands::ProjectLoaded ||
                command == GlobalCommands::BuildFinished) {
+        return 101;
+    } else if (command == "ListSymbols") {
         return 101;
     }
     return CommandPriority::CannotHandle;
@@ -50,44 +56,106 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
                 QStringList filters;
                 filters << "*.cpp" << "*.hpp" << "*.c" << "*.h" << "*.cc" << "*.hh";
 
+                QStringList fileList;
                 QDirIterator it(dirToScan, filters, QDir::Files, QDirIterator::Subdirectories);
-
-                int count = 0;
                 while (it.hasNext()) {
-                    QString file = it.next();
+                    fileList << it.next();
+                }
+
+                qDebug() << "TreeSitterPlugin: Scanning" << fileList.size() << "files...";
+                QElapsedTimer timer;
+                timer.start();
+
+                int threadCount = qMax(1, QThread::idealThreadCount() - 2);
+                QThreadPool pool;
+                pool.setMaxThreadCount(threadCount);
+
+                QtConcurrent::blockingMap(&pool, fileList, [this](const QString &file) {
                     QFile f(file);
                     if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
                         engine.updateFile(file, f.readAll());
                         engine.getSymbols(file);
-                        count++;
+                    }
+                });
+
+                int totalClasses = 0;
+                int totalFunctions = 0;
+                for (const QString &file : engine.getTrackedFiles()) {
+                    auto symbols = engine.getSymbols(file);
+                    for (const auto &sym : symbols) {
+                        if (sym.type.contains("class") || sym.type.contains("struct")) totalClasses++;
+                        else totalFunctions++;
                     }
                 }
-                qDebug() << "TreeSitterPlugin: Finished scanning" << count << "files in"
-                         << dirToScan;
+
+                qDebug() << "TreeSitterPlugin: Finished scanning in" << timer.elapsed() << "ms.";
+                qDebug() << "TreeSitterPlugin: Found" << totalClasses << "classes/structs and" << totalFunctions << "functions.";
             }
+        } else if (command == "ListSymbols") {
+            auto filename = args[GlobalArguments::FileName].toString();
+            auto content = args[GlobalArguments::Content].toString();
+            if (!content.isEmpty()) {
+                engine.updateFile(filename, content);
+            }
+            auto symbols = engine.getSymbols(filename);
+            QVariantList tagList;
+            for (const auto &sym : symbols) {
+                tagList.append(QVariant::fromValue(CommandArgs{
+                    {GlobalArguments::FileName, filename},
+                    {GlobalArguments::Type, sym.type},
+                    {GlobalArguments::Value, sym.name},
+                    {GlobalArguments::Name, sym.name},
+                    {GlobalArguments::LineNumber, sym.line + 1},
+                    {GlobalArguments::ColumnNumber, sym.column + 1},
+                }));
+            }
+            result[GlobalArguments::Tags] = tagList;
         } else if (command == GlobalCommands::VariableInfo) {
             auto filename = args[GlobalArguments::FileName].toString();
             auto content = args[GlobalArguments::Content].toString();
             auto symbol = args[GlobalArguments::RequestedSymbol].toString();
+            auto exactMatch = args[GlobalArguments::ExactMatch].toBool();
 
             if (!content.isEmpty()) {
                 engine.updateFile(filename, content);
+                engine.getSymbols(filename);
             }
 
-            auto symbols = engine.getSymbols(filename);
             QVariantList tagList;
+            auto symbols = engine.findSymbolsGlobal(symbol, exactMatch);
+            
             for (const auto &sym : symbols) {
-                if (sym.name.contains(symbol, Qt::CaseInsensitive)) {
-                    tagList.append(QVariant::fromValue(CommandArgs{
-                        {GlobalArguments::FileName, filename},
-                        {GlobalArguments::Type, sym.type},
-                        {GlobalArguments::Value, sym.name},
-                        {GlobalArguments::Name, sym.name},
-                        {GlobalArguments::LineNumber, sym.line + 1},
-                    }));
-                }
+                tagList.append(QVariant::fromValue(CommandArgs{
+                    {GlobalArguments::FileName, sym.fileName},
+                    {GlobalArguments::Type, sym.type},
+                    {GlobalArguments::Value, sym.name},
+                    {GlobalArguments::Name, sym.name},
+                    {GlobalArguments::LineNumber, sym.line + 1},
+                    {GlobalArguments::ColumnNumber, sym.column + 1},
+                    {GlobalArguments::Raw, sym.name}, // Used for search in editor
+                }));
             }
             result[GlobalArguments::Tags] = tagList;
+            result[GlobalArguments::Symbol] = symbol; // Fix empty first item
+
+        } else if (command == GlobalCommands::KeywordTooltip) {
+            auto filename = args[GlobalArguments::FileName].toString();
+            auto symbol = args[GlobalArguments::RequestedSymbol].toString();
+
+            QString tooltip;
+            auto symbols = engine.findSymbolsGlobal(symbol, true);
+            
+            for (const auto &sym : symbols) {
+                if (!tooltip.isEmpty()) tooltip += "\n---\n";
+                tooltip += QString("File: %1\nType: %2\nLine: %3")
+                               .arg(sym.fileName)
+                               .arg(sym.type)
+                               .arg(sym.line + 1);
+            }
+
+            if (!tooltip.isEmpty()) {
+                result[GlobalArguments::Tooltip] = tooltip;
+            }
         }
 
         promise->addResult(result);

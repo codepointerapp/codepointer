@@ -18,5 +18,6 @@ public:
                                                     const CommandArgs &args) override;
 
 private:
+    void generateSymbolReport(const QString &buildDir);
     TreeSitterEngine engine;
 };
