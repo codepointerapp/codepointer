@@ -204,7 +204,8 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QFuture<CommandArgs> getCommandForLocation(const QPoint &localPosition, const QString &cmd);
     QFuture<CommandArgs> getSuggestionsForCurrentWord(const QPoint &localPosition);
     QFuture<CommandArgs> getTooltipsForPosition(const QPoint &localPosition);
-    QSet<QString> getTagCompletions(const QString &prefix);
+    QFuture<QSet<QString>> getTagCompletions(const QString &prefix, const QString &previousWord,
+                                             const QString &separator);
 
   private:
     QString getShortFileName();

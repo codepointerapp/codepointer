@@ -282,12 +282,12 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     auto layout = new QVBoxLayout(this);
 
     // Set up completion callback
-    textEditor->setCompletionCallback([this](const QString &prefix) {
-        if (prefix.length() < 2) {
-            return QSet<QString>();
+    textEditor->setCompletionCallback([this](const QString &prefix, const QString &previousWord,
+                                             const QString &separator) {
+        if (prefix.length() < 2 && separator.isEmpty()) {
+            return QFuture<QSet<QString>>();
         }
-        auto c = this->getTagCompletions(prefix);
-        return c;
+        return this->getTagCompletions(prefix, previousWord, separator);
     });
 
     operationsWidget->hide();
@@ -1090,48 +1090,48 @@ void qmdiEditor::handleTabDeselected() {
     loadingTimer = nullptr;
 }
 
-// FIXME: this is blocking, and wrong
-QSet<QString> qmdiEditor::getTagCompletions(const QString &prefix) {
+QFuture<QSet<QString>> qmdiEditor::getTagCompletions(const QString &prefix, const QString &previousWord,
+                                             const QString &separator) {
     if (!mdiServer || !mdiServer->mdiHost) {
         return {};
     }
 
-    QSet<QString> completions;
     auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     if (!pluginManager) {
-        return completions;
+        return {};
     }
 
-    // clang-format off
-    auto future = pluginManager->handleCommandAsync(GlobalCommands::VariableInfo, {
-        {GlobalArguments::RequestedSymbol, prefix},
-        {GlobalArguments::FileName, mdiClientFileName()},
-        {GlobalArguments::ExactMatch, false}
-    });
-    // clang-format on
-
-    auto maxWaitMs = 500;
-    auto pollIntervalMs = 10;
-    auto waited = 0;
-    while (!future.isFinished() && waited < maxWaitMs) {
-        QThread::msleep(pollIntervalMs);
-        waited += pollIntervalMs;
+    CommandArgs args;
+    args[GlobalArguments::RequestedSymbol] = prefix;
+    args[GlobalArguments::FileName] = mdiClientFileName();
+    args[GlobalArguments::ExactMatch] = false;
+    if (!previousWord.isEmpty()) {
+        args[GlobalArguments::PreviousWord] = previousWord;
+    }
+    if (!separator.isEmpty()) {
+        args[GlobalArguments::Separator] = separator;
     }
 
-    if (future.isFinished() && future.isValid()) {
-        auto result = future.result();
-        if (result.contains(GlobalArguments::Tags)) {
-            auto tags = result[GlobalArguments::Tags].toList();
-            for (const QVariant &item : std::as_const(tags)) {
-                auto const tag = item.toHash();
-                auto const name = tag[GlobalArguments::Name].toString();
-                if (!name.isEmpty()) {
-                    completions.insert(name);
+    auto future = pluginManager->handleCommandAsync(GlobalCommands::VariableInfo, args);
+
+    // Transform the result to QSet<QString> using QtConcurrent::run
+    return future.then([](const QFuture<CommandArgs> &f) -> QSet<QString> {
+        QSet<QString> completions;
+        if (f.isFinished() && f.isValid()) {
+            auto result = f.result();
+            if (result.contains(GlobalArguments::Tags)) {
+                auto tags = result[GlobalArguments::Tags].toList();
+                for (const QVariant &item : std::as_const(tags)) {
+                    auto const tag = item.toHash();
+                    auto const name = tag[GlobalArguments::Name].toString();
+                    if (!name.isEmpty()) {
+                        completions.insert(name);
+                    }
                 }
             }
         }
-    }
-    return completions;
+        return completions;
+    });
 }
 
 void qmdiEditor::handleWordTooltip(const QPoint &localPosition, const QPoint &globalPosition) {
