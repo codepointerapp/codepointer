@@ -115,6 +115,8 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
             auto content = args[GlobalArguments::Content].toString();
             auto symbol = args[GlobalArguments::RequestedSymbol].toString();
             auto exactMatch = args[GlobalArguments::ExactMatch].toBool();
+            auto previousWord = args[GlobalArguments::PreviousWord].toString();
+            auto separator = args[GlobalArguments::Separator].toString();
 
             if (!content.isEmpty()) {
                 engine.updateFile(filename, content);
@@ -123,7 +125,7 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
 
             QVariantList tagList;
             auto symbols = engine.findSymbolsGlobal(symbol, exactMatch);
-            
+
             for (const auto &sym : symbols) {
                 tagList.append(QVariant::fromValue(CommandArgs{
                     {GlobalArguments::FileName, sym.fileName},
@@ -137,7 +139,6 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
             }
             result[GlobalArguments::Tags] = tagList;
             result[GlobalArguments::Symbol] = symbol; // Fix empty first item
-
         } else if (command == GlobalCommands::KeywordTooltip) {
             auto filename = args[GlobalArguments::FileName].toString();
             auto symbol = args[GlobalArguments::RequestedSymbol].toString();

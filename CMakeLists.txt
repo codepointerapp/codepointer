@@ -240,10 +240,6 @@ target_include_directories(codepointer PUBLIC
     src/plugins/TreeSitter/tree-sitter/lib/include
     src
 )
-set_source_files_properties(
-    src/plugins/TreeSitter/tree-sitter/lib/src/lib.c
-    PROPERTIES COMPILE_FLAGS "/W0"
-)
 target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent Qt6::Network Qt6::Svg Qt6::Xml
     qmdilib
     qutepart
@@ -260,6 +256,11 @@ if(MSVC)
    # if we don't do this - file will be under Debug/Relase subdir
    set_target_properties(codepointer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}$<0:>)
    target_compile_options(codepointer PRIVATE /W4)
+
+   set_source_files_properties(
+       src/plugins/TreeSitter/tree-sitter/lib/src/lib.c
+       PROPERTIES COMPILE_FLAGS "/W0"
+   )
 else()
   set_target_properties(codepointer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
   target_compile_options(codepointer PRIVATE -Wall -Wextra -Wpedantic)

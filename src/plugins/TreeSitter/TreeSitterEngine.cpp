@@ -176,10 +176,24 @@ void TreeSitterEngine::updateIndexForFile(const QString &fileName, const QList<S
     }
 }
 
-QList<TreeSitterEngine::Symbol> TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch) {
+QList<TreeSitterEngine::Symbol> TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const QString &previousWord, const QString &separator) {
     QMutexLocker locker(&mutex);
     if (exactMatch) {
-        return globalIndex.values(name);
+        // If exact match is requested, and we have separator, this is likely a member access.
+        // We need to find the type of the previousWord and then search for members of that type.
+        if (!separator.isEmpty() && !previousWord.isEmpty()) {
+            // TODO: Implement logic to find the type of previousWord and then find its members.
+            // This would involve:
+            // 1. AST Traversal: Locate the declaration/usage of 'previousWord' in the AST.
+            // 2. Type Determination: Infer the type of 'previousWord' (e.g., by looking at its declaration or context).
+            // 3. Member Search: Query the symbol table or AST for members (fields, methods) of the resolved type.
+            // 4. Filtering: Filter these members based on the completion 'name' (prefix).
+            // For now, we'll just do a global lookup for the 'name' as a fallback.
+            qDebug() << "TreeSitterEngine::findSymbolsGlobal: Semantic lookup for" << previousWord << separator << name << "not fully implemented. Falling back to global search.";
+            return globalIndex.values(name);
+        } else {
+            return globalIndex.values(name);
+        }
     } else {
         QList<Symbol> results;
         for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {

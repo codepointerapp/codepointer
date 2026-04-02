@@ -28,7 +28,9 @@ public:
     QList<Symbol> getSymbols(const QString &fileName);
 
     // Fast global lookup
-    QList<Symbol> findSymbolsGlobal(const QString &name, bool exactMatch);
+    QList<Symbol> findSymbolsGlobal(const QString &name, bool exactMatch,
+                                    const QString &previousWord = QString(),
+                                    const QString &separator = QString());
 
     // Returns the root node for a given file
     TSNode getRootNode(const QString &fileName);
