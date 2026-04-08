@@ -166,6 +166,7 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         menu->addAction(a);
     }
 
+    QSet<QString> addedItems;
     for (const QVariant &item : std::as_const(tags)) {
         auto const tag = item.toHash();
         auto const fileName = tag[GlobalArguments::FileName].toString();
@@ -173,38 +174,54 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         auto const fieldValue = tag[GlobalArguments::Value].toString();
         auto const rawAddress = tag[GlobalArguments::Raw].toString();
         auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
+        auto const columnNumber = tag[GlobalArguments::ColumnNumber].toInt();
+
+
         auto address = rawAddress;
         if (address.startsWith(START_MARKER) && address.endsWith(END_MARKER) &&
             address.length() > MIN_LENGTH) {
             address = address.mid(START_MARKER.length(), address.length() - MIN_LENGTH);
         }
 
+        QString itemKey;
+        if (lineNumber > 0) {
+            itemKey = QString("%1:%2").arg(fileName).arg(lineNumber);
+        } else {
+            itemKey = QString("%1:%2").arg(fileName).arg(address);
+        }
+
+        if (addedItems.contains(itemKey)) {
+            continue;
+        }
+        addedItems.insert(itemKey);
+
         auto fi = QFileInfo(fileName);
         auto simpleFileName = fi.fileName();
         auto title = QString();
         if (lineNumber > 0) {
-            title = QString("%1:%2 - %3 %4")
-                        .arg(simpleFileName)
-                        .arg(lineNumber)
-                        .arg(fieldType, fieldValue);
+            title = QString("%1:%2 - %3 %4").arg(simpleFileName).arg(lineNumber).arg(fieldType, fieldValue);
         } else {
             title = QString("%1 - %2 %3").arg(simpleFileName, fieldType, fieldValue);
         }
 
         auto a = new QAction(title, menu);
-        QObject::connect(a, &QAction::triggered, a, [fileName, rawAddress, address, manager]() {
-            auto nativeFileName = QDir::toNativeSeparators(fileName);
-            manager->openFile(nativeFileName);
-            auto client = manager->clientForFileName(nativeFileName);
-            auto editor = dynamic_cast<qmdiEditor *>(client);
-            if (editor) {
-                editor->loadContent(true);
-                if (!address.isEmpty()) {
-                    editor->findText(address);
-                }
-                editor->setFocus();
-            }
-        });
+        QObject::connect(a, &QAction::triggered, a,
+                         [fileName, rawAddress, address, lineNumber, columnNumber, manager]() {
+                             auto nativeFileName = QDir::toNativeSeparators(fileName);
+                             manager->openFile(nativeFileName);
+                             auto client = manager->clientForFileName(nativeFileName);
+                             auto editor = dynamic_cast<qmdiEditor *>(client);
+                             if (editor) {
+                                 editor->loadContent(true);
+                                 if (lineNumber > 0) {
+                                     editor->goTo(columnNumber > 0 ? columnNumber - 1 : 0,
+                                                  lineNumber - 1);
+                                 } else if (!address.isEmpty()) {
+                                     editor->findText(address);
+                                 }
+                                 editor->setFocus();
+                             }
+                         });
         menu->addAction(a);
     }
 }
@@ -1139,7 +1156,14 @@ QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QStr
     CommandArgs args;
     args[GlobalArguments::RequestedSymbol] = prefix;
     args[GlobalArguments::FileName] = mdiClientFileName();
+    args[GlobalArguments::Content] = textEditor->toPlainText();
     args[GlobalArguments::ExactMatch] = false;
+
+    auto cursor = textEditor->textCursor();
+    args[GlobalArguments::LineNumber] = cursor.blockNumber();
+    args[GlobalArguments::ColumnNumber] = cursor.columnNumber();
+    args[GlobalArguments::Position] = cursor.position();
+
     if (!previousWord.isEmpty()) {
         args[GlobalArguments::PreviousWord] = previousWord;
     }

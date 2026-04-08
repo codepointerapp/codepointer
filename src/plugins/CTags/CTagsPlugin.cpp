@@ -450,13 +450,22 @@ CommandArgs CTagsPlugin::symbolInfoRequested(const QString &fileName, const QStr
     auto tags = project->findTags(symbol.toStdString(), exactMatch);
     for (auto &tagRef : tags) {
         auto &tag = tagRef.get();
-        tagList.append(QVariant::fromValue(CommandArgs{
+        auto isLineNumber = false;
+        // FIXME: I don't likt this... I wish I had a better solution to conevrt string_view to int
+        auto address = QString::fromStdString(std::string{tag.address});
+        auto lineNumber = address.toInt(&isLineNumber);
+
+        CommandArgs tagArgs = {
             {GlobalArguments::FileName, QString::fromStdString(std::string{tag.file})},
             {GlobalArguments::Type, QString::fromStdString(tagFieldKeyToString(tag.fieldKey))},
             {GlobalArguments::Value, QString::fromStdString(std::string{tag.fieldValue})},
             {GlobalArguments::Raw, QString::fromStdString(std::string{tag.address})},
             {GlobalArguments::Name, QString::fromStdString(std::string{tag.name})},
-        }));
+        };
+        if (isLineNumber) {
+            tagArgs[GlobalArguments::LineNumber] = lineNumber;
+        }
+        tagList.append(QVariant::fromValue(tagArgs));
     }
 
     CommandArgs res;

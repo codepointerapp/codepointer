@@ -117,6 +117,8 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
             auto exactMatch = args[GlobalArguments::ExactMatch].toBool();
             auto previousWord = args[GlobalArguments::PreviousWord].toString();
             auto separator = args[GlobalArguments::Separator].toString();
+            auto line = args[GlobalArguments::LineNumber].toInt();
+            auto column = args[GlobalArguments::ColumnNumber].toInt();
 
             if (!content.isEmpty()) {
                 engine.updateFile(filename, content);
@@ -124,7 +126,7 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
             }
 
             QVariantList tagList;
-            auto symbols = engine.findSymbolsGlobal(symbol, exactMatch);
+            auto symbols = engine.findSymbolsGlobal(symbol, exactMatch, previousWord, separator, filename, line, column);
 
             for (const auto &sym : symbols) {
                 tagList.append(QVariant::fromValue(CommandArgs{
