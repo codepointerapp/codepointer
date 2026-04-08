@@ -22,6 +22,7 @@ public:
         int line;
         int column;
         QString fileName; // Store filename for global index lookup
+        QString parentName; // For members: name of the class/struct
     };
     
     // Returns cached symbols or parses if needed
@@ -30,7 +31,9 @@ public:
     // Fast global lookup
     QList<Symbol> findSymbolsGlobal(const QString &name, bool exactMatch,
                                     const QString &previousWord = QString(),
-                                    const QString &separator = QString());
+                                    const QString &separator = QString(),
+                                    const QString &fileName = QString(),
+                                    int line = -1, int column = -1);
 
     // Returns the root node for a given file
     TSNode getRootNode(const QString &fileName);
