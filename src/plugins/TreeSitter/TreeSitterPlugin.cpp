@@ -137,6 +137,7 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
                     {GlobalArguments::LineNumber, sym.line + 1},
                     {GlobalArguments::ColumnNumber, sym.column + 1},
                     {GlobalArguments::Raw, sym.name}, // Used for search in editor
+                    {GlobalArguments::IsDefinition, sym.isDefinition},
                 }));
             }
             result[GlobalArguments::Tags] = tagList;

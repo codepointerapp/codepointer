@@ -75,6 +75,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
             "(class_specifier) @symbol "
             "(struct_specifier) @symbol "
             "(enum_specifier) @symbol "
+            "(enumerator) @symbol "
             "(namespace_definition) @symbol "
             "(function_definition) @symbol "
             "(field_declaration) @symbol "
@@ -86,6 +87,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
         queryStr = 
             "(struct_specifier) @symbol "
             "(enum_specifier) @symbol "
+            "(enumerator) @symbol "
             "(function_definition) @symbol "
             "(field_declaration) @symbol "
             "(declaration) @symbol "
@@ -168,32 +170,6 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                     }
                 }
 
-                // Handle auto resolution from constructor call or new
-                if (typeName == "auto") {
-                    TSNode init = ts_node_child_by_field_name(symbolNode, "declarator", 10);
-                    if (init.id != nullptr && strcmp(ts_node_type(init), "init_declarator") == 0) {
-                        TSNode val = ts_node_child_by_field_name(init, "value", 5);
-                        if (val.id != nullptr) {
-                            const char* vt = ts_node_type(val);
-                            if (strcmp(vt, "call_expression") == 0) {
-                                TSNode func = ts_node_child_by_field_name(val, "function", 8);
-                                if (func.id != nullptr) {
-                                    uint32_t s = ts_node_start_byte(func);
-                                    uint32_t e = ts_node_end_byte(func);
-                                    typeName = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
-                                }
-                            } else if (strcmp(vt, "new_expression") == 0) {
-                                TSNode t = ts_node_child_by_field_name(val, "type", 4);
-                                if (t.id != nullptr) {
-                                    uint32_t s = ts_node_start_byte(t);
-                                    uint32_t e = ts_node_end_byte(t);
-                                    typeName = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // Find declarators (names)
                 TSNode declNode = ts_node_child_by_field_name(symbolNode, "declarator", 10);
                 if (declNode.id != nullptr) {
@@ -266,6 +242,30 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                                     else if (lowerName.endsWith("tabs")) resolvedType = "TabWidget";
                                     else if (lowerName.endsWith("button")) resolvedType = "Button";
                                     else if (lowerName == "index") resolvedType = "int";
+                                    else if (lowerName == "s" || lowerName == "text") resolvedType = "std::string";
+                                    else if (lowerName == "input" || lowerName == "sender" || lowerName == "me" || lowerName == "source") {
+                                        // Try to find the object this lambda is associated with
+                                        // parameter_declaration -> parameter_list -> lambda_expression
+                                        TSNode lambda = ts_node_parent(ts_node_parent(nameNode));
+                                        if (lambda.id != nullptr && strcmp(ts_node_type(lambda), "lambda_expression") == 0) {
+                                            TSNode assign = ts_node_parent(lambda);
+                                            if (assign.id != nullptr && strcmp(ts_node_type(assign), "assignment_expression") == 0) {
+                                                TSNode left = ts_node_child_by_field_name(assign, "left", 4);
+                                                if (left.id != nullptr && strcmp(ts_node_type(left), "field_expression") == 0) {
+                                                    TSNode obj = ts_node_child_by_field_name(left, "argument", 8);
+                                                    if (obj.id != nullptr) {
+                                                        uint32_t s = ts_node_start_byte(obj);
+                                                        uint32_t e = ts_node_end_byte(obj);
+                                                        QString objName = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
+                                                        if (objName.toLower().startsWith("input")) resolvedType = "Input";
+                                                        else if (objName.toLower().contains("button") || objName.toLower().startsWith("btn")) resolvedType = "Button";
+                                                        else if (objName.toLower().contains("list")) resolvedType = "ListView";
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (resolvedType == "auto" && lowerName == "input") resolvedType = "Input";
+                                    }
                                 }
 
                                 if (val.id != nullptr) {
@@ -309,12 +309,12 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                                                     }
                                                 }
                                                 
-                                                // Generic constructor call: std::string()
+                                                // Generic function call: foo() or ui::bar()
                                                 uint32_t s = ts_node_start_byte(func);
                                                 uint32_t e = ts_node_end_byte(func);
                                                 QString fn = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
-                                                if (!fn.isEmpty() && fn[0].isUpper()) {
-                                                    resolvedType = fn;
+                                                if (!fn.isEmpty()) {
+                                                    resolvedType = fn + "()";
                                                     break;
                                                 }
                                             }
@@ -341,6 +341,27 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                             sym.column = ts_node_start_point(symbolNode).column;
                             sym.fileName = fileName;
                             sym.parentName = parentName;
+
+                            // Identify if it's a definition
+                            if (strcmp(symbolType, "function_definition") == 0 ||
+                                strcmp(symbolType, "class_specifier") == 0 ||
+                                strcmp(symbolType, "struct_specifier") == 0 ||
+                                strcmp(symbolType, "enum_specifier") == 0 ||
+                                strcmp(symbolType, "namespace_definition") == 0 ||
+                                strcmp(symbolType, "alias_declaration") == 0 ||
+                                strcmp(symbolType, "type_definition") == 0) {
+                                sym.isDefinition = true;
+                            } else if (strcmp(symbolType, "declaration") == 0 || 
+                                       strcmp(symbolType, "field_declaration") == 0) {
+                                // For declarations, check if it has an initializer or if it's a member variable
+                                if (strcmp(ts_node_type(nameNode), "init_declarator") == 0) {
+                                    sym.isDefinition = true;
+                                } else {
+                                    // Most field declarations are definitions of the member
+                                    sym.isDefinition = true;
+                                }
+                            }
+
                             symbols.append(sym);
                         }
                         break; // Found identifier, stop drilling for this nameNode
@@ -367,6 +388,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
     }
 
     // Dump structure for debugging
+#if 0
     if (!symbols.isEmpty()) {
         qDebug() << "TreeSitterEngine: Structure for" << fileName;
         QHash<QString, QStringList> groups;
@@ -379,7 +401,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
             for (const auto& s : it.value()) qDebug() << "    -" << s;
         }
     }
-
+#endif
     {
         QMutexLocker locker(&mutex);
         context->cachedSymbols = symbols;
@@ -391,28 +413,35 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
 }
 
 void TreeSitterEngine::updateIndexForFile(const QString &fileName, const QList<Symbol> &symbols) {
-    auto it = globalIndex.begin();
-    while (it != globalIndex.end()) {
-        if (it.value().fileName == fileName) {
-            it = globalIndex.erase(it);
-        } else {
-            ++it;
+    // Remove old symbols for this file using the reverse index
+    for (const QString &name : fileToSymbolNames.values(fileName)) {
+        auto it = globalIndex.find(name);
+        while (it != globalIndex.end() && it.key() == name) {
+            if (it.value().fileName == fileName) {
+                it = globalIndex.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
+    fileToSymbolNames.remove(fileName);
 
     for (const auto &sym : symbols) {
         globalIndex.insert(sym.name, sym);
+        fileToSymbolNames.insert(fileName, sym.name);
     }
 }
 
 QList<TreeSitterEngine::Symbol> TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const QString &previousWord, const QString &separator, const QString &fileName, int line, int column) {
     QMutexLocker locker(&mutex);
-    
+
+#if 0
     if (!separator.isEmpty()) {
         qDebug() << "TreeSitterEngine::findSymbolsGlobal: name=" << name 
                  << "prev=" << previousWord << "sep=" << separator 
                  << "file=" << fileName << "pos=" << line << ":" << column;
     }
+#endif
 
     // If we have a separator, we are likely looking for members of previousWord.
     if (!separator.isEmpty() && !previousWord.isEmpty()) {
@@ -460,18 +489,47 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::findSymbolsGlobal(const QStrin
             
             if (bestLine != -1) {
                 typeName = bestMatch.type;
-                qDebug() << "TreeSitterEngine: found declaration of" << previousWord << "as type" << typeName;
+            } else {
+                // If not found in local scope, check if it's a member of the current class
+                TSNode root = ts_tree_root_node(context->tree);
+                TSPoint pt = {(uint32_t)line, (uint32_t)column};
+                TSNode node = ts_node_descendant_for_point_range(root, pt, pt);
+                while (node.id != nullptr) {
+                    const char *pType = ts_node_type(node);
+                    if (strcmp(pType, "class_specifier") == 0 || strcmp(pType, "struct_specifier") == 0) {
+                        TSNode pNameNode = ts_node_child_by_field_name(node, "name", 4);
+                        if (pNameNode.id != nullptr) {
+                            uint32_t pStart = ts_node_start_byte(pNameNode);
+                            uint32_t pEnd = ts_node_end_byte(pNameNode);
+                            QString className = QString::fromUtf8(context->content.mid(pStart, pEnd - pStart)).trimmed();
+                            
+                            // Check if previousWord is a member of this class
+                            for (const auto& sym : globalIndex) {
+                                if (sym.parentName == className && sym.name == previousWord) {
+                                    typeName = sym.type;
+                                    qDebug() << "TreeSitterEngine: resolved" << previousWord << "as member of" << className << "with type" << typeName;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!typeName.isEmpty()) break;
+                    }
+                    node = ts_node_parent(node);
+                }
+                
+                if (typeName.isEmpty()) {
+                    qDebug() << "TreeSitterEngine: could not find declaration of" << previousWord << "in current file or class scope";
+                }
+            }
+
+            if (!typeName.isEmpty()) {
                 // Heuristic: remove pointer/reference decorators and template arguments
                 typeName.remove('*').remove('&').trimmed();
                 int templateStart = typeName.indexOf('<');
                 if (templateStart != -1) {
                     typeName = typeName.left(templateStart).trimmed();
                 }
-                if (typeName != bestMatch.type) {
-                    qDebug() << "TreeSitterEngine: normalized type to" << typeName;
-                }
-            } else {
-                qDebug() << "TreeSitterEngine: could not find declaration of" << previousWord << "in current file";
+                qDebug() << "TreeSitterEngine: resolved effective type to" << typeName;
             }
         }
         
@@ -480,13 +538,61 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::findSymbolsGlobal(const QStrin
             QString currentType = typeName;
             QSet<QString> visited;
             
+            qDebug() << "TreeSitterEngine: resolving members for" << typeName;
+
             while (!currentType.isEmpty() && !visited.contains(currentType)) {
                 visited.insert(currentType);
                 
-                // Search for members of currentType in the global index
+                // 1. Clean up type: remove pointers, references and whitespace
+                currentType.remove('*').remove('&').trimmed();
+                
+                // 2. Resolve function calls: foo() -> look up return type in global index
+                if (currentType.endsWith("()")) {
+                    QString funcName = currentType.left(currentType.length() - 2);
+                    QString shortName = funcName;
+                    int lastColon = funcName.lastIndexOf("::");
+                    if (lastColon != -1) shortName = funcName.mid(lastColon + 2);
+                    
+                    auto funcSyms = globalIndex.values(shortName);
+                    QString returnType;
+                    for (const auto& fs : funcSyms) {
+                        // Match short name and verify namespace if possible
+                        if (fs.name == shortName && (lastColon == -1 || fs.parentName.endsWith(funcName.left(lastColon)))) {
+                            returnType = fs.type;
+                            break;
+                        }
+                    }
+                    if (!returnType.isEmpty()) {
+                        qDebug() << "TreeSitterEngine: resolved function" << funcName << "to return type" << returnType;
+                        currentType = returnType;
+                        continue;
+                    }
+                }
+
+                // 3. Unwrap common templates: Widget<T>, shared_ptr<T> -> T
+                int tStart = currentType.indexOf('<');
+                int tEnd = currentType.lastIndexOf('>');
+                if (tStart != -1 && tEnd > tStart) {
+                    QString wrapper = currentType.left(tStart).trimmed();
+                    if (wrapper == "Widget" || wrapper.endsWith("::Widget") || 
+                        wrapper.contains("shared_ptr") || wrapper.contains("unique_ptr")) {
+                        QString inner = currentType.mid(tStart + 1, tEnd - tStart - 1).trimmed();
+                        qDebug() << "TreeSitterEngine: unwrapping" << wrapper << "to" << inner;
+                        currentType = inner;
+                        continue;
+                    }
+                    // For unknown templates, try the base name if no members found for full name
+                }
+
+                // 4. Search for members of currentType in the global index
+                QString searchType = currentType;
+                // If it's still a template, try the base name
+                int searchStart = searchType.indexOf('<');
+                if (searchStart != -1) searchType = searchType.left(searchStart).trimmed();
+
                 for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {
                     const auto& sym = it.value();
-                    if (sym.parentName == currentType || sym.parentName.endsWith("::" + currentType)) {
+                    if (sym.parentName == searchType || sym.parentName.endsWith("::" + searchType)) {
                         if (exactMatch) {
                             if (sym.name == name) results.append(sym);
                         } else {
@@ -498,36 +604,31 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::findSymbolsGlobal(const QStrin
                 }
                 
                 if (!results.isEmpty()) {
-                    qDebug() << "TreeSitterEngine: found" << results.size() << "members for" << currentType << (currentType != typeName ? QString("(resolved from %1)").arg(typeName) : "");
+                    qDebug() << "TreeSitterEngine: found" << results.size() << "members for" << searchType;
                     return results;
                 }
                 
-                // If no members found, check if currentType is an alias (using or typedef)
-                auto aliases = globalIndex.values(currentType);
+                // 5. Alias resolution (using/typedef)
+                auto aliases = globalIndex.values(searchType);
                 QString nextType;
                 for (const auto& asym : aliases) {
-                    // An alias symbol has no parent and has a specific type it points to
-                    if (asym.parentName.isEmpty() && !asym.type.isEmpty() && asym.type != currentType) {
+                    if (asym.parentName.isEmpty() && !asym.type.isEmpty() && asym.type != searchType && !asym.type.startsWith("function")) {
                         nextType = asym.type;
-                        // Heuristic: remove decorators
-                        nextType.remove('*').remove('&').trimmed();
-                        int templateStart = nextType.indexOf('<');
-                        if (templateStart != -1) nextType = nextType.left(templateStart).trimmed();
                         break;
                     }
                 }
                 
                 if (nextType.isEmpty()) break;
-                qDebug() << "TreeSitterEngine: resolving alias" << currentType << "->" << nextType;
+                qDebug() << "TreeSitterEngine: resolving alias" << searchType << "->" << nextType;
                 currentType = nextType;
             }
 
-            // If we reached here, no members were found even after alias resolution
-            QSet<QString> parents;
-            for (const auto& sym : globalIndex) if (!sym.parentName.isEmpty()) parents.insert(sym.parentName);
-            QStringList pList = parents.values();
-            if (!pList.isEmpty()) {
-                qDebug() << "TreeSitterEngine: no members found for" << typeName << ". Available parents (sample):" << pList.mid(0, 10);
+            // Debug: help diagnose why lookup failed
+            if (results.isEmpty()) {
+                QSet<QString> parents;
+                for (const auto& sym : globalIndex) if (!sym.parentName.isEmpty()) parents.insert(sym.parentName);
+                QStringList pList = parents.values();
+                qDebug() << "TreeSitterEngine: no members found for" << currentType << ". Indexed parents (sample):" << pList.mid(0, 10);
             }
         }
         // If we have a separator, we strictly want members of the resolved type.

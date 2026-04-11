@@ -23,6 +23,7 @@ public:
         int column;
         QString fileName; // Store filename for global index lookup
         QString parentName; // For members: name of the class/struct
+        bool isDefinition = false;
     };
     
     // Returns cached symbols or parses if needed
@@ -61,6 +62,9 @@ private:
     
     // Global index: symbol name -> Symbol info
     QMultiHash<QString, Symbol> globalIndex;
+    
+    // File to symbol names mapping for efficient cleanup
+    QMultiHash<QString, QString> fileToSymbolNames;
     
     mutable QMutex mutex;
     
