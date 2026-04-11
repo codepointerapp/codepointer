@@ -459,9 +459,11 @@ CommandArgs CTagsPlugin::symbolInfoRequested(const QString &fileName, const QStr
             {GlobalArguments::FileName, QString::fromStdString(std::string{tag.file})},
             {GlobalArguments::Type, QString::fromStdString(tagFieldKeyToString(tag.fieldKey))},
             {GlobalArguments::Value, QString::fromStdString(std::string{tag.fieldValue})},
-            {GlobalArguments::Raw, QString::fromStdString(std::string{tag.address})},
+            {GlobalArguments::Raw, address},
             {GlobalArguments::Name, QString::fromStdString(std::string{tag.name})},
+            {GlobalArguments::IsDefinition, tag.fieldKey != TagFieldKey::Prototype},
         };
+
         if (isLineNumber) {
             tagArgs[GlobalArguments::LineNumber] = lineNumber;
         }

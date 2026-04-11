@@ -167,7 +167,22 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
     }
 
     QSet<QString> addedItems;
+    QVariantList definitions;
+    QVariantList otherTags;
+
     for (const QVariant &item : std::as_const(tags)) {
+        auto const tag = item.toHash();
+        if (tag[GlobalArguments::IsDefinition].toBool()) {
+            definitions.append(item);
+        } else {
+            otherTags.append(item);
+        }
+    }
+
+    // If we have definitions, only show them. Otherwise show everything.
+    const auto &tagsToShow = definitions.isEmpty() ? otherTags : definitions;
+
+    for (const QVariant &item : std::as_const(tagsToShow)) {
         auto const tag = item.toHash();
         auto const fileName = tag[GlobalArguments::FileName].toString();
         auto const fieldType = tag[GlobalArguments::Type].toString();
@@ -1046,7 +1061,7 @@ void qmdiEditor::onTextModified() {
 
 void qmdiEditor::goTo(int x, int y) {
     if (documentHasBeenLoaded) {
-        textEditor->goTo(x, y);
+        textEditor->goTo(y, x);
     } else {
         savedState[StateConstants::ROW] = y;
         savedState[StateConstants::COLUMN] = x;
