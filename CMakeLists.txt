@@ -70,14 +70,8 @@ else()
     CPMAddPackage("gh:dridk/QJsonModel#f5fa5988c0ee52fff39a42973c964d5480951f86")
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#8e7017f7fbdc2b4b1a26ed1eef9ebcba6a50639c")
     CPMAddPackage("gh:Dax89/QHexView#beadd087413a46e7ed97afbab9dab1323ab1d033")
-    # download_breeze_icons(6.4.0)
+    download_breeze_icons(6.4.0)
 endif()
-
-
-message(STATUS "aaa tree_sitter_SOURCE_DIR = ${tree_sitter_SOURCE_DIR}")
-message(STATUS "aaa tree_sitter_cpp_SOURCE_DIR = ${tree_sitter_cpp_SOURCE_DIR}")
-# message(STATUS "aaa tree_sitter_c_SOURCE_DIR = ${tree_sitter_c_SOURCE_DIR}")
-
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
 set(CMAKE_AUTOMOC ON)
@@ -173,12 +167,10 @@ set(codepointer_sources
     src/plugins/CTags/CTagsPlugin.hpp
     src/plugins/CTags/CTagsLoader.cpp
     src/plugins/CTags/CTagsLoader.hpp
-
     src/plugins/TreeSitter/tree-sitter/lib/src/lib.c
     src/plugins/TreeSitter/tree-sitter-c/src/parser.c
     src/plugins/TreeSitter/tree-sitter-cpp/src/parser.c
     src/plugins/TreeSitter/tree-sitter-cpp/src/scanner.c
-
     src/plugins/TreeSitter/TreeSitterPlugin.cpp
     src/plugins/TreeSitter/TreeSitterPlugin.hpp
     src/plugins/TreeSitter/TreeSitterEngine.cpp
