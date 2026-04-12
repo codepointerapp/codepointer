@@ -3,14 +3,14 @@
 #include <QDebug>
 #include <QDir>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFuture>
 #include <QPromise>
-#include <QThreadPool>
 #include <QTextStream>
-#include <QtConcurrent>
 #include <QThread>
-#include <QElapsedTimer>
+#include <QThreadPool>
+#include <QtConcurrent>
 
 TreeSitterPlugin::TreeSitterPlugin() {
     name = tr("Tree-sitter Support");
@@ -83,13 +83,17 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
                 for (const QString &file : engine.getTrackedFiles()) {
                     auto symbols = engine.getSymbols(file);
                     for (const auto &sym : symbols) {
-                        if (sym.type.contains("class") || sym.type.contains("struct")) totalClasses++;
-                        else totalFunctions++;
+                        if (sym.type.contains("class") || sym.type.contains("struct")) {
+                            totalClasses++;
+                        } else {
+                            totalFunctions++;
+                        }
                     }
                 }
 
                 qDebug() << "TreeSitterPlugin: Finished scanning in" << timer.elapsed() << "ms.";
-                qDebug() << "TreeSitterPlugin: Found" << totalClasses << "classes/structs and" << totalFunctions << "functions.";
+                qDebug() << "TreeSitterPlugin: Found" << totalClasses << "classes/structs and"
+                         << totalFunctions << "functions.";
             }
         } else if (command == "ListSymbols") {
             auto filename = args[GlobalArguments::FileName].toString();
@@ -126,7 +130,8 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
             }
 
             QVariantList tagList;
-            auto symbols = engine.findSymbolsGlobal(symbol, exactMatch, previousWord, separator, filename, line, column);
+            auto symbols = engine.findSymbolsGlobal(symbol, exactMatch, previousWord, separator,
+                                                    filename, line, column);
 
             for (const auto &sym : symbols) {
                 tagList.append(QVariant::fromValue(CommandArgs{
@@ -148,15 +153,19 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
 
             QString tooltip;
             auto symbols = engine.findSymbolsGlobal(symbol, true);
-            
+
             QList<TreeSitterEngine::Symbol> definitions;
-            for (const auto& sym : symbols) {
-                if (sym.isDefinition) definitions.append(sym);
+            for (const auto &sym : symbols) {
+                if (sym.isDefinition) {
+                    definitions.append(sym);
+                }
             }
 
-            const auto& toShow = definitions.isEmpty() ? symbols : definitions;
+            const auto &toShow = definitions.isEmpty() ? symbols : definitions;
             for (const auto &sym : toShow) {
-                if (!tooltip.isEmpty()) tooltip += "\n---\n";
+                if (!tooltip.isEmpty()) {
+                    tooltip += "\n---\n";
+                }
                 if (!sym.signature.isEmpty()) {
                     tooltip += sym.signature;
                 } else {
