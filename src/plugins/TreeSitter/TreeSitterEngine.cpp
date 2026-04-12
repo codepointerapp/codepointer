@@ -1,22 +1,22 @@
 #include "TreeSitterEngine.hpp"
-#include <QFileInfo>
 #include <QDebug>
+#include <QFileInfo>
 #include <QMutexLocker>
+#include <algorithm>
 
 extern "C" const TSLanguage *tree_sitter_cpp();
 extern "C" const TSLanguage *tree_sitter_c();
 
-TreeSitterEngine::TreeSitterEngine() : parser(nullptr) {
-}
+TreeSitterEngine::TreeSitterEngine() : parser(nullptr) {}
 
-TreeSitterEngine::~TreeSitterEngine() {
-}
+TreeSitterEngine::~TreeSitterEngine() {}
 
-const TSLanguage* TreeSitterEngine::getLanguageForFile(const QString &fileName) {
-    QFileInfo info(fileName);
-    QString ext = info.suffix().toLower();
-    
-    if (ext == "cpp" || ext == "hpp" || ext == "cc" || ext == "hh" || ext == "cxx" || ext == "hxx" || ext == "h") {
+const TSLanguage *TreeSitterEngine::getLanguageForFile(const QString &fileName) {
+    auto info = QFileInfo(fileName);
+    auto ext = info.suffix().toLower();
+
+    if (ext == "cpp" || ext == "hpp" || ext == "cc" || ext == "hh" || ext == "cxx" ||
+        ext == "hxx" || ext == "h") {
         return tree_sitter_cpp();
     } else if (ext == "c") {
         return tree_sitter_c();
@@ -25,17 +25,19 @@ const TSLanguage* TreeSitterEngine::getLanguageForFile(const QString &fileName) 
 }
 
 void TreeSitterEngine::updateFile(const QString &fileName, const QString &content) {
-    const TSLanguage *lang = getLanguageForFile(fileName);
-    if (!lang) return;
+    auto const lang = getLanguageForFile(fileName);
+    if (!lang) {
+        return;
+    }
 
-    QByteArray bytes = content.toUtf8();
-    TSParser *localParser = ts_parser_new();
+    auto bytes = content.toUtf8();
+    auto localParser = ts_parser_new();
     ts_parser_set_language(localParser, lang);
-    TSTree *newTree = ts_parser_parse_string(localParser, nullptr, bytes.data(), bytes.size());
+    auto newTree = ts_parser_parse_string(localParser, nullptr, bytes.data(), bytes.size());
     ts_parser_delete(localParser);
 
     if (newTree) {
-        QMutexLocker locker(&mutex);
+        auto locker = QMutexLocker(&mutex);
         auto context = std::make_shared<FileContext>();
         context->tree = newTree;
         context->language = lang;
@@ -46,431 +48,277 @@ void TreeSitterEngine::updateFile(const QString &fileName, const QString &conten
 }
 
 TSNode TreeSitterEngine::getRootNode(const QString &fileName) {
-    QMutexLocker locker(&mutex);
+    auto locker = QMutexLocker(&mutex);
     if (fileContexts.contains(fileName)) {
         return ts_tree_root_node(fileContexts[fileName]->tree);
     }
-    TSNode nullNode;
+    auto nullNode = TSNode{};
     nullNode.id = nullptr;
     return nullNode;
 }
 
 QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &fileName) {
-    std::shared_ptr<FileContext> context;
+    auto context = std::shared_ptr<FileContext>{};
     {
-        QMutexLocker locker(&mutex);
-        if (!fileContexts.contains(fileName)) return {};
+        auto locker = QMutexLocker(&mutex);
+        if (!fileContexts.contains(fileName)) {
+            return {};
+        }
         context = fileContexts[fileName];
-        if (context->symbolsValid) return context->cachedSymbols;
+        if (context->symbolsValid) {
+            return context->cachedSymbols;
+        }
     }
 
-    TSNode root = ts_tree_root_node(context->tree);
-    QList<Symbol> symbols;
+    auto root = ts_tree_root_node(context->tree);
+    auto symbols = QList<Symbol>{};
 
-    // Simplified query to capture all declaration-like nodes. 
-    // We use different queries for C and C++ because some node types (class, namespace) only exist in C++.
-    QString queryStr;
+    auto queryStr = QString{};
     if (context->language == tree_sitter_cpp()) {
-        queryStr = 
-            "(class_specifier) @symbol "
-            "(struct_specifier) @symbol "
-            "(enum_specifier) @symbol "
-            "(enumerator) @symbol "
-            "(namespace_definition) @symbol "
-            "(function_definition) @symbol "
-            "(field_declaration) @symbol "
-            "(declaration) @symbol "
-            "(parameter_declaration) @symbol "
-            "(alias_declaration) @symbol "
-            "(type_definition) @symbol ";
+        queryStr =
+            "(class_specifier) @symbol (struct_specifier) @symbol (enum_specifier) @symbol "
+            "(enumerator) @symbol (namespace_definition) @symbol (function_definition) @symbol "
+            "(field_declaration) @symbol (declaration) @symbol (parameter_declaration) @symbol "
+            "(alias_declaration) @symbol (type_definition) @symbol ";
     } else {
-        queryStr = 
-            "(struct_specifier) @symbol "
-            "(enum_specifier) @symbol "
-            "(enumerator) @symbol "
-            "(function_definition) @symbol "
-            "(field_declaration) @symbol "
-            "(declaration) @symbol "
-            "(parameter_declaration) @symbol "
-            "(type_definition) @symbol ";
+        queryStr =
+            "(struct_specifier) @symbol (enum_specifier) @symbol (enumerator) @symbol "
+            "(function_definition) @symbol (field_declaration) @symbol (declaration) @symbol "
+            "(parameter_declaration) @symbol (type_definition) @symbol ";
     }
 
-    uint32_t errorOffset;
-    TSQueryError errorType;
-    QByteArray queryBytes = queryStr.toUtf8();
-    TSQuery *query = ts_query_new(context->language, queryBytes.data(), (uint32_t)queryBytes.size(), &errorOffset, &errorType);
+    auto errorOffset = uint32_t{};
+    auto errorType = TSQueryError{};
+    auto queryBytes = queryStr.toUtf8();
+    auto query = ts_query_new(context->language, queryBytes.data(), (uint32_t)queryBytes.size(),
+                              &errorOffset, &errorType);
 
     if (query) {
-        TSQueryCursor *cursor = ts_query_cursor_new();
+        auto cursor = ts_query_cursor_new();
         ts_query_cursor_exec(cursor, query, root);
 
-        TSQueryMatch match;
+        auto match = TSQueryMatch{};
         while (ts_query_cursor_next_match(cursor, &match)) {
-            TSNode symbolNode = match.captures[0].node;
-            const char *symbolType = ts_node_type(symbolNode);
+            auto symbolNode = match.captures[0].node;
+            auto const symbolType = ts_node_type(symbolNode);
+            auto typeName = QString{};
+            auto nameNodes = QList<TSNode>{};
 
-            QString typeName;
-            QString name;
-            QList<TSNode> nameNodes;
-
-            // 1. Try to find the name and type by looking at children and fields
-            if (strcmp(symbolType, "class_specifier") == 0 || 
+            // Extract Type and Declarator Nodes
+            if (strcmp(symbolType, "class_specifier") == 0 ||
                 strcmp(symbolType, "struct_specifier") == 0 ||
                 strcmp(symbolType, "enum_specifier") == 0 ||
                 strcmp(symbolType, "namespace_definition") == 0) {
-
-                TSNode nameNode = ts_node_child_by_field_name(symbolNode, "name", 4);
-                if (nameNode.id != nullptr) nameNodes.append(nameNode);
-                typeName = QString::fromUtf8(symbolType);
+                auto n = ts_node_child_by_field_name(symbolNode, "name", 4);
+                if (n.id) {
+                    nameNodes.append(n);
+                }
+                typeName = symbolType;
+            } else if (strcmp(symbolType, "enumerator") == 0) {
+                auto n = ts_node_child_by_field_name(symbolNode, "name", 4);
+                if (n.id) {
+                    nameNodes.append(n);
+                }
+                auto p = ts_node_parent(ts_node_parent(symbolNode));
+                if (p.id && strcmp(ts_node_type(p), "enum_specifier") == 0) {
+                    typeName = extractNameFromNode(ts_node_child_by_field_name(p, "name", 4),
+                                                   context->content);
+                }
             } else if (strcmp(symbolType, "alias_declaration") == 0) {
-                // using Timer = PosixTimer;
-                TSNode nameNode = ts_node_child_by_field_name(symbolNode, "name", 4);
-                if (nameNode.id != nullptr) nameNodes.append(nameNode);
-                TSNode tNode = ts_node_child_by_field_name(symbolNode, "type", 4);
-                if (tNode.id != nullptr) {
-                    uint32_t start = ts_node_start_byte(tNode);
-                    uint32_t end = ts_node_end_byte(tNode);
-                    typeName = QString::fromUtf8(context->content.mid(start, end - start)).trimmed();
-                }
-            } else if (strcmp(symbolType, "type_definition") == 0) {
-                // typedef PosixTimer Timer;
-                TSNode tNode = ts_node_child_by_field_name(symbolNode, "type", 4);
-                if (tNode.id != nullptr) {
-                    uint32_t start = ts_node_start_byte(tNode);
-                    uint32_t end = ts_node_end_byte(tNode);
-                    typeName = QString::fromUtf8(context->content.mid(start, end - start)).trimmed();
-                }
-                TSNode declNode = ts_node_child_by_field_name(symbolNode, "declarator", 10);
-                if (declNode.id != nullptr) nameNodes.append(declNode);
+                nameNodes.append(ts_node_child_by_field_name(symbolNode, "name", 4));
+                typeName = extractNameFromNode(ts_node_child_by_field_name(symbolNode, "type", 4),
+                                               context->content);
             } else {
-                // For declarations and parameters, try to find type and declarator(s)
-                TSNode typeNode = ts_node_child_by_field_name(symbolNode, "type", 4);
-                if (typeNode.id == nullptr) {
-                    // Fallback: the first named child is often the type
-                    for (uint32_t i = 0; i < ts_node_named_child_count(symbolNode); ++i) {
-                        TSNode child = ts_node_named_child(symbolNode, i);
-                        const char* cType = ts_node_type(child);
-                        if (strstr(cType, "type") || strcmp(cType, "primitive_type") == 0) {
-                            typeNode = child;
+                auto tNode = ts_node_child_by_field_name(symbolNode, "type", 4);
+                typeName = extractNameFromNode(tNode, context->content);
+                nameNodes.append(ts_node_child_by_field_name(symbolNode, "declarator", 10));
+            }
+
+            // Resolve Parent Scope
+            auto isTopLevel = true;
+            auto parentName = resolveParentScope(symbolNode, context->content, isTopLevel);
+
+            for (auto node : nameNodes) {
+                auto name = extractNameFromNode(node, context->content);
+                if (name.isEmpty()) {
+                    continue;
+                }
+
+                auto sym = Symbol{};
+                sym.name = name;
+                sym.fileName = fileName;
+                sym.parentName = parentName;
+                sym.line = ts_node_start_point(symbolNode).row;
+                sym.column = ts_node_start_point(symbolNode).column;
+                sym.type = resolveAutoType(node, typeName, context->content, symbolType);
+
+                // Flag Definition
+                if (strcmp(symbolType, "field_declaration") == 0) {
+                    sym.isDefinition = true;
+                } else if (isTopLevel) {
+                    if (strcmp(symbolType, "declaration") == 0) {
+                        sym.isDefinition = (strcmp(ts_node_type(node), "init_declarator") == 0);
+                    } else {
+                        sym.isDefinition = true; // Classes, functions, aliases
+                    }
+                }
+
+                // Extract Signature for functions/methods
+                if (strstr(symbolType, "function") || strstr(ts_node_type(node), "function") ||
+                    !sym.type.contains(" ")) {
+                    auto params = TSNode{};
+                    params.id = nullptr;
+                    auto stack = QList<TSNode>{symbolNode, node};
+                    while (!stack.isEmpty()) {
+                        auto n = stack.takeFirst();
+                        if (strcmp(ts_node_type(n), "parameter_list") == 0) {
+                            params = n;
                             break;
                         }
-                    }
-                }
-
-                if (typeNode.id != nullptr) {
-                    TSNode nameInType = ts_node_child_by_field_name(typeNode, "name", 4);
-                    if (nameInType.id != nullptr) {
-                        uint32_t start = ts_node_start_byte(nameInType);
-                        uint32_t end = ts_node_end_byte(nameInType);
-                        typeName = QString::fromUtf8(context->content.mid(start, end - start)).trimmed();
-                    } else {
-                        uint32_t start = ts_node_start_byte(typeNode);
-                        uint32_t end = ts_node_end_byte(typeNode);
-                        typeName = QString::fromUtf8(context->content.mid(start, end - start)).trimmed();
-                    }
-                }
-
-                // Find declarators (names)
-                TSNode declNode = ts_node_child_by_field_name(symbolNode, "declarator", 10);
-                if (declNode.id != nullptr) {
-                    nameNodes.append(declNode);
-                } else {
-                    // Fallback: look for identifier-like nodes that are NOT the type node
-                    for (uint32_t i = 0; i < ts_node_named_child_count(symbolNode); ++i) {
-                        TSNode child = ts_node_named_child(symbolNode, i);
-                        if (child.id != typeNode.id) {
-                            const char* cType = ts_node_type(child);
-                            if (strstr(cType, "declarator") || strcmp(cType, "identifier") == 0) {
-                                nameNodes.append(child);
-                            }
+                        for (auto j = 0u; j < ts_node_child_count(n); ++j) {
+                            stack.append(ts_node_child(n, j));
                         }
                     }
-                }
-            }
-
-            // Find parent class/struct/namespace
-            QString parentName;
-            QStringList parents;
-            TSNode parentNode = ts_node_parent(symbolNode);
-            while (parentNode.id != nullptr) {
-                const char *pType = ts_node_type(parentNode);
-
-                // If we hit a function or block, this symbol is not a member of any class above it
-                if (strcmp(pType, "function_definition") == 0 || 
-                    strcmp(pType, "lambda_expression") == 0 ||
-                    strcmp(pType, "compound_statement") == 0) {
-                    parents.clear();
-                    break;
-                }
-
-                if (strcmp(pType, "class_specifier") == 0 || 
-                    strcmp(pType, "struct_specifier") == 0 ||
-                    strcmp(pType, "namespace_definition") == 0) {
-                    TSNode pNameNode = ts_node_child_by_field_name(parentNode, "name", 4);
-                    if (pNameNode.id != nullptr) {
-                        uint32_t pStart = ts_node_start_byte(pNameNode);
-                        uint32_t pEnd = ts_node_end_byte(pNameNode);
-                        if (pEnd > pStart && pEnd <= (uint32_t)context->content.size()) {
-                            parents.prepend(QString::fromUtf8(context->content.mid(pStart, pEnd - pStart)).trimmed());
-                        }
+                    if (params.id) {
+                        auto pStr = QString::fromUtf8(context->content.mid(
+                            ts_node_start_byte(params),
+                            ts_node_end_byte(params) - ts_node_start_byte(params)));
+                        sym.signature = QString("%1 %2%3").arg(sym.type, sym.name, pStr);
                     }
                 }
-                parentNode = ts_node_parent(parentNode);
-            }
-            parentName = parents.join("::");
-
-            for (TSNode nameNode : nameNodes) {
-                // Surgical drill down to the actual identifier
-                TSNode current = nameNode;
-                TSNode finalIdentifier;
-                finalIdentifier.id = nullptr;
-
-                while (current.id != nullptr) {
-                    const char *type = ts_node_type(current);
-                    if (strcmp(type, "identifier") == 0 || 
-                        strcmp(type, "type_identifier") == 0 || 
-                        strcmp(type, "field_identifier") == 0 ||
-                        strcmp(type, "destructor_name") == 0) {
-                        finalIdentifier = current;
-                        // For complex declarators, the identifier we want is often nested inside,
-                        // but once we find one, we should only keep drilling if it's a declarator wrapper.
-                    }
-                    
-                    TSNode next = ts_node_child_by_field_name(current, "declarator", 5);
-                    if (next.id != nullptr) {
-                        current = next;
-                    } else if (strcmp(type, "pointer_declarator") == 0 || 
-                               strcmp(type, "reference_declarator") == 0 ||
-                               strcmp(type, "array_declarator") == 0 ||
-                               strcmp(type, "parenthesized_declarator") == 0) {
-                        // Follow the only named child for these wrappers
-                        if (ts_node_named_child_count(current) > 0) {
-                            current = ts_node_named_child(current, 0);
-                        } else break;
-                    } else if (strcmp(type, "function_declarator") == 0) {
-                        // For functions, the name is in the 'declarator' field (handled above)
-                        // or it's the first named child. Do NOT enter the parameter_list.
-                        if (ts_node_named_child_count(current) > 0) {
-                            TSNode first = ts_node_named_child(current, 0);
-                            if (strcmp(ts_node_type(first), "parameter_list") == 0) break;
-                            current = first;
-                        } else break;
-                    } else {
-                        break;
-                    }
-                }
-
-                if (finalIdentifier.id != nullptr) {
-                    uint32_t start = ts_node_start_byte(finalIdentifier);
-                    uint32_t end = ts_node_end_byte(finalIdentifier);
-                    if (end > start && end <= (uint32_t)context->content.size()) {
-                        QString name = QString::fromUtf8(context->content.mid(start, end - start));
-                        
-                        Symbol sym;
-                        sym.name = name;
-                        
-                        // Specific auto-resolution for this specific declarator if needed
-                        QString resolvedType = typeName;
-                        if (resolvedType == "auto" || resolvedType == "auto &" || resolvedType == "auto*") {
-                            TSNode val;
-                            val.id = nullptr;
-                            if (strcmp(ts_node_type(nameNode), "init_declarator") == 0) {
-                                val = ts_node_child_by_field_name(nameNode, "value", 5);
-                            } else if (strcmp(symbolType, "parameter_declaration") == 0) {
-                                // Heuristic for lambda parameters: check name hints
-                                QString lowerName = name.toLower();
-                                if (lowerName.endsWith("listview")) resolvedType = "ListView";
-                                else if (lowerName.endsWith("tabs")) resolvedType = "TabWidget";
-                                else if (lowerName.endsWith("button")) resolvedType = "Button";
-                                else if (lowerName == "index") resolvedType = "int";
-                                else if (lowerName == "s" || lowerName == "text") resolvedType = "std::string";
-                                else if (lowerName == "input" || lowerName == "sender" || lowerName == "me" || lowerName == "source") {
-                                    // Try to find the object this lambda is associated with
-                                    // parameter_declaration -> parameter_list -> lambda_expression
-                                    TSNode lambda = ts_node_parent(ts_node_parent(nameNode));
-                                    if (lambda.id != nullptr && strcmp(ts_node_type(lambda), "lambda_expression") == 0) {
-                                        TSNode assign = ts_node_parent(lambda);
-                                        if (assign.id != nullptr && strcmp(ts_node_type(assign), "assignment_expression") == 0) {
-                                            TSNode left = ts_node_child_by_field_name(assign, "left", 4);
-                                            if (left.id != nullptr && strcmp(ts_node_type(left), "field_expression") == 0) {
-                                                TSNode obj = ts_node_child_by_field_name(left, "argument", 8);
-                                                if (obj.id != nullptr) {
-                                                    uint32_t s = ts_node_start_byte(obj);
-                                                    uint32_t e = ts_node_end_byte(obj);
-                                                    QString objName = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
-                                                    if (objName.toLower().startsWith("input")) resolvedType = "Input";
-                                                    else if (objName.toLower().contains("button") || objName.toLower().startsWith("btn")) resolvedType = "Button";
-                                                    else if (objName.toLower().contains("list")) resolvedType = "ListView";
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if (resolvedType == "auto" && lowerName == "input") resolvedType = "Input";
-                                }
-                            }
-
-                            if (val.id != nullptr) {
-                                // Deep peek into the initializer
-                                QList<TSNode> stack = {val};
-                                int iterations = 0;
-                                while (!stack.isEmpty() && iterations++ < 50) {
-                                    TSNode n = stack.takeFirst();
-                                    if (n.id == nullptr) continue;
-                                    const char* nt = ts_node_type(n);
-                                    
-                                    if (strcmp(nt, "call_expression") == 0) {
-                                        TSNode func = ts_node_child_by_field_name(n, "function", 8);
-                                        if (func.id != nullptr) {
-                                            const char* ft = ts_node_type(func);
-                                            if (strcmp(ft, "template_function") == 0) {
-                                                // Handle make_shared<T>, make_unique<T>, cast<T>
-                                                TSNode tArgs = ts_node_child_by_field_name(func, "arguments", 10);
-                                                if (tArgs.id != nullptr && ts_node_named_child_count(tArgs) > 0) {
-                                                    TSNode t = ts_node_named_child(tArgs, 0);
-                                                    uint32_t s = ts_node_start_byte(t);
-                                                    uint32_t e = ts_node_end_byte(t);
-                                                    resolvedType = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
-                                                    break;
-                                                }
-                                            } else if (strcmp(ft, "field_expression") == 0) {
-                                                // Handle layout->add(make_shared<T>())
-                                                TSNode fName = ts_node_child_by_field_name(func, "field", 10);
-                                                if (fName.id != nullptr) {
-                                                    uint32_t fs = ts_node_start_byte(fName);
-                                                    uint32_t fe = ts_node_end_byte(fName);
-                                                    QString fieldName = QString::fromUtf8(context->content.mid(fs, fe - fs));
-                                                    
-                                                    if (fieldName == "add" || fieldName == "push_back" || fieldName == "insert") {
-                                                        TSNode args = ts_node_child_by_field_name(n, "arguments", 10);
-                                                        if (args.id != nullptr && ts_node_named_child_count(args) > 0) {
-                                                            stack.append(ts_node_named_child(args, 0));
-                                                            continue;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            
-                                            // Generic function call: foo() or ui::bar()
-                                            uint32_t s = ts_node_start_byte(func);
-                                            uint32_t e = ts_node_end_byte(func);
-                                            QString fn = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
-                                            if (!fn.isEmpty()) {
-                                                resolvedType = fn + "()";
-                                                break;
-                                            }
-                                        }
-                                    } else if (strcmp(nt, "new_expression") == 0) {
-                                        TSNode t = ts_node_child_by_field_name(n, "type", 4);
-                                        if (t.id != nullptr) {
-                                            uint32_t s = ts_node_start_byte(t);
-                                            uint32_t e = ts_node_end_byte(t);
-                                            resolvedType = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
-                                            break;
-                                        }
-                                    }
-                                    
-                                    // If we haven't found a type yet, peek further if it's a simple wrapper
-                                    if (strcmp(nt, "parenthesized_expression") == 0) {
-                                        if (ts_node_named_child_count(n) > 0) stack.append(ts_node_named_child(n, 0));
-                                    }
-                                }
-                            }
-                        }
-
-                        sym.type = resolvedType.isEmpty() ? QString::fromUtf8(symbolType) : resolvedType;
-                        sym.line = ts_node_start_point(symbolNode).row;
-                        sym.column = ts_node_start_point(symbolNode).column;
-                        sym.fileName = fileName;
-                        sym.parentName = parentName;
-
-                        // Extract signature for functions and methods
-                        if (strcmp(symbolType, "function_definition") == 0 || 
-                            strcmp(symbolType, "function_declarator") == 0 ||
-                            strcmp(symbolType, "field_declaration") == 0 ||
-                            strcmp(symbolType, "declaration") == 0) {
-                            
-                            TSNode params;
-                            params.id = nullptr;
-                            // Look for parameter_list in children of the symbol or nameNode
-                            QList<TSNode> stack = {symbolNode, nameNode};
-                            while (!stack.isEmpty()) {
-                                TSNode n = stack.takeFirst();
-                                if (strcmp(ts_node_type(n), "parameter_list") == 0) {
-                                    params = n;
-                                    break;
-                                }
-                                for (uint32_t j = 0; j < ts_node_child_count(n); ++j) {
-                                    stack.append(ts_node_child(n, j));
-                                }
-                            }
-
-                            if (params.id != nullptr) {
-                                uint32_t s = ts_node_start_byte(params);
-                                uint32_t e = ts_node_end_byte(params);
-                                QString pStr = QString::fromUtf8(context->content.mid(s, e - s)).trimmed();
-                                sym.signature = QString("%1 %2%3").arg(sym.type, sym.name, pStr);
-                            }
-                        }
-
-                        // Identify if it's a definition (only top-level or class members)
-                        bool isTopLevel = true;
-                        TSNode scopeCheck = ts_node_parent(symbolNode);
-                        while (scopeCheck.id != nullptr) {
-                            const char* st = ts_node_type(scopeCheck);
-                            if (strcmp(st, "function_definition") == 0 || strcmp(st, "lambda_expression") == 0) {
-                                isTopLevel = false;
-                                break;
-                            }
-                            scopeCheck = ts_node_parent(scopeCheck);
-                        }
-
-                        if (strcmp(symbolType, "function_definition") == 0 ||
-                            strcmp(symbolType, "enum_specifier") == 0 ||
-                            strcmp(symbolType, "namespace_definition") == 0 ||
-                            strcmp(symbolType, "alias_declaration") == 0 ||
-                            strcmp(symbolType, "type_definition") == 0) {
-                            sym.isDefinition = isTopLevel;
-                        } else if (strcmp(symbolType, "class_specifier") == 0 || 
-                                   strcmp(symbolType, "struct_specifier") == 0) {
-                            // Forward declaration: class Widget; (no body)
-                            bool hasBody = false;
-                            for (uint32_t j = 0; j < ts_node_child_count(symbolNode); ++j) {
-                                if (strcmp(ts_node_type(ts_node_child(symbolNode, j)), "field_declaration_list") == 0) {
-                                    hasBody = true;
-                                    break;
-                                }
-                            }
-                            sym.isDefinition = hasBody && isTopLevel;
-                        } else if (strcmp(symbolType, "declaration") == 0 || 
-                                   strcmp(symbolType, "field_declaration") == 0) {
-                            // Field declarations are members (definitions), 
-                            // while normal declarations are definitions only if top-level.
-                            if (strcmp(symbolType, "field_declaration") == 0) {
-                                sym.isDefinition = true;
-                            } else {
-                                sym.isDefinition = isTopLevel;
-                            }
-                        }
-
-                        symbols.append(sym);
-                    }
-                }
+                symbols.append(sym);
             }
         }
         ts_query_cursor_delete(cursor);
         ts_query_delete(query);
-    } else {
-        qDebug() << "TreeSitterEngine: Query error at" << errorOffset << "type" << errorType;
     }
 
     {
-        QMutexLocker locker(&mutex);
+        auto locker = QMutexLocker(&mutex);
         context->cachedSymbols = symbols;
         context->symbolsValid = true;
         updateIndexForFile(fileName, symbols);
     }
-
     return symbols;
+}
+
+QString TreeSitterEngine::extractNameFromNode(TSNode node, const QByteArray &content) {
+    if (node.id == nullptr) {
+        return "";
+    }
+    auto current = node;
+    auto lastIdentifier = TSNode{};
+    lastIdentifier.id = nullptr;
+
+    while (current.id != nullptr) {
+        auto const type = ts_node_type(current);
+        if (strcmp(type, "identifier") == 0 || strcmp(type, "type_identifier") == 0 ||
+            strcmp(type, "field_identifier") == 0 || strcmp(type, "destructor_name") == 0) {
+            lastIdentifier = current;
+        }
+
+        auto next = ts_node_child_by_field_name(current, "declarator", 5);
+        if (next.id) {
+            current = next;
+        } else if (strstr(type, "declarator")) {
+            if (strcmp(type, "function_declarator") == 0) {
+                auto first = ts_node_named_child(current, 0);
+                if (first.id && strcmp(ts_node_type(first), "parameter_list") == 0) {
+                    break;
+                }
+                current = first;
+            } else if (ts_node_named_child_count(current) > 0) {
+                current = ts_node_named_child(current, 0);
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (lastIdentifier.id) {
+        return QString::fromUtf8(
+            content.mid(ts_node_start_byte(lastIdentifier),
+                        ts_node_end_byte(lastIdentifier) - ts_node_start_byte(lastIdentifier)));
+    }
+    return QString::fromUtf8(content.mid(ts_node_start_byte(node),
+                                         ts_node_end_byte(node) - ts_node_start_byte(node)))
+        .trimmed();
+}
+
+QString TreeSitterEngine::resolveAutoType(TSNode nameNode, const QString &baseType,
+                                          const QByteArray &content, const char *symbolType) {
+    if (!baseType.startsWith("auto")) {
+        return baseType;
+    }
+
+    auto val = TSNode{};
+    val.id = nullptr;
+    if (strcmp(ts_node_type(nameNode), "init_declarator") == 0) {
+        val = ts_node_child_by_field_name(nameNode, "value", 5);
+    }
+
+    if (val.id) {
+        auto stack = QList<TSNode>{val};
+        auto i = 0;
+        while (!stack.isEmpty() && i++ < 50) {
+            auto n = stack.takeFirst();
+            if (!n.id) {
+                continue;
+            }
+            auto const nt = ts_node_type(n);
+            if (strcmp(nt, "call_expression") == 0) {
+                auto func = ts_node_child_by_field_name(n, "function", 8);
+                if (func.id) {
+                    if (strcmp(ts_node_type(func), "template_function") == 0) {
+                        auto args = ts_node_child_by_field_name(func, "arguments", 10);
+                        if (args.id && ts_node_named_child_count(args) > 0) {
+                            return extractNameFromNode(ts_node_named_child(args, 0), content);
+                        }
+                    }
+                    auto fn = extractNameFromNode(func, content);
+                    if (fn == "add" || fn == "push_back") {
+                        auto args = ts_node_child_by_field_name(n, "arguments", 10);
+                        if (args.id && ts_node_named_child_count(args) > 0) {
+                            stack.append(ts_node_named_child(args, 0));
+                            continue;
+                        }
+                    }
+                    return fn + "()";
+                }
+            } else if (strcmp(nt, "new_expression") == 0) {
+                return extractNameFromNode(ts_node_child_by_field_name(n, "type", 4), content);
+            } else if (strcmp(nt, "parenthesized_expression") == 0 &&
+                       ts_node_named_child_count(n) > 0) {
+                stack.append(ts_node_named_child(n, 0));
+            }
+        }
+    }
+    return baseType;
+}
+
+QString TreeSitterEngine::resolveParentScope(TSNode symbolNode, const QByteArray &content,
+                                             bool &isTopLevel) {
+    auto parents = QStringList{};
+    isTopLevel = true;
+    auto current = ts_node_parent(symbolNode);
+    while (current.id) {
+        auto const t = ts_node_type(current);
+        if (strcmp(t, "function_definition") == 0 || strcmp(t, "lambda_expression") == 0 ||
+            strcmp(t, "compound_statement") == 0) {
+            isTopLevel = false;
+            parents.clear();
+            break;
+        }
+        if (strcmp(t, "class_specifier") == 0 || strcmp(t, "struct_specifier") == 0 ||
+            strcmp(t, "namespace_definition") == 0) {
+            parents.prepend(
+                extractNameFromNode(ts_node_child_by_field_name(current, "name", 4), content));
+        }
+        current = ts_node_parent(current);
+    }
+    return parents.join("::");
 }
 
 void TreeSitterEngine::updateIndexForFile(const QString &fileName, const QList<Symbol> &symbols) {
@@ -482,230 +330,119 @@ void TreeSitterEngine::updateIndexForFile(const QString &fileName, const QList<S
             ++it;
         }
     }
-
     for (const auto &sym : symbols) {
         globalIndex.insert(sym.name, sym);
     }
 }
 
-QList<TreeSitterEngine::Symbol> TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const QString &previousWord, const QString &separator, const QString &fileName, int line, int column) {
-    QMutexLocker locker(&mutex);
-
-#if 0
-    if (!separator.isEmpty()) {
-        qDebug() << "TreeSitterEngine::findSymbolsGlobal: name=" << name 
-                 << "prev=" << previousWord << "sep=" << separator 
-                 << "file=" << fileName << "pos=" << line << ":" << column;
-    }
-#endif
-
-    // If we have a separator, we are likely looking for members of previousWord.
-    if (!separator.isEmpty() && !previousWord.isEmpty()) {
-        QString typeName;
-        
-        if (separator == "::") {
-            typeName = previousWord;
-            qDebug() << "TreeSitterEngine: scope resolution, type=" << typeName;
-        } else if (previousWord == "this" && fileContexts.contains(fileName)) {
-            auto context = fileContexts[fileName];
-            TSNode root = ts_tree_root_node(context->tree);
-            TSPoint pt = {(uint32_t)line, (uint32_t)column};
-            TSNode node = ts_node_descendant_for_point_range(root, pt, pt);
-            while (node.id != nullptr) {
-                const char *pType = ts_node_type(node);
-                if (strcmp(pType, "class_specifier") == 0 || strcmp(pType, "struct_specifier") == 0) {
-                    TSNode pNameNode = ts_node_child_by_field_name(node, "name", 4);
-                    if (pNameNode.id != nullptr) {
-                        uint32_t pStart = ts_node_start_byte(pNameNode);
-                        uint32_t pEnd = ts_node_end_byte(pNameNode);
-                        if (pEnd > pStart && pEnd <= (uint32_t)context->content.size()) {
-                            typeName = QString::fromUtf8(context->content.mid(pStart, pEnd - pStart)).trimmed();
-                        }
-                    }
-                    break;
-                }
-                node = ts_node_parent(node);
-            }
-            qDebug() << "TreeSitterEngine: 'this' resolved to type=" << typeName;
-        } else if (fileContexts.contains(fileName)) {
-            auto context = fileContexts[fileName];
-            
-            // Search for previousWord declaration in the file.
-            // Pick the one that is closest to our current line (but before it).
-            Symbol bestMatch;
-            int bestLine = -1;
-            for (const auto& sym : context->cachedSymbols) {
-                if (sym.name == previousWord && sym.line <= line) {
-                    if (sym.line > bestLine) {
-                        bestLine = sym.line;
-                        bestMatch = sym;
-                    }
-                }
-            }
-            
-            if (bestLine != -1) {
-                typeName = bestMatch.type;
-            } else {
-                // If not found in local scope, check if it's a member of the current class
-                TSNode root = ts_tree_root_node(context->tree);
-                TSPoint pt = {(uint32_t)line, (uint32_t)column};
-                TSNode node = ts_node_descendant_for_point_range(root, pt, pt);
-                while (node.id != nullptr) {
-                    const char *pType = ts_node_type(node);
-                    if (strcmp(pType, "class_specifier") == 0 || strcmp(pType, "struct_specifier") == 0) {
-                        TSNode pNameNode = ts_node_child_by_field_name(node, "name", 4);
-                        if (pNameNode.id != nullptr) {
-                            uint32_t pStart = ts_node_start_byte(pNameNode);
-                            uint32_t pEnd = ts_node_end_byte(pNameNode);
-                            QString className = QString::fromUtf8(context->content.mid(pStart, pEnd - pStart)).trimmed();
-                            
-                            // Check if previousWord is a member of this class
-                            for (const auto& sym : globalIndex) {
-                                if (sym.parentName == className && sym.name == previousWord) {
-                                    typeName = sym.type;
-                                    qDebug() << "TreeSitterEngine: resolved" << previousWord << "as member of" << className << "with type" << typeName;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!typeName.isEmpty()) break;
-                    }
-                    node = ts_node_parent(node);
-                }
-                
-                if (typeName.isEmpty()) {
-                    qDebug() << "TreeSitterEngine: could not find declaration of" << previousWord << "in current file or class scope";
-                }
+QList<TreeSitterEngine::Symbol>
+TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const QString &prev,
+                                    const QString &sep, const QString &file, int line, int col) {
+    auto locker = QMutexLocker(&mutex);
+    if (!sep.isEmpty() && !prev.isEmpty()) {
+        auto type = QString{};
+        if (sep == "::") {
+            type = prev;
+        } else if (prev == "this" && fileContexts.contains(file)) {
+            auto isTop = true;
+            type = resolveParentScope(
+                ts_node_descendant_for_point_range(ts_tree_root_node(fileContexts[file]->tree),
+                                                   {(uint32_t)line, (uint32_t)col},
+                                                   {(uint32_t)line, (uint32_t)col}),
+                fileContexts[file]->content, isTop);
+        } else if (fileContexts.contains(file)) {
+            auto it = std::find_if(
+                fileContexts[file]->cachedSymbols.begin(), fileContexts[file]->cachedSymbols.end(),
+                [&](const Symbol &s) { return s.name == prev && s.line <= line; });
+            if (it != fileContexts[file]->cachedSymbols.end()) {
+                type = it->type;
             }
 
-            if (!typeName.isEmpty()) {
-                // Heuristic: remove pointer/reference decorators and template arguments
-                typeName.remove('*').remove('&').trimmed();
-                int templateStart = typeName.indexOf('<');
-                if (templateStart != -1) {
-                    typeName = typeName.left(templateStart).trimmed();
+            if (type.isEmpty()) {
+                auto isTop = true;
+                auto cls = resolveParentScope(
+                    ts_node_descendant_for_point_range(ts_tree_root_node(fileContexts[file]->tree),
+                                                       {(uint32_t)line, (uint32_t)col},
+                                                       {(uint32_t)line, (uint32_t)col}),
+                    fileContexts[file]->content, isTop);
+                auto itGlobal =
+                    std::find_if(globalIndex.begin(), globalIndex.end(), [&](const Symbol &s) {
+                        return s.parentName == cls && s.name == prev;
+                    });
+                if (itGlobal != globalIndex.end()) {
+                    type = itGlobal->type;
                 }
-                qDebug() << "TreeSitterEngine: resolved effective type to" << typeName;
             }
         }
-        
-        if (!typeName.isEmpty()) {
-            QList<Symbol> results;
-            QString currentType = typeName;
-            QSet<QString> visited;
-            
-            qDebug() << "TreeSitterEngine: resolving members for" << typeName;
 
-            while (!currentType.isEmpty() && !visited.contains(currentType)) {
-                visited.insert(currentType);
-                
-                // 1. Clean up type: remove pointers, references and whitespace
-                currentType.remove('*').remove('&').trimmed();
-                
-                // 2. Resolve function calls: foo() -> look up return type in global index
-                if (currentType.endsWith("()")) {
-                    QString funcName = currentType.left(currentType.length() - 2);
-                    QString shortName = funcName;
-                    int lastColon = funcName.lastIndexOf("::");
-                    if (lastColon != -1) shortName = funcName.mid(lastColon + 2);
-                    
-                    auto funcSyms = globalIndex.values(shortName);
-                    QString returnType;
-                    for (const auto& fs : funcSyms) {
-                        // Match short name and verify namespace if possible
-                        if (fs.name == shortName && (lastColon == -1 || fs.parentName.endsWith(funcName.left(lastColon)))) {
-                            returnType = fs.type;
+        if (!type.isEmpty()) {
+            auto visited = QSet<QString>{};
+            auto cur = type;
+            while (!cur.isEmpty() && !visited.contains(cur)) {
+                visited.insert(cur);
+                cur = cur.remove('*').remove('&').trimmed();
+                if (cur.endsWith("()")) {
+                    auto fn = cur.left(cur.length() - 2);
+                    auto c = fn.lastIndexOf("::");
+                    auto sn = (c == -1) ? fn : fn.mid(c + 2);
+                    for (const auto &s : globalIndex.values(sn)) {
+                        if (c == -1 || s.parentName.endsWith(fn.left(c))) {
+                            cur = s.type;
                             break;
                         }
                     }
-                    if (!returnType.isEmpty()) {
-                        qDebug() << "TreeSitterEngine: resolved function" << funcName << "to return type" << returnType;
-                        currentType = returnType;
+                    continue;
+                }
+                auto ts = cur.indexOf('<');
+                if (ts != -1) {
+                    auto w = cur.left(ts).trimmed();
+                    if (w.contains("shared_ptr") || w.contains("unique_ptr")) {
+                        cur = cur.mid(ts + 1, cur.lastIndexOf('>') - ts - 1).trimmed();
                         continue;
                     }
                 }
-
-                // 3. Unwrap common templates: Widget<T>, shared_ptr<T> -> T
-                int tStart = currentType.indexOf('<');
-                int tEnd = currentType.lastIndexOf('>');
-                if (tStart != -1 && tEnd > tStart) {
-                    QString wrapper = currentType.left(tStart).trimmed();
-                    if (wrapper == "Widget" || wrapper.endsWith("::Widget") || 
-                        wrapper.contains("shared_ptr") || wrapper.contains("unique_ptr")) {
-                        QString inner = currentType.mid(tStart + 1, tEnd - tStart - 1).trimmed();
-                        qDebug() << "TreeSitterEngine: unwrapping" << wrapper << "to" << inner;
-                        currentType = inner;
-                        continue;
-                    }
-                    // For unknown templates, try the base name if no members found for full name
+                auto st = cur;
+                auto sStart = st.indexOf('<');
+                if (sStart != -1) {
+                    st = st.left(sStart).trimmed();
                 }
-
-                // 4. Search for members of currentType in the global index
-                QString searchType = currentType;
-                // If it's still a template, try the base name
-                int searchStart = searchType.indexOf('<');
-                if (searchStart != -1) searchType = searchType.left(searchStart).trimmed();
-
+                auto res = QList<Symbol>{};
                 for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {
-                    const auto& sym = it.value();
-                    if (sym.parentName == searchType || sym.parentName.endsWith("::" + searchType)) {
-                        if (exactMatch) {
-                            if (sym.name == name) results.append(sym);
-                        } else {
-                            if (name.isEmpty() || sym.name.startsWith(name, Qt::CaseInsensitive)) {
-                                results.append(sym);
-                            }
+                    if (it.value().parentName == st || it.value().parentName.endsWith("::" + st)) {
+                        if (exactMatch ? it.key() == name
+                                       : it.key().startsWith(name, Qt::CaseInsensitive)) {
+                            res.append(it.value());
                         }
                     }
                 }
-                
-                if (!results.isEmpty()) {
-                    qDebug() << "TreeSitterEngine: found" << results.size() << "members for" << searchType;
-                    return results;
+                if (!res.isEmpty()) {
+                    return res;
                 }
-                
-                // 5. Alias resolution (using/typedef)
-                auto aliases = globalIndex.values(searchType);
-                QString nextType;
-                for (const auto& asym : aliases) {
-                    if (asym.parentName.isEmpty() && !asym.type.isEmpty() && asym.type != searchType && !asym.type.startsWith("function")) {
-                        nextType = asym.type;
+                auto al = globalIndex.values(st);
+                cur = "";
+                for (const auto &s : al) {
+                    if (s.parentName.isEmpty() && !s.type.isEmpty() && s.type != st) {
+                        cur = s.type;
                         break;
                     }
                 }
-                
-                if (nextType.isEmpty()) break;
-                qDebug() << "TreeSitterEngine: resolving alias" << searchType << "->" << nextType;
-                currentType = nextType;
-            }
-
-            // Debug: help diagnose why lookup failed
-            if (results.isEmpty()) {
-                QSet<QString> parents;
-                for (const auto& sym : globalIndex) if (!sym.parentName.isEmpty()) parents.insert(sym.parentName);
-                QStringList pList = parents.values();
-                qDebug() << "TreeSitterEngine: no members found for" << currentType << ". Indexed parents (sample):" << pList.mid(0, 10);
             }
         }
-        // If we have a separator, we strictly want members of the resolved type.
-        // Falling back to global symbols causes noise (like 'format').
         return {};
     }
-
     if (exactMatch) {
         return globalIndex.values(name);
-    } else {
-        QList<Symbol> results;
-        for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {
-            if (it.key().startsWith(name, Qt::CaseInsensitive)) {
-                results.append(it.value());
-            }
-        }
-        return results;
     }
+    auto res = QList<Symbol>{};
+    for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {
+        if (it.key().startsWith(name, Qt::CaseInsensitive)) {
+            res.append(it.value());
+        }
+    }
+    return res;
 }
 
 QList<QString> TreeSitterEngine::getTrackedFiles() const {
-    QMutexLocker locker(&mutex);
+    auto locker = QMutexLocker(&mutex);
     return fileContexts.keys();
 }

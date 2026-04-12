@@ -41,7 +41,7 @@ public:
     TSNode getRootNode(const QString &fileName);
 
     // Returns the language for a file based on extension
-    const TSLanguage* getLanguageForFile(const QString &fileName);
+    static const TSLanguage* getLanguageForFile(const QString &fileName);
 
     QList<QString> getTrackedFiles() const;
 
@@ -67,4 +67,9 @@ private:
     mutable QMutex mutex;
     
     void updateIndexForFile(const QString &fileName, const QList<Symbol> &symbols);
+
+    // Refactoring helpers
+    static QString extractNameFromNode(TSNode node, const QByteArray &content);
+    static QString resolveAutoType(TSNode nameNode, const QString &baseType, const QByteArray &content, const char* symbolType);
+    static QString resolveParentScope(TSNode symbolNode, const QByteArray &content, bool &isTopLevel);
 };
