@@ -208,6 +208,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QFuture<QSet<Qutepart::CompletionItem>>
     getTagCompletions(const QString &prefix, const QString &previousWord, const QString &separator);
 
+
   private:
     QString getShortFileName();
     void showContextMenu(const QPoint &localPosition, const QPoint &globalPosition);

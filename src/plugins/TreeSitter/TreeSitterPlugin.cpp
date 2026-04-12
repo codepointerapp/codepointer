@@ -149,12 +149,19 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
             QString tooltip;
             auto symbols = engine.findSymbolsGlobal(symbol, true);
             
-            for (const auto &sym : symbols) {
+            QList<TreeSitterEngine::Symbol> definitions;
+            for (const auto& sym : symbols) {
+                if (sym.isDefinition) definitions.append(sym);
+            }
+
+            const auto& toShow = definitions.isEmpty() ? symbols : definitions;
+            for (const auto &sym : toShow) {
                 if (!tooltip.isEmpty()) tooltip += "\n---\n";
-                tooltip += QString("File: %1\nType: %2\nLine: %3")
-                               .arg(sym.fileName)
-                               .arg(sym.type)
-                               .arg(sym.line + 1);
+                if (!sym.signature.isEmpty()) {
+                    tooltip += sym.signature;
+                } else {
+                    tooltip += QString("%1 %2").arg(sym.type, sym.name);
+                }
             }
 
             if (!tooltip.isEmpty()) {

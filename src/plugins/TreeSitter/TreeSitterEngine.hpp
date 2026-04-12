@@ -19,6 +19,7 @@ public:
     struct Symbol {
         QString name;
         QString type;
+        QString signature; // For functions: full signature with parameters
         int line;
         int column;
         QString fileName; // Store filename for global index lookup
@@ -62,9 +63,6 @@ private:
     
     // Global index: symbol name -> Symbol info
     QMultiHash<QString, Symbol> globalIndex;
-    
-    // File to symbol names mapping for efficient cleanup
-    QMultiHash<QString, QString> fileToSymbolNames;
     
     mutable QMutex mutex;
     
