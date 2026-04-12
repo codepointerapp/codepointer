@@ -331,6 +331,25 @@ QList<TreeSitterEngine::Symbol>
 TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const QString &prev,
                                     const QString &sep, const QString &file, int line, int col) {
     auto locker = QMutexLocker(&mutex);
+    auto results = QList<Symbol>{};
+    auto otherProjectResults = QList<Symbol>{};
+
+    // Identify current project branch to prioritize local symbols
+    QString currentFileDir = QFileInfo(file).absolutePath();
+    // Go up one level from 'src' or 'include' if possible to get the project root
+    QString projectRoot = currentFileDir;
+    if (projectRoot.endsWith("/src") || projectRoot.endsWith("/include")) {
+        projectRoot = projectRoot.left(projectRoot.lastIndexOf('/'));
+    }
+
+    auto prioritize = [&](const Symbol &sym) {
+        if (!file.isEmpty() && sym.fileName.startsWith(projectRoot)) {
+            results.append(sym);
+        } else {
+            otherProjectResults.append(sym);
+        }
+    };
+
     if (!sep.isEmpty() && !prev.isEmpty()) {
         auto type = QString{};
         qDebug() << "TreeSitterEngine: findSymbolsGlobal for" << prev << sep << "name=" << name;
@@ -401,21 +420,27 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                 if (sStart != -1) {
                     st = st.left(sStart).trimmed();
                 }
-                auto res = QList<Symbol>{};
+
                 for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {
                     auto const &val = it.value();
                     if (val.parentName == st || val.parentName.endsWith("::" + st) ||
                         (st.contains("::") && val.parentName == st.mid(st.lastIndexOf("::") + 2))) {
-                        if (exactMatch ? it.key() == name
-                                       : it.key().startsWith(name, Qt::CaseInsensitive)) {
-                            res.append(val);
+
+                        bool match = exactMatch ? it.key() == name
+                                                : it.key().startsWith(name, Qt::CaseInsensitive);
+                        if (match) {
+                            prioritize(val);
                         }
                     }
                 }
-                if (!res.isEmpty()) {
-                    qDebug() << "TreeSitterEngine: found" << res.size() << "members for" << st;
-                    return res;
+
+                if (!results.isEmpty() || !otherProjectResults.isEmpty()) {
+                    auto const &finalRes = results.isEmpty() ? otherProjectResults : results;
+                    qDebug() << "TreeSitterEngine: found" << finalRes.size() << "members for" << st
+                             << "in" << (results.isEmpty() ? "other" : "current") << "project";
+                    return finalRes;
                 }
+
                 auto al = globalIndex.values(st);
                 cur = "";
                 for (const auto &s : std::as_const(al)) {
@@ -430,16 +455,16 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
         qDebug() << "TreeSitterEngine: no semantic results found for" << prev;
         return {};
     }
-    if (exactMatch) {
-        return globalIndex.values(name);
-    }
-    auto res = QList<Symbol>{};
+
+    // Top-level symbol lookup (used by Follow Symbol)
     for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {
-        if (it.key().startsWith(name, Qt::CaseInsensitive)) {
-            res.append(it.value());
+        bool match = exactMatch ? it.key() == name : it.key().startsWith(name, Qt::CaseInsensitive);
+        if (match) {
+            prioritize(it.value());
         }
     }
-    return res;
+
+    return results.isEmpty() ? otherProjectResults : results;
 }
 
 QList<QString> TreeSitterEngine::getTrackedFiles() const {

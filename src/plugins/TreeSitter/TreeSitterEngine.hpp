@@ -69,6 +69,11 @@ class TreeSitterEngine {
         QString fileName;   // Store filename for global index lookup
         QString parentName; // For members: name of the class/struct
         bool isDefinition = false;
+
+        bool operator==(const Symbol &other) const {
+            return name == other.name && fileName == other.fileName && line == other.line &&
+                   column == other.column;
+        }
     };
 
     // Returns cached symbols or parses if needed
