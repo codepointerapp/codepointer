@@ -13,6 +13,7 @@
 #include "CTagsLoader.hpp"
 #include "CTagsPlugin.hpp"
 #include "GlobalCommands.hpp"
+#include "iplugin.h"
 #include "qmdidialogevents.hpp"
 
 // FIXME: this is an ugly workaround. This is private API for Qt, and
@@ -302,18 +303,13 @@ void CTagsPlugin::extractArchive(const QString &archivePath, const QString &extr
 }
 
 int CTagsPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &) const {
-    if (command == GlobalCommands::BuildFinished) {
-        return CommandPriority::HighPriority;
-    } else if (command == GlobalCommands::ProjectLoaded) {
-        return CommandPriority::HighPriority;
-    } else if (command == GlobalCommands::ProjectRemoved) {
-        return CommandPriority::HighPriority;
-    } else if (command == GlobalCommands::VariableInfo) {
-        return CommandPriority::HighPriority;
-    } else if (command == GlobalCommands::KeywordTooltip) {
-        return CommandPriority::HighPriority;
-    }
-    return CommandPriority::CannotHandle;
+    auto const static supportedCommands = QStringList{
+        GlobalCommands::VariableInfo,  GlobalCommands::KeywordTooltip,
+        GlobalCommands::ProjectLoaded, GlobalCommands::ProjectRemoved,
+        GlobalCommands::BuildFinished,
+    };
+    return supportedCommands.contains(command) ? CommandPriority::MediumPriority
+                                               : CommandPriority::CannotHandle;
 }
 
 QFuture<CommandArgs> CTagsPlugin::handleCommandAsync(const QString &command,

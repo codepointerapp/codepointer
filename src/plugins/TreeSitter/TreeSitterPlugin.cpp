@@ -1,5 +1,6 @@
 #include "TreeSitterPlugin.hpp"
 #include "GlobalCommands.hpp"
+#include "iplugin.h"
 #include <QDebug>
 #include <QDir>
 #include <QDirIterator>
@@ -11,6 +12,7 @@
 #include <QThread>
 #include <QThreadPool>
 #include <QtConcurrent>
+#include <qnamespace.h>
 
 TreeSitterPlugin::TreeSitterPlugin() {
     name = tr("Tree-sitter Support");
@@ -23,17 +25,33 @@ TreeSitterPlugin::TreeSitterPlugin() {
 
 TreeSitterPlugin::~TreeSitterPlugin() {}
 
-int TreeSitterPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &) const {
-    if (command == GlobalCommands::VariableInfo) {
-        return 101;
-    } else if (command == GlobalCommands::KeywordTooltip) {
-        return 101;
-    } else if (command == GlobalCommands::ProjectLoaded ||
-               command == GlobalCommands::BuildFinished) {
-        return 101;
-    } else if (command == "ListSymbols") {
-        return 101;
+int TreeSitterPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &args) const {
+    auto const static projectTriggers = QStringList{
+        GlobalCommands::ProjectLoaded,
+        GlobalCommands::BuildFinished,
+    };
+
+    if (projectTriggers.contains(command)) {
+        return CommandPriority::HighPriority;
     }
+
+    auto const static filters = QStringList{
+        "cpp", "hpp", "c", "h", "cc", "hh", "cxx", "hxx",
+    };
+    auto const static fileCommands = QStringList{
+        GlobalCommands::VariableInfo,
+        GlobalCommands::KeywordTooltip,
+        GlobalCommands::ListSymbols,
+    };
+
+    if (fileCommands.contains(command)) {
+        auto filename = args[GlobalArguments::FileName].toString();
+        auto fi = QFileInfo(filename);
+        if (filters.contains(fi.suffix(), Qt::CaseInsensitive)) {
+            return CommandPriority::HighPriority;
+        }
+    }
+    
     return CommandPriority::CannotHandle;
 }
 
@@ -141,12 +159,14 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
                     {GlobalArguments::Name, sym.name},
                     {GlobalArguments::LineNumber, sym.line + 1},
                     {GlobalArguments::ColumnNumber, sym.column + 1},
-                    {GlobalArguments::Raw, sym.name}, // Used for search in editor
+                    // Used for search in editor
+                    {GlobalArguments::Raw, sym.name},
                     {GlobalArguments::IsDefinition, sym.isDefinition},
                 }));
             }
+            // Fix empty first item
+            result[GlobalArguments::Symbol] = symbol;
             result[GlobalArguments::Tags] = tagList;
-            result[GlobalArguments::Symbol] = symbol; // Fix empty first item
         } else if (command == GlobalCommands::KeywordTooltip) {
             auto filename = args[GlobalArguments::FileName].toString();
             auto symbol = args[GlobalArguments::RequestedSymbol].toString();

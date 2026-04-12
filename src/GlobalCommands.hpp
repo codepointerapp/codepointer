@@ -51,6 +51,9 @@ inline constexpr const char *ReformatCode = "ReformatCode";
 // Check if a file belongs to any loaded project and return its details
 inline constexpr const char *GetProjectForFile = "GetProjectForFile";
 
+// Used to get symbols for completion
+inline constexpr const char *ListSymbols = "ListSymbols";
+
 } // namespace GlobalCommands
 
 namespace GlobalArguments {
