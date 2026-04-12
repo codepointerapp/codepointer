@@ -1,15 +1,59 @@
 #pragma once
 
-#include <QString>
 #include <QHash>
-#include <QMultiHash>
-#include <tree_sitter/api.h>
-#include <memory>
 #include <QList>
+#include <QMultiHash>
 #include <QMutex>
+#include <QString>
+#include <memory>
+#include <tree_sitter/api.h>
+
+namespace TSNodeTypes {
+constexpr const char *ClassSpecifier = "class_specifier";
+constexpr const char *StructSpecifier = "struct_specifier";
+constexpr const char *EnumSpecifier = "enum_specifier";
+constexpr const char *Enumerator = "enumerator";
+constexpr const char *NamespaceDefinition = "namespace_definition";
+constexpr const char *FunctionDefinition = "function_definition";
+constexpr const char *FunctionDeclarator = "function_declarator";
+constexpr const char *FieldDeclaration = "field_declaration";
+constexpr const char *Declaration = "declaration";
+constexpr const char *ParameterDeclaration = "parameter_declaration";
+constexpr const char *ParameterList = "parameter_list";
+constexpr const char *AliasDeclaration = "alias_declaration";
+constexpr const char *TypeDefinition = "type_definition";
+constexpr const char *Identifier = "identifier";
+constexpr const char *TypeIdentifier = "type_identifier";
+constexpr const char *FieldIdentifier = "field_identifier";
+constexpr const char *DestructorName = "destructor_name";
+constexpr const char *InitDeclarator = "init_declarator";
+constexpr const char *CallExpression = "call_expression";
+constexpr const char *NewExpression = "new_expression";
+constexpr const char *TemplateFunction = "template_function";
+constexpr const char *FieldExpression = "field_expression";
+constexpr const char *ParenthesizedExpression = "parenthesized_expression";
+constexpr const char *CompoundStatement = "compound_statement";
+constexpr const char *LambdaExpression = "lambda_expression";
+constexpr const char *PointerDeclarator = "pointer_declarator";
+constexpr const char *ReferenceDeclarator = "reference_declarator";
+constexpr const char *ArrayDeclarator = "array_declarator";
+constexpr const char *ParenthesizedDeclarator = "parenthesized_declarator";
+constexpr const char *Declarator = "declarator";
+constexpr const char *Auto = "auto";
+} // namespace TSNodeTypes
+
+namespace TSFieldNames {
+constexpr const char *Name = "name";
+constexpr const char *Type = "type";
+constexpr const char *Declarator = "declarator";
+constexpr const char *Value = "value";
+constexpr const char *Function = "function";
+constexpr const char *Arguments = "arguments";
+constexpr const char *Field = "field";
+} // namespace TSFieldNames
 
 class TreeSitterEngine {
-public:
+  public:
     TreeSitterEngine();
     ~TreeSitterEngine();
 
@@ -22,11 +66,11 @@ public:
         QString signature; // For functions: full signature with parameters
         int line;
         int column;
-        QString fileName; // Store filename for global index lookup
+        QString fileName;   // Store filename for global index lookup
         QString parentName; // For members: name of the class/struct
         bool isDefinition = false;
     };
-    
+
     // Returns cached symbols or parses if needed
     QList<Symbol> getSymbols(const QString &fileName);
 
@@ -34,42 +78,53 @@ public:
     QList<Symbol> findSymbolsGlobal(const QString &name, bool exactMatch,
                                     const QString &previousWord = QString(),
                                     const QString &separator = QString(),
-                                    const QString &fileName = QString(),
-                                    int line = -1, int column = -1);
+                                    const QString &fileName = QString(), int line = -1,
+                                    int column = -1);
 
     // Returns the root node for a given file
     TSNode getRootNode(const QString &fileName);
 
     // Returns the language for a file based on extension
-    static const TSLanguage* getLanguageForFile(const QString &fileName);
+    static const TSLanguage *getLanguageForFile(const QString &fileName);
 
     QList<QString> getTrackedFiles() const;
 
-private:
+  private:
     struct FileContext {
         TSTree *tree = nullptr;
         const TSLanguage *language = nullptr;
         QByteArray content;
         QList<Symbol> cachedSymbols;
         bool symbolsValid = false;
-        
+
         ~FileContext() {
-            if (tree) ts_tree_delete(tree);
+            if (tree) {
+                ts_tree_delete(tree);
+            }
         }
     };
 
     TSParser *parser;
     QHash<QString, std::shared_ptr<FileContext>> fileContexts;
-    
+
     // Global index: symbol name -> Symbol info
     QMultiHash<QString, Symbol> globalIndex;
-    
+
     mutable QMutex mutex;
-    
+
     void updateIndexForFile(const QString &fileName, const QList<Symbol> &symbols);
 
     // Refactoring helpers
+
     static QString extractNameFromNode(TSNode node, const QByteArray &content);
-    static QString resolveAutoType(TSNode nameNode, const QString &baseType, const QByteArray &content, const char* symbolType);
-    static QString resolveParentScope(TSNode symbolNode, const QByteArray &content, bool &isTopLevel);
+    static QString resolveAutoType(TSNode nameNode, const QString &baseType,
+                                   const QByteArray &content, std::string_view symbolType);
+    static QString resolveParentScope(TSNode symbolNode, const QByteArray &content,
+                                      bool &isTopLevel);
+
+    static bool isFunctionOrBlock(std::string_view type);
+    static bool isScopeContainer(std::string_view type);
+    static bool isTypeAlias(std::string_view type);
+    static bool isIdentifier(std::string_view type);
+    static bool isDeclarator(std::string_view type);
 };
