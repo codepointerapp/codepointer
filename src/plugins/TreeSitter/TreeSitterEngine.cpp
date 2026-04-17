@@ -25,16 +25,15 @@ const TSLanguage *TreeSitterEngine::getLanguageForFile(const QString &fileName) 
     return nullptr;
 }
 
-void TreeSitterEngine::updateFile(const QString &fileName, const QString &content) {
+void TreeSitterEngine::updateFile(const QString &fileName, const QByteArray &content) {
     auto const lang = getLanguageForFile(fileName);
     if (!lang) {
         return;
     }
 
-    auto bytes = content.toUtf8();
     auto localParser = ts_parser_new();
     ts_parser_set_language(localParser, lang);
-    auto newTree = ts_parser_parse_string(localParser, nullptr, bytes.data(), bytes.size());
+    auto newTree = ts_parser_parse_string(localParser, nullptr, content.data(), content.size());
     ts_parser_delete(localParser);
 
     if (newTree) {
@@ -42,7 +41,7 @@ void TreeSitterEngine::updateFile(const QString &fileName, const QString &conten
         auto context = std::make_shared<FileContext>();
         context->tree = newTree;
         context->language = lang;
-        context->content = bytes;
+        context->content = content;
         context->symbolsValid = false;
         fileContexts[fileName] = context;
     }

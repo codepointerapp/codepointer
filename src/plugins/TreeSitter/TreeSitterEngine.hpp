@@ -58,7 +58,7 @@ class TreeSitterEngine {
     ~TreeSitterEngine();
 
     // Parses or updates the AST for a given file
-    void updateFile(const QString &fileName, const QString &content);
+    void updateFile(const QString &fileName, const QByteArray &content);
 
     struct Symbol {
         QString name;
