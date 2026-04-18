@@ -50,7 +50,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     qmdiEditor(QWidget *p, Qutepart::ThemeManager *theme);
     ~qmdiEditor();
 
-    virtual bool saveClientConent() override;
+    virtual bool saveClientContent() override;
     virtual bool canCloseClient(CloseReason reason = CloseReason::CloseTab) override;
     virtual QString mdiClientFileName() override;
     virtual std::optional<std::tuple<int, int, int>> get_coordinates() const override;
@@ -204,8 +204,8 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QFuture<CommandArgs> getCommandForLocation(const QPoint &localPosition, const QString &cmd);
     QFuture<CommandArgs> getSuggestionsForCurrentWord(const QPoint &localPosition);
     QFuture<CommandArgs> getTooltipsForPosition(const QPoint &localPosition);
-    QFuture<QSet<QString>> getTagCompletions(const QString &prefix, const QString &previousWord,
-                                             const QString &separator);
+    QFuture<QSet<Qutepart::CompletionItem>>
+    getTagCompletions(const QString &prefix, const QString &previousWord, const QString &separator);
 
   private:
     QString getShortFileName();

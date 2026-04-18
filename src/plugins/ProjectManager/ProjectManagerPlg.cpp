@@ -1360,7 +1360,7 @@ auto ProjectManagerPlugin::addProjectFromDir(const QString &dirName) -> void {
 auto ProjectManagerPlugin::saveAllDocuments() -> bool {
     for (auto i = 0; i < mdiServer->getClientsCount(); i++) {
         auto c = mdiServer->getClient(i);
-        if (!c->saveClientConent()) {
+        if (!c->saveClientContent()) {
             return false;
         }
     }

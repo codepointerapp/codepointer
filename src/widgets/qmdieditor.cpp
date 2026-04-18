@@ -172,6 +172,7 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         auto const fieldType = tag[GlobalArguments::Type].toString();
         auto const fieldValue = tag[GlobalArguments::Value].toString();
         auto const rawAddress = tag[GlobalArguments::Raw].toString();
+        auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
         auto address = rawAddress;
         if (address.startsWith(START_MARKER) && address.endsWith(END_MARKER) &&
             address.length() > MIN_LENGTH) {
@@ -180,7 +181,16 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
 
         auto fi = QFileInfo(fileName);
         auto simpleFileName = fi.fileName();
-        auto title = QString("%1 - %2 %3").arg(simpleFileName, fieldType, fieldValue);
+        auto title = QString();
+        if (lineNumber > 0) {
+            title = QString("%1:%2 - %3 %4")
+                        .arg(simpleFileName)
+                        .arg(lineNumber)
+                        .arg(fieldType, fieldValue);
+        } else {
+            title = QString("%1 - %2 %3").arg(simpleFileName, fieldType, fieldValue);
+        }
+
         auto a = new QAction(title, menu);
         QObject::connect(a, &QAction::triggered, a, [fileName, rawAddress, address, manager]() {
             auto nativeFileName = QDir::toNativeSeparators(fileName);
@@ -282,13 +292,13 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     auto layout = new QVBoxLayout(this);
 
     // Set up completion callback
-    textEditor->setCompletionCallback([this](const QString &prefix, const QString &previousWord,
-                                             const QString &separator) {
-        if (prefix.length() < 2 && separator.isEmpty()) {
-            return QFuture<QSet<QString>>();
-        }
-        return this->getTagCompletions(prefix, previousWord, separator);
-    });
+    textEditor->setCompletionCallback(
+        [this](const QString &prefix, const QString &previousWord, const QString &separator) {
+            if (prefix.length() < 2 && separator.isEmpty()) {
+                return QFuture<QSet<Qutepart::CompletionItem>>();
+            }
+            return this->getTagCompletions(prefix, previousWord, separator);
+        });
 
     operationsWidget->hide();
     setupActions();
@@ -479,7 +489,7 @@ qmdiEditor::~qmdiEditor() {
     mdiServer = nullptr;
 }
 
-bool qmdiEditor::saveClientConent() {
+bool qmdiEditor::saveClientContent() {
     deleteBackup();
     return doSave();
 }
@@ -1090,7 +1100,7 @@ void qmdiEditor::handleTabDeselected() {
     loadingTimer = nullptr;
 }
 
-QFuture<QSet<QString>> qmdiEditor::getTagCompletions(const QString &prefix, const QString &previousWord,
+QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QString &prefix, const QString &previousWord,
                                              const QString &separator) {
     if (!mdiServer || !mdiServer->mdiHost) {
         return {};
@@ -1114,19 +1124,35 @@ QFuture<QSet<QString>> qmdiEditor::getTagCompletions(const QString &prefix, cons
 
     auto future = pluginManager->handleCommandAsync(GlobalCommands::VariableInfo, args);
 
-    // Transform the result to QSet<QString> using QtConcurrent::run
-    return future.then([](const QFuture<CommandArgs> &f) -> QSet<QString> {
-        QSet<QString> completions;
-        if (f.isFinished() && f.isValid()) {
-            auto result = f.result();
-            if (result.contains(GlobalArguments::Tags)) {
-                auto tags = result[GlobalArguments::Tags].toList();
-                for (const QVariant &item : std::as_const(tags)) {
-                    auto const tag = item.toHash();
-                    auto const name = tag[GlobalArguments::Name].toString();
-                    if (!name.isEmpty()) {
-                        completions.insert(name);
+    return future.then([](const QFuture<CommandArgs> &f) -> QSet<Qutepart::CompletionItem> {
+        auto completions = QSet<Qutepart::CompletionItem>();
+        if (!f.isFinished() || !f.isValid()) {
+            return completions;
+        }
+
+        auto result = f.result();
+        if (result.contains(GlobalArguments::Tags)) {
+            auto tags = result[GlobalArguments::Tags].toList();
+            for (const QVariant &item : std::as_const(tags)) {
+                auto const tag = item.toHash();
+                auto const name = tag[GlobalArguments::Name].toString();
+                auto const type = tag[GlobalArguments::Type].toString();
+                auto const fileName = tag[GlobalArguments::FileName].toString();
+                auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
+
+                if (!name.isEmpty()) {
+                    QString sourceName = "TreeSitter";
+                    if (type == "tag" || type.isEmpty()) sourceName = "CTags";
+
+                    QString sourceInfo = sourceName;
+                    if (!fileName.isEmpty()) {
+                        QFileInfo fi(fileName);
+                        sourceInfo += "/" + fi.fileName();
+                        if (lineNumber > 0) {
+                            sourceInfo += ":" + QString::number(lineNumber);
+                        }
                     }
+                    completions.insert(Qutepart::CompletionItem(name, sourceInfo));
                 }
             }
         }
