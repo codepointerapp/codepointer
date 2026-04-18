@@ -5,7 +5,9 @@
 #include <QFuture>
 #include <QFutureWatcher>
 #include <QHash>
+#include <QMutex>
 #include <QObject>
+#include <QStringList>
 #include <atomic>
 
 class TreeSitterPlugin : public IPlugin {
@@ -25,10 +27,15 @@ class TreeSitterPlugin : public IPlugin {
 
   private:
     QFuture<CommandArgs> scanProjectDir(const QString &sourceDir);
+    QFuture<CommandArgs> doScanProjectDir(const QString &sourceDir);
+    void startNextScan();
 
     std::atomic<bool> scanIsCancelled{false};
     QFuture<CommandArgs> scanFuture;
     QFutureWatcher<CommandArgs> scanWatcher;
+
+    QStringList pendingScanDirs;
+    QMutex queueMutex;
 
     TreeSitterEngine engine;
 

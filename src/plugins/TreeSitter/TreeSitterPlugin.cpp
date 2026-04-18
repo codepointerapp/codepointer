@@ -7,6 +7,8 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFuture>
+#include <QMutexLocker>
+#include <QTimer>
 #include <QtConcurrent>
 
 TreeSitterPlugin::TreeSitterPlugin() {
@@ -17,8 +19,11 @@ TreeSitterPlugin::TreeSitterPlugin() {
     autoEnabled = true;
     alwaysEnabled = false;
 
-    connect(&scanWatcher, &QFutureWatcher<CommandArgs>::finished, this, []() {
-        qDebug() << "Tree-sitter: File processing finished.";
+    connect(&scanWatcher, &QFutureWatcher<CommandArgs>::finished, this, [this]() {
+        auto locker = QMutexLocker(&queueMutex);
+        qDebug() << "Tree-sitter: Scan finished. Pending queue:" << pendingScanDirs;
+        locker.unlock();
+        QTimer::singleShot(0, this, [this]() { startNextScan(); });
     });
 }
 
@@ -61,34 +66,48 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
         return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
-    // Cancel any orphaned scan before overwriting scanFuture.
-    // scanWatcher only tracks the most-recently-set future; if scanProjectDir
-    // was called twice in quick succession the first future is detached from the
-    // watcher and cleanup() would miss it, leaving a thread still accessing engine.
+    auto locker = QMutexLocker(&queueMutex);
     if (scanFuture.isValid() && !scanFuture.isFinished()) {
-        qDebug() << "TreeSitterPlugin: Aborting previous scan before starting new one";
-        scanIsCancelled.store(true);
-        scanFuture.waitForFinished();
+        if (!pendingScanDirs.contains(sourceDir)) {
+            pendingScanDirs.append(sourceDir);
+            qDebug() << "TreeSitterPlugin: Queued scan for" << QDir(sourceDir).dirName();
+        }
+        return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
+    locker.unlock();
+
+    return doScanProjectDir(sourceDir);
+}
+
+void TreeSitterPlugin::startNextScan() {
+    auto locker = QMutexLocker(&queueMutex);
+    if (pendingScanDirs.isEmpty()) {
+        qDebug() << "TreeSitterPlugin: startNextScan - queue empty, done.";
+        return;
+    }
+    auto nextDir = pendingScanDirs.takeFirst();
+    locker.unlock();
+    qDebug() << "TreeSitterPlugin: Starting next queued scan ->" << QDir(nextDir).dirName();
+    doScanProjectDir(nextDir);
+}
+
+QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir) {
     scanIsCancelled.store(false);
 
     const auto dirToScan = QDir::toNativeSeparators(sourceDir);
     const auto projectName = QDir(sourceDir).dirName();
-    const QStringList filters = {"*.cpp", "*.hpp", "*.c", "*.h", "*.cc", "*.hh"};
 
-    QStringList fileList;
-    QDirIterator it(dirToScan, filters, QDir::Files, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        fileList << it.next();
-    }
-    qDebug() << "TreeSitterPlugin: Scanning" << fileList.size() << "files in" << dirToScan;
+    // File collection runs inside the background thread so scanFuture is valid
+    // immediately — any subsequent scanProjectDir call will see it and queue.
+    scanFuture = QtConcurrent::run([this, dirToScan, projectName]() -> CommandArgs {
+        const QStringList filters = {"*.cpp", "*.hpp", "*.c", "*.h", "*.cc", "*.hh"};
+        QStringList fileList;
+        QDirIterator it(dirToScan, filters, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            fileList << it.next();
+        }
+        qDebug() << "TreeSitterPlugin: Scanning" << fileList.size() << "files in" << dirToScan;
 
-    // Single background thread: parse all files then build the symbol index.
-    // Serial execution avoids concurrent ts_parser/ts_query calls on the same
-    // TSLanguage pointer, which corrupt heap state inside tree-sitter.
-
-    // FIXME: we could serialize it more - with n-2 threads.
-    scanFuture = QtConcurrent::run([this, projectName, fileList = std::move(fileList)]() -> CommandArgs {
         const auto totalFiles = static_cast<int>(fileList.size());
         auto lastReportedPct = -1;
         QElapsedTimer timer;
@@ -120,21 +139,18 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
         auto totalFunctions = 0;
         QElapsedTimer passTimer;
         passTimer.start();
-        const auto trackedFiles = engine.getTrackedFiles();
-        qDebug() << "TreeSitterPlugin:" << projectName << "- Symbol pass:"
-                 << trackedFiles.size() << "tracked files (this project scanned" << totalFiles << ");"
-                 << "getTrackedFiles() took" << passTimer.elapsed() << "ms";
-        passTimer.restart();
+        qDebug() << "TreeSitterPlugin:" << projectName << "- Symbol pass for" << totalFiles << "files";
         auto slowestMs = 0LL;
         QString slowestFile;
-        for (const QString &file : trackedFiles) {
+        auto lastSymPct = -1;
+        for (auto si = 0; si < totalFiles; ++si) {
             if (scanIsCancelled.load()) {
                 qDebug() << "Scan cancelled";
                 return CommandArgs{};
             }
             QElapsedTimer fileTimer;
             fileTimer.start();
-            for (const auto &sym : engine.getSymbols(file)) {
+            for (const auto &sym : engine.getSymbols(fileList[si])) {
                 if (sym.type.contains("class") || sym.type.contains("struct")) {
                     totalClasses++;
                 } else {
@@ -144,7 +160,13 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
             const auto fileMs = fileTimer.elapsed();
             if (fileMs > slowestMs) {
                 slowestMs = fileMs;
-                slowestFile = file;
+                slowestFile = fileList[si];
+            }
+            const auto symBucket = ((si + 1) * 100 / totalFiles / 10) * 10;
+            if (symBucket > lastSymPct) {
+                lastSymPct = symBucket;
+                qDebug() << "TreeSitterPlugin:" << projectName << "- Symbol pass"
+                         << symBucket << "% elapsed:" << passTimer.elapsed() / 1000 << "s";
             }
         }
         qDebug() << "TreeSitterPlugin:" << projectName << "- Found" << totalClasses
@@ -263,6 +285,10 @@ void TreeSitterPlugin::on_client_unmerged(qmdiHost *host) {
 }
 
 void TreeSitterPlugin::cleanup() {
+    {
+        auto locker = QMutexLocker(&queueMutex);
+        pendingScanDirs.clear();
+    }
     // Disconnect first so no finished/resultReady signals fire after we return,
     // which could reference members that are being destroyed.
     scanWatcher.disconnect();
