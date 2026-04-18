@@ -61,6 +61,17 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
         return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
+    // Cancel any orphaned scan before overwriting scanFuture.
+    // scanWatcher only tracks the most-recently-set future; if scanProjectDir
+    // was called twice in quick succession the first future is detached from the
+    // watcher and cleanup() would miss it, leaving a thread still accessing engine.
+    if (scanFuture.isValid() && !scanFuture.isFinished()) {
+        qDebug() << "TreeSitterPlugin: Aborting previous scan before starting new one";
+        scanIsCancelled.store(true);
+        scanFuture.waitForFinished();
+    }
+    scanIsCancelled.store(false);
+
     const auto dirToScan = QDir::toNativeSeparators(sourceDir);
     const auto projectName = QDir(sourceDir).dirName();
     const QStringList filters = {"*.cpp", "*.hpp", "*.c", "*.h", "*.cc", "*.hh"};
@@ -75,7 +86,6 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
     // Single background thread: parse all files then build the symbol index.
     // Serial execution avoids concurrent ts_parser/ts_query calls on the same
     // TSLanguage pointer, which corrupt heap state inside tree-sitter.
-    scanIsCancelled.store(false);
 
     // FIXME: we could serialize it more - with n-2 threads.
     scanFuture = QtConcurrent::run([this, projectName, fileList = std::move(fileList)]() -> CommandArgs {
@@ -256,10 +266,12 @@ void TreeSitterPlugin::cleanup() {
     // Disconnect first so no finished/resultReady signals fire after we return,
     // which could reference members that are being destroyed.
     scanWatcher.disconnect();
-    if (scanWatcher.isRunning()) {
+    // Use scanFuture directly — scanWatcher only tracks the most-recently-set
+    // future and would miss an orphaned one started by a prior scanProjectDir call.
+    if (scanFuture.isValid() && !scanFuture.isFinished()) {
         qDebug() << "TreeSitterPlugin: Cancelling file scan...";
         scanIsCancelled.store(true);
-        scanWatcher.waitForFinished();
+        scanFuture.waitForFinished();
     }
 }
 
