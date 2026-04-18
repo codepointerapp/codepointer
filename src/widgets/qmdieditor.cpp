@@ -490,6 +490,12 @@ qmdiEditor::~qmdiEditor() {
 }
 
 bool qmdiEditor::saveClientContent() {
+    if (textEditor->isReadOnly()) {
+        return true;
+    }
+    if (!textEditor->document()->isModified()) {
+        return true;
+    }
     deleteBackup();
     return doSave();
 }
