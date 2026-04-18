@@ -111,7 +111,33 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
             if (n.id) {
                 nameNodes.append(n);
             }
-            typeName = QString::fromUtf8(symbolType.data(), symbolType.size());
+            // Store the first base class name so the alias resolver can follow
+            // inheritance chains (e.g. "struct BAR : FOO" → type = "FOO").
+            // The tree is: base_class_clause → base_specifier → type_identifier,
+            // so use a small BFS to find the first type_identifier at any depth.
+            typeName = QString{};
+            for (auto ci = 0u; ci < ts_node_child_count(symbolNode); ++ci) {
+                auto child = ts_node_child(symbolNode, ci);
+                auto ct = std::string_view(ts_node_type(child));
+                if (ct == "base_class_clause" || ct == "base_clause") {
+                    auto nodeQueue = QList<TSNode>{};
+                    for (auto bi = 0u; bi < ts_node_named_child_count(child); ++bi) {
+                        nodeQueue.append(ts_node_named_child(child, bi));
+                    }
+                    while (!nodeQueue.isEmpty() && typeName.isEmpty()) {
+                        auto n = nodeQueue.takeFirst();
+                        auto nt = std::string_view(ts_node_type(n));
+                        if (nt == "type_identifier" || nt == "qualified_identifier") {
+                            typeName = extractNameFromNode(n, context->content);
+                        } else {
+                            for (auto k = 0u; k < ts_node_named_child_count(n); ++k) {
+                                nodeQueue.append(ts_node_named_child(n, k));
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
         } else if (symbolType == TSNodeTypes::Enumerator) {
             auto n = ts_node_child_by_field_name(symbolNode, TSFieldNames::Name, 4);
             if (n.id) {
@@ -230,6 +256,14 @@ QString TreeSitterEngine::extractNameFromNode(TSNode node, const QByteArray &con
                 break;
             }
         } else {
+            // struct/class/enum specifiers have a "name" field, not a "declarator".
+            // Follow it so we return "FOO" instead of the raw "struct FOO" text.
+            if (isScopeContainer(type)) {
+                auto nameChild = ts_node_child_by_field_name(current, TSFieldNames::Name, 4);
+                if (nameChild.id) {
+                    lastIdentifier = nameChild;
+                }
+            }
             break;
         }
     }
@@ -300,7 +334,6 @@ QString TreeSitterEngine::resolveParentScope(TSNode symbolNode, const QByteArray
         auto const t = std::string_view(ts_node_type(current));
         if (isFunctionOrBlock(t)) {
             isTopLevel = false;
-            parents.clear();
             break;
         }
         if (isScopeContainer(t)) {
@@ -433,16 +466,16 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                     }
                 }
 
-                if (!results.isEmpty() || !otherProjectResults.isEmpty()) {
-                    auto const &finalRes = results.isEmpty() ? otherProjectResults : results;
-                    qDebug() << "TreeSitterEngine: found" << finalRes.size() << "members for" << st
-                             << "in" << (results.isEmpty() ? "other" : "current") << "project";
-                    return finalRes;
-                }
+                // Don't return early — continue the loop to collect inherited members.
 
                 auto al = globalIndex.values(st);
                 cur = "";
                 for (const auto &s : std::as_const(al)) {
+                    // Skip struct/class/enum definitions — their type is the node-type
+                    // name ("struct_specifier" etc.), not a real type alias target.
+                    if (isScopeContainer(s.type.toStdString())) {
+                        continue;
+                    }
                     if (s.parentName.isEmpty() && !s.type.isEmpty() && s.type != st) {
                         cur = s.type;
                         qDebug() << "TreeSitterEngine: resolving alias" << st << "->" << cur;
@@ -450,6 +483,11 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                     }
                 }
             }
+        }
+        if (!results.isEmpty() || !otherProjectResults.isEmpty()) {
+            auto const &finalRes = results.isEmpty() ? otherProjectResults : results;
+            qDebug() << "TreeSitterEngine: found" << finalRes.size() << "members for" << prev;
+            return finalRes;
         }
         qDebug() << "TreeSitterEngine: no semantic results found for" << prev;
         return {};
