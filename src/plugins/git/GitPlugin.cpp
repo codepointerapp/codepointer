@@ -261,17 +261,18 @@ void GitPlugin::revertFileHandler() {
         return;
     }
     auto filename = client->mdiClientFileName();
-    auto clientName = client->mdiClientName;
-
-    getDiff(filename).then(this, [this, filename, clientName](const std::tuple<QString, int> &res) {
+    getDiff(filename).then(this, [this, client](const std::tuple<QString, int> &res) {
         auto [diff, exitCode] = res;
+        auto filename = client->mdiClientFileName();
+        auto clientName = client->mdiClientName;
         if (exitCode != 0 || diff.isEmpty()) {
+            client->reloadClientContent();
             return;
         }
 
-        QMessageBox msgBox(QMessageBox::Warning, clientName,
-                           tr("Do you want to revert %1?\n").arg(clientName),
-                           QMessageBox::Yes | QMessageBox::Default, getManager());
+        auto msgBox = QMessageBox(QMessageBox::Warning, clientName,
+                                  tr("Do you want to revert %1?\n").arg(clientName),
+                                  QMessageBox::Yes | QMessageBox::Default, getManager());
         msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
         msgBox.setDefaultButton(QMessageBox::Yes);
         auto ret = msgBox.exec();

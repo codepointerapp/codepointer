@@ -500,6 +500,26 @@ bool qmdiEditor::saveClientContent() {
     return doSave();
 }
 
+bool qmdiEditor::reloadClientContent() {
+    if (textEditor->isReadOnly()) {
+        return true;
+    }
+    if (!textEditor->document()->isModified()) {
+        return true;
+    }
+
+    auto msgBox = QMessageBox(QMessageBox::Warning, mdiClientName,
+                              tr("The document has been modified.\nDo you want to reload it?"),
+                              QMessageBox::Yes | QMessageBox::Default, this);
+    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    msgBox.setDefaultButton(QMessageBox::Yes);
+    auto ret = msgBox.exec();
+    if (ret == QMessageBox::Yes) {
+        reload();
+    }
+    return false;
+}
+
 bool qmdiEditor::canCloseClient(CloseReason reason) {
     if (textEditor->isReadOnly()) {
         saveBackup();
@@ -518,15 +538,14 @@ bool qmdiEditor::canCloseClient(CloseReason reason) {
         return true;
     }
 
-    QMessageBox msgBox(QMessageBox::Warning, mdiClientName,
-                       tr("The document has been modified.\nDo you want to save your changes?"),
-                       QMessageBox::Yes | QMessageBox::Default, this);
-
+    auto msgBox =
+        QMessageBox(QMessageBox::Warning, mdiClientName,
+                    tr("The document has been modified.\nDo you want to save your changes?"),
+                    QMessageBox::Yes | QMessageBox::Default, this);
     msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
     msgBox.setDefaultButton(QMessageBox::Yes);
 
-    int ret = msgBox.exec();
-
+    auto ret = msgBox.exec();
     if (ret == QMessageBox::Yes) {
         return doSave();
     } else if (ret == QMessageBox::Cancel) {
