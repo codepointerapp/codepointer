@@ -9,6 +9,7 @@
 #include <QObject>
 #include <QStringList>
 #include <QThreadPool>
+#include <QTimer>
 #include <atomic>
 
 class TreeSitterPlugin : public IPlugin {
@@ -35,6 +36,7 @@ class TreeSitterPlugin : public IPlugin {
     QFuture<CommandArgs> scanFuture;
     QFutureWatcher<CommandArgs> scanWatcher;
     QThreadPool scanPool;
+    QTimer scanDebounceTimer;
 
     QStringList pendingScanDirs;
     QMutex queueMutex;

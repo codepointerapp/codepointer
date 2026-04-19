@@ -10,7 +10,6 @@
 #include <QMutexLocker>
 #include <QThread>
 #include <QThreadPool>
-#include <QTimer>
 #include <QtConcurrent>
 #include <atomic>
 
@@ -29,6 +28,10 @@ TreeSitterPlugin::TreeSitterPlugin() {
     sVersion = "0.0.1";
     autoEnabled = true;
     alwaysEnabled = false;
+
+    scanDebounceTimer.setSingleShot(true);
+    scanDebounceTimer.setInterval(200);
+    connect(&scanDebounceTimer, &QTimer::timeout, this, &TreeSitterPlugin::startNextScan);
 
     connect(&scanWatcher, &QFutureWatcher<CommandArgs>::finished, this, [this]() {
         auto locker = QMutexLocker(&queueMutex);
@@ -75,17 +78,22 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
         return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
-    auto locker = QMutexLocker(&queueMutex);
-    if (scanFuture.isValid() && !scanFuture.isFinished()) {
+    {
+        auto locker = QMutexLocker(&queueMutex);
         if (!pendingScanDirs.contains(sourceDir)) {
             pendingScanDirs.append(sourceDir);
             qDebug() << "TreeSitterPlugin: Queued scan for" << QDir(sourceDir).dirName();
         }
-        return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
-    locker.unlock();
 
-    return doScanProjectDir(sourceDir);
+    // If a scan is already running, the finished signal will call startNextScan.
+    // If idle, (re)start the debounce timer so rapid ProjectLoaded bursts are
+    // collected into one combined scan.
+    if (!scanFuture.isValid() || scanFuture.isFinished()) {
+        scanDebounceTimer.start();
+    }
+
+    return QtFuture::makeReadyValueFuture(CommandArgs{});
 }
 
 void TreeSitterPlugin::startNextScan() {
@@ -104,18 +112,33 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
     scanIsCancelled.store(false);
     engine.resetCancel();
 
-    const auto dirToScan = QDir::toNativeSeparators(sourceDir);
-    const auto projectName = QDir(sourceDir).dirName();
+    // Drain the pending queue now — process all known projects in one parallel pass
+    // to minimise arena fragmentation (single malloc_trim at the end).
+    QStringList dirsToScan;
+    dirsToScan.append(QDir::toNativeSeparators(sourceDir));
+    {
+        auto locker = QMutexLocker(&queueMutex);
+        for (const auto &dir : std::as_const(pendingScanDirs)) {
+            dirsToScan.append(QDir::toNativeSeparators(dir));
+        }
+        pendingScanDirs.clear();
+    }
 
-    scanFuture = QtConcurrent::run([this, dirToScan, projectName]() -> CommandArgs {
+    scanFuture = QtConcurrent::run([this, dirsToScan]() -> CommandArgs {
         const QStringList filters = {"*.cpp", "*.hpp", "*.c", "*.h", "*.cc", "*.hh"};
         QStringList fileList;
-        QDirIterator it(dirToScan, filters, QDir::Files, QDirIterator::Subdirectories);
-        while (it.hasNext()) {
-            fileList << it.next();
+        QStringList projectNames;
+        for (const auto &dir : dirsToScan) {
+            projectNames.append(QDir(dir).dirName());
+            QDirIterator it(dir, filters, QDir::Files, QDirIterator::Subdirectories);
+            while (it.hasNext()) {
+                fileList << it.next();
+            }
         }
+        const auto projectLabel = projectNames.join(", ");
         const auto totalFiles = static_cast<int>(fileList.size());
-        qDebug() << "TreeSitterPlugin: Scanning" << totalFiles << "files in" << dirToScan;
+        qDebug() << "TreeSitterPlugin: Scanning" << totalFiles << "files across"
+                 << projectNames.size() << "projects (" << projectLabel << ")";
         if (totalFiles == 0) {
             return CommandArgs{};
         }
@@ -143,7 +166,7 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
 #if defined(__linux__)
         mallopt(M_ARENA_MAX, 2); // prevent per-thread glibc arena explosion under parallel parsing
 #endif
-        qDebug() << "TreeSitterPlugin:" << projectName << "- parsing with" << threadCount
+        qDebug() << "TreeSitterPlugin:" << projectLabel << "- parsing with" << threadCount
                  << "threads";
 
         std::atomic<int> nextFile{0};
@@ -165,10 +188,11 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
                     processedCount.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
-                constexpr qint64 maxFileSize = 512 * 1024; // skip amalgamations / generated files
+                const bool isHeader = TreeSitterEngine::isHeaderFile(filePath);
+                const qint64 maxFileSize = isHeader ? 2 * 1024 * 1024 : 512 * 1024;
                 if (f.size() > maxFileSize) {
                     qDebug() << "TreeSitterPlugin: skipping large file"
-                             << QFileInfo(filePath).fileName() << "(" << f.size() / 1024 << "KB)";
+                             << filePath << "(" << f.size() / 1024 << "KB)";
                     processedCount.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
@@ -203,7 +227,7 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
                                            ? elapsedMs * (totalFiles - done) / done
                                            : 0LL;
                     locker.unlock();
-                    qDebug() << "TreeSitterPlugin:" << projectName << "- Parsed" << done << "/"
+                    qDebug() << "TreeSitterPlugin:" << projectLabel << "- Parsed" << done << "/"
                              << totalFiles << "files (" << bucket << "%)"
                              << "elapsed:" << elapsedMs / 1000 << "s"
                              << (etaMs > 0 ? QString("ETA: %1s").arg(etaMs / 1000) : QString{});
@@ -232,15 +256,15 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
 #endif
 
         if (scanIsCancelled.load()) {
-            qDebug() << "TreeSitterPlugin:" << projectName << "- Scan cancelled";
+            qDebug() << "TreeSitterPlugin:" << projectLabel << "- Scan cancelled";
             return CommandArgs{};
         }
         const auto wallMs = timer.elapsed();
         const auto cpuMs = totalCpuMs.load();
-        qDebug() << "TreeSitterPlugin:" << projectName << "- Found" << totalClasses.load()
+        qDebug() << "TreeSitterPlugin:" << projectLabel << "- Found" << totalClasses.load()
                  << "classes/structs and" << totalFunctions.load() << "functions;"
                  << "wall:" << wallMs << "ms cpu:" << cpuMs << "ms"
-                 << QString("(%.1fx speedup)").arg(cpuMs > 0 ? double(cpuMs) / wallMs : 1.0)
+                 << QString("(%1x vs sequential)").arg(cpuMs > 0 ? double(cpuMs) / wallMs : 1.0, 0, 'f', 1)
                  << "; slowest file" << slowestMs.load() << "ms:" << slowestFile;
         return CommandArgs{};
     });
