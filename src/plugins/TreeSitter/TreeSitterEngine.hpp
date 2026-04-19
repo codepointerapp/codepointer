@@ -5,6 +5,7 @@
 #include <QMultiHash>
 #include <QMutex>
 #include <QString>
+#include <atomic>
 #include <memory>
 #include <tree_sitter/api.h>
 
@@ -88,15 +89,18 @@ class TreeSitterEngine {
 
     // Returns the language for a file based on extension
     static const TSLanguage *getLanguageForFile(const QString &fileName);
+    static bool isHeaderFile(const QString &fileName);
 
     // Resolve a fileId back to the full path (call under mutex or from main thread)
     QString resolveFileId(quint64 id) const;
+
+    void cancelParsing() { cancelFlag.store(1, std::memory_order_relaxed); }
+    void resetCancel() { cancelFlag.store(0, std::memory_order_relaxed); }
 
   private:
     struct FileContext {
         TSTree *tree = nullptr;
         const TSLanguage *language = nullptr;
-        QList<Symbol> cachedSymbols;
         bool symbolsValid = false;
 
         ~FileContext() {
@@ -106,7 +110,6 @@ class TreeSitterEngine {
         }
     };
 
-    TSParser *parser;
     QHash<QString, std::shared_ptr<FileContext>> fileContexts;
 
     // Global index: symbol name -> Symbol info
@@ -117,6 +120,7 @@ class TreeSitterEngine {
     quint64 internFileId(const QString &fileName);
 
     mutable QMutex mutex;
+    std::atomic<size_t> cancelFlag{0};
 
     void updateIndexForFile(const QString &fileName, const QList<Symbol> &symbols);
 

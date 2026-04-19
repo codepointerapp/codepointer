@@ -8,6 +8,7 @@
 #include <QMutex>
 #include <QObject>
 #include <QStringList>
+#include <QThreadPool>
 #include <atomic>
 
 class TreeSitterPlugin : public IPlugin {
@@ -33,6 +34,7 @@ class TreeSitterPlugin : public IPlugin {
     std::atomic<bool> scanIsCancelled{false};
     QFuture<CommandArgs> scanFuture;
     QFutureWatcher<CommandArgs> scanWatcher;
+    QThreadPool scanPool;
 
     QStringList pendingScanDirs;
     QMutex queueMutex;

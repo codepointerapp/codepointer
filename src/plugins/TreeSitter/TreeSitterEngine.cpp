@@ -8,7 +8,7 @@
 extern "C" const TSLanguage *tree_sitter_cpp();
 extern "C" const TSLanguage *tree_sitter_c();
 
-TreeSitterEngine::TreeSitterEngine() : parser(nullptr) {}
+TreeSitterEngine::TreeSitterEngine()  {}
 
 TreeSitterEngine::~TreeSitterEngine() {}
 
@@ -21,6 +21,11 @@ quint64 TreeSitterEngine::internFileId(const QString &fileName) {
 QString TreeSitterEngine::resolveFileId(quint64 id) const {
     auto locker = QMutexLocker(&mutex);
     return fileNamePool.value(id);
+}
+
+bool TreeSitterEngine::isHeaderFile(const QString &fileName) {
+    const auto ext = QFileInfo(fileName).suffix().toLower();
+    return ext == "h" || ext == "hpp" || ext == "hh" || ext == "hxx";
 }
 
 const TSLanguage *TreeSitterEngine::getLanguageForFile(const QString &fileName) {
@@ -44,17 +49,22 @@ void TreeSitterEngine::updateFile(const QString &fileName, const QByteArray &con
 
     auto localParser = ts_parser_new();
     ts_parser_set_language(localParser, lang);
+    ts_parser_set_cancellation_flag(localParser, reinterpret_cast<const size_t *>(&cancelFlag));
     auto newTree = ts_parser_parse_string(localParser, nullptr, content.data(), content.size());
     ts_parser_delete(localParser);
 
-    if (newTree) {
-        auto locker = QMutexLocker(&mutex);
-        auto context = std::make_shared<FileContext>();
-        context->tree = newTree;
-        context->language = lang;
-        context->symbolsValid = false;
-        fileContexts[fileName] = context;
+    if (!newTree) {
+        if (cancelFlag.load(std::memory_order_relaxed)) {
+            qDebug() << "TreeSitterEngine: cancelled while parsing" << QFileInfo(fileName).fileName();
+        }
+        return;
     }
+    auto locker = QMutexLocker(&mutex);
+    auto context = std::make_shared<FileContext>();
+    context->tree = newTree;
+    context->language = lang;
+    context->symbolsValid = false;
+    fileContexts[fileName] = context;
 }
 
 
@@ -68,10 +78,16 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
             return {};
         }
         context = fileContexts[fileName];
-        if (context->symbolsValid) {
-            return context->cachedSymbols;
-        }
         fileId = internFileId(fileName);
+        if (context->symbolsValid) {
+            auto result = QList<Symbol>{};
+            for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {
+                if (it.value().fileId == fileId) {
+                    result.append(it.value());
+                }
+            }
+            return result;
+        }
     }
     if (content.isEmpty()) {
         return {};
@@ -80,18 +96,28 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
     auto root = ts_tree_root_node(context->tree);
     auto symbols = QList<Symbol>{};
 
-    static const char *cppQuery =
+    // Headers: full symbol set for completion/navigation.
+    // Source files: function definitions only — skip parameters, locals, declarations.
+    static const char *cppFullQuery =
         "(class_specifier) @symbol (struct_specifier) @symbol (enum_specifier) @symbol "
         "(enumerator) @symbol (namespace_definition) @symbol (function_definition) @symbol "
         "(field_declaration) @symbol (declaration) @symbol (parameter_declaration) @symbol "
         "(alias_declaration) @symbol (type_definition) @symbol ";
+    static const char *cppLightQuery = "(function_definition) @symbol ";
 
-    static const char *cQuery =
+    static const char *cFullQuery =
         "(struct_specifier) @symbol (enum_specifier) @symbol (enumerator) @symbol "
         "(function_definition) @symbol (field_declaration) @symbol (declaration) @symbol "
         "(parameter_declaration) @symbol (type_definition) @symbol ";
+    static const char *cLightQuery = "(function_definition) @symbol ";
 
-    const char *queryStr = (context->language == tree_sitter_cpp()) ? cppQuery : cQuery;
+    const bool isHeader = isHeaderFile(fileName);
+    const char *queryStr;
+    if (context->language == tree_sitter_cpp()) {
+        queryStr = isHeader ? cppFullQuery : cppLightQuery;
+    } else {
+        queryStr = isHeader ? cFullQuery : cLightQuery;
+    }
 
     auto errorOffset = uint32_t{};
     auto errorType = TSQueryError{};
@@ -226,7 +252,6 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
     ts_query_delete(query);
 
     auto locker = QMutexLocker(&mutex);
-    context->cachedSymbols = symbols;
     context->symbolsValid = true;
     if (context->tree) {
         ts_tree_delete(context->tree);
@@ -387,8 +412,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
         projectRoot = projectRoot.left(projectRoot.lastIndexOf('/'));
     }
 
-    auto fileId = file.isEmpty() ? quint64(0) : internFileId(file);
-
     auto prioritize = [&](const Symbol &sym) {
         if (!file.isEmpty() && fileNamePool.value(sym.fileId).startsWith(projectRoot)) {
             results.append(sym);
@@ -427,11 +450,12 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
             }
             qDebug() << "TreeSitterEngine: resolved 'this' to type" << type;
         } else if (fileContexts.contains(file)) {
-            auto const &cached = fileContexts[file]->cachedSymbols;
-            auto it = std::find_if(cached.begin(), cached.end(), [&](const Symbol &s) {
-                return s.name == prev && s.line <= line;
+            auto fileId = internFileId(file);
+            auto candidates = globalIndex.values(prev);
+            auto it = std::find_if(candidates.begin(), candidates.end(), [&](const Symbol &s) {
+                return s.fileId == fileId && s.line <= line;
             });
-            if (it != cached.end()) {
+            if (it != candidates.end()) {
                 type = it->type;
                 qDebug() << "TreeSitterEngine: found local declaration of" << prev << "with type"
                          << type;

@@ -8,8 +8,19 @@
 #include <QFile>
 #include <QFuture>
 #include <QMutexLocker>
+#include <QThread>
+#include <QThreadPool>
 #include <QTimer>
 #include <QtConcurrent>
+#include <atomic>
+
+#if defined(__linux__)
+#include <malloc.h>
+#elif defined(_WIN32)
+#include <malloc.h>
+#elif defined(__APPLE__)
+#include <malloc/malloc.h>
+#endif
 
 TreeSitterPlugin::TreeSitterPlugin() {
     name = tr("Tree-sitter Support");
@@ -27,9 +38,7 @@ TreeSitterPlugin::TreeSitterPlugin() {
     });
 }
 
-TreeSitterPlugin::~TreeSitterPlugin() {
-    cleanup();
-}
+TreeSitterPlugin::~TreeSitterPlugin() { cleanup(); }
 
 int TreeSitterPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &args) const {
     auto const static projectTriggers = QStringList{
@@ -93,12 +102,11 @@ void TreeSitterPlugin::startNextScan() {
 
 QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir) {
     scanIsCancelled.store(false);
+    engine.resetCancel();
 
     const auto dirToScan = QDir::toNativeSeparators(sourceDir);
     const auto projectName = QDir(sourceDir).dirName();
 
-    // File collection runs inside the background thread so scanFuture is valid
-    // immediately — any subsequent scanProjectDir call will see it and queue.
     scanFuture = QtConcurrent::run([this, dirToScan, projectName]() -> CommandArgs {
         const QStringList filters = {"*.cpp", "*.hpp", "*.c", "*.h", "*.cc", "*.hh"};
         QStringList fileList;
@@ -106,56 +114,134 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
         while (it.hasNext()) {
             fileList << it.next();
         }
-        qDebug() << "TreeSitterPlugin: Scanning" << fileList.size() << "files in" << dirToScan;
-
         const auto totalFiles = static_cast<int>(fileList.size());
-        auto lastReportedPct = -1;
-        auto totalClasses = 0;
-        auto totalFunctions = 0;
-        auto slowestMs = 0LL;
+        qDebug() << "TreeSitterPlugin: Scanning" << totalFiles << "files in" << dirToScan;
+        if (totalFiles == 0) {
+            return CommandArgs{};
+        }
+
+        // Warm up language singletons before parallel work (lazy statics, not thread-safe on first
+        // call)
+        TreeSitterEngine::getLanguageForFile(QStringLiteral("dummy.cpp"));
+        TreeSitterEngine::getLanguageForFile(QStringLiteral("dummy.c"));
+
+        std::atomic<int> processedCount{0};
+        std::atomic<int> totalClasses{0};
+        std::atomic<int> totalFunctions{0};
+        std::atomic<long long> slowestMs{0};
+        std::atomic<long long> totalCpuMs{0};
+        QMutex statsMutex;
         QString slowestFile;
+        int lastReportedBucket = -1;
+
         QElapsedTimer timer;
         timer.start();
-        for (auto i = 0; i < totalFiles; ++i) {
-            if (scanIsCancelled.load()) {
-                qDebug() << "Canceled after" << i << "files, currently" << fileList[i];
-                return CommandArgs{};
-            }
-            QFile f(fileList[i]);
-            if (f.open(QIODevice::ReadOnly)) {
+
+        const int threadCount = qMax(1, QThread::idealThreadCount() - 1);
+        scanPool.setMaxThreadCount(threadCount);
+        scanPool.setExpiryTimeout(500); // threads exit 500ms after scan completes
+#if defined(__linux__)
+        mallopt(M_ARENA_MAX, 2); // prevent per-thread glibc arena explosion under parallel parsing
+#endif
+        qDebug() << "TreeSitterPlugin:" << projectName << "- parsing with" << threadCount
+                 << "threads";
+
+        std::atomic<int> nextFile{0};
+
+        // Each worker pulls files via atomic index — cancellation is checked before every file,
+        // and engine.cancelParsing() aborts any in-progress ts_parser_parse_string call.
+        auto worker = [&]() {
+            while (true) {
+                if (scanIsCancelled.load()) {
+                    return;
+                }
+                const auto i = nextFile.fetch_add(1, std::memory_order_relaxed);
+                if (i >= totalFiles) {
+                    return;
+                }
+                const auto &filePath = fileList[i];
+                QFile f(filePath);
+                if (!f.open(QIODevice::ReadOnly)) {
+                    processedCount.fetch_add(1, std::memory_order_relaxed);
+                    continue;
+                }
+                constexpr qint64 maxFileSize = 512 * 1024; // skip amalgamations / generated files
+                if (f.size() > maxFileSize) {
+                    qDebug() << "TreeSitterPlugin: skipping large file"
+                             << QFileInfo(filePath).fileName() << "(" << f.size() / 1024 << "KB)";
+                    processedCount.fetch_add(1, std::memory_order_relaxed);
+                    continue;
+                }
                 auto fileContent = f.readAll();
-                engine.updateFile(fileList[i], fileContent);
+
                 QElapsedTimer fileTimer;
                 fileTimer.start();
-                for (const auto &sym : engine.getSymbols(fileList[i], fileContent)) {
+                engine.updateFile(filePath, fileContent);
+                for (const auto &sym : engine.getSymbols(filePath, fileContent)) {
                     if (sym.type.contains("class") || sym.type.contains("struct")) {
-                        totalClasses++;
+                        totalClasses.fetch_add(1, std::memory_order_relaxed);
                     } else {
-                        totalFunctions++;
+                        totalFunctions.fetch_add(1, std::memory_order_relaxed);
                     }
                 }
                 const auto fileMs = fileTimer.elapsed();
-                if (fileMs > slowestMs) {
-                    slowestMs = fileMs;
-                    slowestFile = fileList[i];
+                totalCpuMs.fetch_add(fileMs, std::memory_order_relaxed);
+
+                const auto done = processedCount.fetch_add(1, std::memory_order_relaxed) + 1;
+                const auto pct = done * 100 / totalFiles;
+                const auto bucket = (pct / 10) * 10;
+
+                auto locker = QMutexLocker(&statsMutex);
+                if (fileMs > slowestMs.load(std::memory_order_relaxed)) {
+                    slowestMs.store(fileMs, std::memory_order_relaxed);
+                    slowestFile = filePath;
+                }
+                if (bucket > lastReportedBucket) {
+                    lastReportedBucket = bucket;
+                    const auto elapsedMs = timer.elapsed();
+                    const auto etaMs = (bucket > 10 && done < totalFiles)
+                                           ? elapsedMs * (totalFiles - done) / done
+                                           : 0LL;
+                    locker.unlock();
+                    qDebug() << "TreeSitterPlugin:" << projectName << "- Parsed" << done << "/"
+                             << totalFiles << "files (" << bucket << "%)"
+                             << "elapsed:" << elapsedMs / 1000 << "s"
+                             << (etaMs > 0 ? QString("ETA: %1s").arg(etaMs / 1000) : QString{});
                 }
             }
-            const auto pct = (i + 1) * 100 / totalFiles;
-            const auto bucket = (pct / 10) * 10;
-            if (bucket > lastReportedPct) {
-                lastReportedPct = bucket;
-                const auto elapsedMs = timer.elapsed();
-                const auto etaMs = (i + 1) < totalFiles
-                                       ? elapsedMs * (totalFiles - i - 1) / (i + 1)
-                                       : 0LL;
-                qDebug() << "TreeSitterPlugin:" << projectName << "- Parsed" << (i + 1)
-                         << "/" << totalFiles << "files (" << bucket << "%)"
-                         << "elapsed:" << elapsedMs / 1000 << "s ETA:" << etaMs / 1000 << "s";
-            }
+        };
+
+        QList<QFuture<void>> futures;
+        futures.reserve(threadCount);
+        for (int t = 0; t < threadCount; ++t) {
+            futures.append(QtConcurrent::run(&scanPool, worker));
         }
-        qDebug() << "TreeSitterPlugin:" << projectName << "- Found" << totalClasses
-                 << "classes/structs and" << totalFunctions << "functions;"
-                 << "total:" << timer.elapsed() << "ms; slowest file" << slowestMs << "ms:" << slowestFile;
+        for (auto &f : futures) {
+            f.waitForFinished();
+        }
+
+        // Return freed heap memory (large TSTrees) back to the OS
+#if 0
+#if defined(__linux__)
+        malloc_trim(0);
+#elif defined(_WIN32)
+        _heapmin();
+#elif defined(__APPLE__)
+        malloc_zone_pressure_relief(nullptr, 0);
+#endif
+#endif
+
+        if (scanIsCancelled.load()) {
+            qDebug() << "TreeSitterPlugin:" << projectName << "- Scan cancelled";
+            return CommandArgs{};
+        }
+        const auto wallMs = timer.elapsed();
+        const auto cpuMs = totalCpuMs.load();
+        qDebug() << "TreeSitterPlugin:" << projectName << "- Found" << totalClasses.load()
+                 << "classes/structs and" << totalFunctions.load() << "functions;"
+                 << "wall:" << wallMs << "ms cpu:" << cpuMs << "ms"
+                 << QString("(%.1fx speedup)").arg(cpuMs > 0 ? double(cpuMs) / wallMs : 1.0)
+                 << "; slowest file" << slowestMs.load() << "ms:" << slowestFile;
         return CommandArgs{};
     });
     scanWatcher.setFuture(scanFuture);
@@ -258,9 +344,7 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
     return QtFuture::makeReadyValueFuture(result);
 }
 
-void TreeSitterPlugin::on_client_merged(qmdiHost *host) {
-    IPlugin::on_client_merged(host);
-}
+void TreeSitterPlugin::on_client_merged(qmdiHost *host) { IPlugin::on_client_merged(host); }
 
 void TreeSitterPlugin::on_client_unmerged(qmdiHost *host) {
     cleanup();
@@ -280,7 +364,8 @@ void TreeSitterPlugin::cleanup() {
     if (scanFuture.isValid() && !scanFuture.isFinished()) {
         qDebug() << "TreeSitterPlugin: Cancelling file scan...";
         scanIsCancelled.store(true);
+        engine.cancelParsing(); // abort any in-progress ts_parser_parse_string
         scanFuture.waitForFinished();
+        engine.resetCancel();
     }
 }
-
