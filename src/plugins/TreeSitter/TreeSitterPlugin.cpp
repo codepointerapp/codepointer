@@ -110,16 +110,35 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
 
         const auto totalFiles = static_cast<int>(fileList.size());
         auto lastReportedPct = -1;
+        auto totalClasses = 0;
+        auto totalFunctions = 0;
+        auto slowestMs = 0LL;
+        QString slowestFile;
         QElapsedTimer timer;
         timer.start();
         for (auto i = 0; i < totalFiles; ++i) {
             if (scanIsCancelled.load()) {
-                qDebug() << "Canceled after " << i << "files, currently " << fileList[i];
+                qDebug() << "Canceled after" << i << "files, currently" << fileList[i];
                 return CommandArgs{};
             }
             QFile f(fileList[i]);
             if (f.open(QIODevice::ReadOnly)) {
-                engine.updateFile(fileList[i], f.readAll());
+                auto fileContent = f.readAll();
+                engine.updateFile(fileList[i], fileContent);
+                QElapsedTimer fileTimer;
+                fileTimer.start();
+                for (const auto &sym : engine.getSymbols(fileList[i], fileContent)) {
+                    if (sym.type.contains("class") || sym.type.contains("struct")) {
+                        totalClasses++;
+                    } else {
+                        totalFunctions++;
+                    }
+                }
+                const auto fileMs = fileTimer.elapsed();
+                if (fileMs > slowestMs) {
+                    slowestMs = fileMs;
+                    slowestFile = fileList[i];
+                }
             }
             const auto pct = (i + 1) * 100 / totalFiles;
             const auto bucket = (pct / 10) * 10;
@@ -134,45 +153,9 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
                          << "elapsed:" << elapsedMs / 1000 << "s ETA:" << etaMs / 1000 << "s";
             }
         }
-
-        auto totalClasses = 0;
-        auto totalFunctions = 0;
-        QElapsedTimer passTimer;
-        passTimer.start();
-        qDebug() << "TreeSitterPlugin:" << projectName << "- Symbol pass for" << totalFiles << "files";
-        auto slowestMs = 0LL;
-        QString slowestFile;
-        auto lastSymPct = -1;
-        for (auto si = 0; si < totalFiles; ++si) {
-            if (scanIsCancelled.load()) {
-                qDebug() << "Scan cancelled";
-                return CommandArgs{};
-            }
-            QElapsedTimer fileTimer;
-            fileTimer.start();
-            for (const auto &sym : engine.getSymbols(fileList[si])) {
-                if (sym.type.contains("class") || sym.type.contains("struct")) {
-                    totalClasses++;
-                } else {
-                    totalFunctions++;
-                }
-            }
-            const auto fileMs = fileTimer.elapsed();
-            if (fileMs > slowestMs) {
-                slowestMs = fileMs;
-                slowestFile = fileList[si];
-            }
-            const auto symBucket = ((si + 1) * 100 / totalFiles / 10) * 10;
-            if (symBucket > lastSymPct) {
-                lastSymPct = symBucket;
-                qDebug() << "TreeSitterPlugin:" << projectName << "- Symbol pass"
-                         << symBucket << "% elapsed:" << passTimer.elapsed() / 1000 << "s";
-            }
-        }
         qDebug() << "TreeSitterPlugin:" << projectName << "- Found" << totalClasses
                  << "classes/structs and" << totalFunctions << "functions;"
-                 << "symbol pass took" << passTimer.elapsed() << "ms;"
-                 << "slowest file" << slowestMs << "ms:" << slowestFile;
+                 << "total:" << timer.elapsed() << "ms; slowest file" << slowestMs << "ms:" << slowestFile;
         return CommandArgs{};
     });
     scanWatcher.setFuture(scanFuture);
@@ -196,7 +179,7 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
         if (!content.isEmpty()) {
             engine.updateFile(filename, content);
         }
-        auto symbols = engine.getSymbols(filename);
+        auto symbols = engine.getSymbols(filename, content);
         QVariantList tagList;
         for (const auto &sym : symbols) {
             tagList.append(QVariant::fromValue(CommandArgs{
@@ -221,15 +204,15 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
 
         if (!content.isEmpty()) {
             engine.updateFile(filename, content);
-            engine.getSymbols(filename);
+            engine.getSymbols(filename, content);
         }
 
         QVariantList tagList;
         auto symbols = engine.findSymbolsGlobal(symbol, exactMatch, previousWord, separator,
-                                                filename, line, column);
+                                                filename, line, column, content);
         for (const auto &sym : symbols) {
             tagList.append(QVariant::fromValue(CommandArgs{
-                {GlobalArguments::FileName, sym.fileName},
+                {GlobalArguments::FileName, engine.resolveFileId(sym.fileId)},
                 {GlobalArguments::Type, sym.type},
                 {GlobalArguments::Value, sym.name},
                 {GlobalArguments::Name, sym.name},

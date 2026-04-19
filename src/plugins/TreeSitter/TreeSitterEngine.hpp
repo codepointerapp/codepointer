@@ -66,39 +66,36 @@ class TreeSitterEngine {
         QString signature; // For functions: full signature with parameters
         int line;
         int column;
-        QString fileName;   // Store filename for global index lookup
+        quint64 fileId = 0; // key into engine's fileNamePool
         QString parentName; // For members: name of the class/struct
         bool isDefinition = false;
 
         bool operator==(const Symbol &other) const {
-            return name == other.name && fileName == other.fileName && line == other.line &&
+            return name == other.name && fileId == other.fileId && line == other.line &&
                    column == other.column;
         }
     };
 
-    // Returns cached symbols or parses if needed
-    QList<Symbol> getSymbols(const QString &fileName);
+    // Returns cached symbols, or parses using provided content
+    QList<Symbol> getSymbols(const QString &fileName, const QByteArray &content = {});
 
-    // Fast global lookup
+    // Fast global lookup; fileContent used for cursor-based type resolution
     QList<Symbol> findSymbolsGlobal(const QString &name, bool exactMatch,
                                     const QString &previousWord = QString(),
                                     const QString &separator = QString(),
                                     const QString &fileName = QString(), int line = -1,
-                                    int column = -1);
-
-    // Returns the root node for a given file
-    TSNode getRootNode(const QString &fileName);
+                                    int column = -1, const QByteArray &fileContent = {});
 
     // Returns the language for a file based on extension
     static const TSLanguage *getLanguageForFile(const QString &fileName);
 
-    QList<QString> getTrackedFiles() const;
+    // Resolve a fileId back to the full path (call under mutex or from main thread)
+    QString resolveFileId(quint64 id) const;
 
   private:
     struct FileContext {
         TSTree *tree = nullptr;
         const TSLanguage *language = nullptr;
-        QByteArray content;
         QList<Symbol> cachedSymbols;
         bool symbolsValid = false;
 
@@ -114,6 +111,10 @@ class TreeSitterEngine {
 
     // Global index: symbol name -> Symbol info
     QMultiHash<QString, Symbol> globalIndex;
+
+    // Interned file paths: hash(path) -> path  (call internFileId only while holding mutex)
+    QHash<quint64, QString> fileNamePool;
+    quint64 internFileId(const QString &fileName);
 
     mutable QMutex mutex;
 

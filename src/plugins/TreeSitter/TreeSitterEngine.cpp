@@ -12,6 +12,17 @@ TreeSitterEngine::TreeSitterEngine() : parser(nullptr) {}
 
 TreeSitterEngine::~TreeSitterEngine() {}
 
+quint64 TreeSitterEngine::internFileId(const QString &fileName) {
+    auto id = static_cast<quint64>(qHash(fileName));
+    fileNamePool.insert(id, fileName);
+    return id;
+}
+
+QString TreeSitterEngine::resolveFileId(quint64 id) const {
+    auto locker = QMutexLocker(&mutex);
+    return fileNamePool.value(id);
+}
+
 const TSLanguage *TreeSitterEngine::getLanguageForFile(const QString &fileName) {
     auto info = QFileInfo(fileName);
     auto ext = info.suffix().toLower();
@@ -41,24 +52,16 @@ void TreeSitterEngine::updateFile(const QString &fileName, const QByteArray &con
         auto context = std::make_shared<FileContext>();
         context->tree = newTree;
         context->language = lang;
-        context->content = content;
         context->symbolsValid = false;
         fileContexts[fileName] = context;
     }
 }
 
-TSNode TreeSitterEngine::getRootNode(const QString &fileName) {
-    auto locker = QMutexLocker(&mutex);
-    if (fileContexts.contains(fileName)) {
-        return ts_tree_root_node(fileContexts[fileName]->tree);
-    }
-    auto nullNode = TSNode{};
-    nullNode.id = nullptr;
-    return nullNode;
-}
 
-QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &fileName) {
+QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &fileName,
+                                                              const QByteArray &content) {
     auto context = std::shared_ptr<FileContext>{};
+    auto fileId = quint64{};
     {
         auto locker = QMutexLocker(&mutex);
         if (!fileContexts.contains(fileName)) {
@@ -68,6 +71,10 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
         if (context->symbolsValid) {
             return context->cachedSymbols;
         }
+        fileId = internFileId(fileName);
+    }
+    if (content.isEmpty()) {
+        return {};
     }
 
     auto root = ts_tree_root_node(context->tree);
@@ -128,7 +135,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                         auto n = nodeQueue.takeFirst();
                         auto nt = std::string_view(ts_node_type(n));
                         if (nt == "type_identifier" || nt == "qualified_identifier") {
-                            typeName = extractNameFromNode(n, context->content);
+                            typeName = extractNameFromNode(n, content);
                         } else {
                             for (auto k = 0u; k < ts_node_named_child_count(n); ++k) {
                                 nodeQueue.append(ts_node_named_child(n, k));
@@ -146,7 +153,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
             auto p = ts_node_parent(ts_node_parent(symbolNode));
             if (p.id && std::string_view(ts_node_type(p)) == TSNodeTypes::EnumSpecifier) {
                 typeName = extractNameFromNode(
-                    ts_node_child_by_field_name(p, TSFieldNames::Name, 4), context->content);
+                    ts_node_child_by_field_name(p, TSFieldNames::Name, 4), content);
             }
         } else if (isTypeAlias(symbolType)) {
             auto nameField = (symbolType == TSNodeTypes::AliasDeclaration)
@@ -154,29 +161,29 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                                  : TSFieldNames::Declarator;
             nameNodes.append(ts_node_child_by_field_name(symbolNode, nameField, 10));
             typeName = extractNameFromNode(
-                ts_node_child_by_field_name(symbolNode, TSFieldNames::Type, 4), context->content);
+                ts_node_child_by_field_name(symbolNode, TSFieldNames::Type, 4), content);
         } else {
             auto tNode = ts_node_child_by_field_name(symbolNode, TSFieldNames::Type, 4);
-            typeName = extractNameFromNode(tNode, context->content);
+            typeName = extractNameFromNode(tNode, content);
             nameNodes.append(ts_node_child_by_field_name(symbolNode, TSFieldNames::Declarator, 10));
         }
 
         auto isTopLevel = true;
-        auto parentName = resolveParentScope(symbolNode, context->content, isTopLevel);
+        auto parentName = resolveParentScope(symbolNode, content, isTopLevel);
 
         for (auto &node : nameNodes) {
-            auto name = extractNameFromNode(node, context->content);
+            auto name = extractNameFromNode(node, content);
             if (name.isEmpty()) {
                 continue;
             }
 
             auto sym = Symbol{};
             sym.name = name;
-            sym.fileName = fileName;
+            sym.fileId = fileId;
             sym.parentName = parentName;
             sym.line = ts_node_start_point(symbolNode).row;
             sym.column = ts_node_start_point(symbolNode).column;
-            sym.type = resolveAutoType(node, typeName, context->content, symbolType);
+            sym.type = resolveAutoType(node, typeName, content, symbolType);
 
             if (symbolType == TSNodeTypes::FieldDeclaration) {
                 sym.isDefinition = true;
@@ -206,7 +213,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                     }
                 }
                 if (params.id) {
-                    auto pStr = QString::fromUtf8(context->content.mid(
+                    auto pStr = QString::fromUtf8(content.mid(
                         ts_node_start_byte(params),
                         ts_node_end_byte(params) - ts_node_start_byte(params)));
                     sym.signature = QString("%1 %2%3").arg(sym.type, sym.name, pStr);
@@ -221,6 +228,10 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
     auto locker = QMutexLocker(&mutex);
     context->cachedSymbols = symbols;
     context->symbolsValid = true;
+    if (context->tree) {
+        ts_tree_delete(context->tree);
+        context->tree = nullptr;
+    }
     updateIndexForFile(fileName, symbols);
     return symbols;
 }
@@ -346,9 +357,10 @@ QString TreeSitterEngine::resolveParentScope(TSNode symbolNode, const QByteArray
 }
 
 void TreeSitterEngine::updateIndexForFile(const QString &fileName, const QList<Symbol> &symbols) {
+    auto fileId = internFileId(fileName);
     auto it = globalIndex.begin();
     while (it != globalIndex.end()) {
-        if (it.value().fileName == fileName) {
+        if (it.value().fileId == fileId) {
             it = globalIndex.erase(it);
         } else {
             ++it;
@@ -361,7 +373,8 @@ void TreeSitterEngine::updateIndexForFile(const QString &fileName, const QList<S
 
 QList<TreeSitterEngine::Symbol>
 TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const QString &prev,
-                                    const QString &sep, const QString &file, int line, int col) {
+                                    const QString &sep, const QString &file, int line, int col,
+                                    const QByteArray &fileContent) {
     auto locker = QMutexLocker(&mutex);
     auto results = QList<Symbol>{};
     auto otherProjectResults = QList<Symbol>{};
@@ -374,12 +387,27 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
         projectRoot = projectRoot.left(projectRoot.lastIndexOf('/'));
     }
 
+    auto fileId = file.isEmpty() ? quint64(0) : internFileId(file);
+
     auto prioritize = [&](const Symbol &sym) {
-        if (!file.isEmpty() && sym.fileName.startsWith(projectRoot)) {
+        if (!file.isEmpty() && fileNamePool.value(sym.fileId).startsWith(projectRoot)) {
             results.append(sym);
         } else {
             otherProjectResults.append(sym);
         }
+    };
+
+    // Re-parse fileContent on demand for cursor-based queries (tree is dropped after indexing).
+    auto parseTempTree = [&]() -> TSTree * {
+        if (fileContent.isEmpty() || !fileContexts.contains(file)) {
+            return nullptr;
+        }
+        auto lang = fileContexts[file]->language;
+        auto localParser = ts_parser_new();
+        ts_parser_set_language(localParser, lang);
+        auto *t = ts_parser_parse_string(localParser, nullptr, fileContent.data(), fileContent.size());
+        ts_parser_delete(localParser);
+        return t;
     };
 
     if (!sep.isEmpty() && !prev.isEmpty()) {
@@ -388,12 +416,15 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
         if (sep == "::") {
             type = prev;
         } else if (prev == "this" && fileContexts.contains(file)) {
-            auto isTop = true;
-            type = resolveParentScope(
-                ts_node_descendant_for_point_range(ts_tree_root_node(fileContexts[file]->tree),
-                                                   {(uint32_t)line, (uint32_t)col},
-                                                   {(uint32_t)line, (uint32_t)col}),
-                fileContexts[file]->content, isTop);
+            if (auto *tempTree = parseTempTree()) {
+                auto isTop = true;
+                type = resolveParentScope(
+                    ts_node_descendant_for_point_range(ts_tree_root_node(tempTree),
+                                                       {(uint32_t)line, (uint32_t)col},
+                                                       {(uint32_t)line, (uint32_t)col}),
+                    fileContent, isTop);
+                ts_tree_delete(tempTree);
+            }
             qDebug() << "TreeSitterEngine: resolved 'this' to type" << type;
         } else if (fileContexts.contains(file)) {
             auto const &cached = fileContexts[file]->cachedSymbols;
@@ -406,20 +437,23 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                          << type;
             }
             if (type.isEmpty()) {
-                auto isTop = true;
-                auto cls = resolveParentScope(
-                    ts_node_descendant_for_point_range(ts_tree_root_node(fileContexts[file]->tree),
-                                                       {(uint32_t)line, (uint32_t)col},
-                                                       {(uint32_t)line, (uint32_t)col}),
-                    fileContexts[file]->content, isTop);
-                auto itGlobal =
-                    std::find_if(globalIndex.begin(), globalIndex.end(), [&](const Symbol &s) {
-                        return s.parentName == cls && s.name == prev;
-                    });
-                if (itGlobal != globalIndex.end()) {
-                    type = itGlobal->type;
-                    qDebug() << "TreeSitterEngine: found class member" << prev << "with type"
-                             << type;
+                if (auto *tempTree = parseTempTree()) {
+                    auto isTop = true;
+                    auto cls = resolveParentScope(
+                        ts_node_descendant_for_point_range(ts_tree_root_node(tempTree),
+                                                           {(uint32_t)line, (uint32_t)col},
+                                                           {(uint32_t)line, (uint32_t)col}),
+                        fileContent, isTop);
+                    ts_tree_delete(tempTree);
+                    auto itGlobal =
+                        std::find_if(globalIndex.begin(), globalIndex.end(), [&](const Symbol &s) {
+                            return s.parentName == cls && s.name == prev;
+                        });
+                    if (itGlobal != globalIndex.end()) {
+                        type = itGlobal->type;
+                        qDebug() << "TreeSitterEngine: found class member" << prev << "with type"
+                                 << type;
+                    }
                 }
             }
         }
@@ -504,10 +538,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
     return results.isEmpty() ? otherProjectResults : results;
 }
 
-QList<QString> TreeSitterEngine::getTrackedFiles() const {
-    auto locker = QMutexLocker(&mutex);
-    return fileContexts.keys();
-}
 
 bool TreeSitterEngine::isFunctionOrBlock(std::string_view type) {
     return type == TSNodeTypes::FunctionDefinition || type == TSNodeTypes::LambdaExpression ||
