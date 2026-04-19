@@ -176,20 +176,6 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="layoutWidget">
-      <layout class="QVBoxLayout" name="editorLayout">
-       <item>
-        <widget class="QLabel" name="modifiedFileNameLabel">
-         <property name="text">
-          <string>Content</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPlainTextEdit" name="modifiedFileContents"/>
-       </item>
-      </layout>
-     </widget>
     </widget>
    </item>
   </layout>
