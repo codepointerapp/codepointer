@@ -164,6 +164,7 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     auto delegate = new CommitDelegate(form->listView);
     form->listView->setItemDelegate(delegate);
     form->listView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    connect(form->listView, &QAbstractItemView::activated, this, &GitPlugin::on_gitCommitClicked);
     connect(form->listView, &QAbstractItemView::clicked, this, &GitPlugin::on_gitCommitClicked);
     connect(form->listView, &QAbstractItemView::doubleClicked, this,
             &GitPlugin::on_gitCommitDoubleClicked);
