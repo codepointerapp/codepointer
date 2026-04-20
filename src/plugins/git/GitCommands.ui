@@ -40,6 +40,9 @@
     <widget class="QListView" name="listView"/>
    </item>
    <item>
+    <widget class="LoadingWidget" name="gitLoading" native="true"/>
+   </item>
+   <item>
     <widget class="QStackedWidget" name="container">
      <property name="sizePolicy">
       <sizepolicy hsizetype="MinimumExpanding" vsizetype="Minimum">
@@ -149,6 +152,14 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LoadingWidget</class>
+   <extends>QWidget</extends>
+   <header>widgets/LoadingWidget.hpp</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

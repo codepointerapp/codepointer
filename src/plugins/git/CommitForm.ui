@@ -172,6 +172,9 @@
         </widget>
        </item>
        <item>
+        <widget class="LoadingWidget" name="diffLoading" native="true"/>
+       </item>
+       <item>
         <widget class="QPlainTextEdit" name="diffPreview"/>
        </item>
       </layout>
@@ -180,6 +183,14 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LoadingWidget</class>
+   <extends>QWidget</extends>
+   <header>widgets/LoadingWidget.hpp</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections>
   <connection>

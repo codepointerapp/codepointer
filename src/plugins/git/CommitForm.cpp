@@ -411,10 +411,12 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
 
     switch (status) {
     case GitFileStatus::Modified: {
+        ui->diffLoading->start();
         ui->diffLabel->setText("git diff");
         git->runGit({"-C", repoRoot, "diff", filename})
             .then(this, [this, updateEditor](const std::tuple<QString, int> &res) {
                 auto [output2, exitCode] = res;
+                ui->diffLoading->stop();
                 if (exitCode != 0) {
                     qDebug() << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output2);
                     ui->commitLogLabel->setText("");
