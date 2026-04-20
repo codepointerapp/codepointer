@@ -68,8 +68,8 @@
 auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
 auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
 
-auto static getCorrespondingFile(PluginManager *manager, const QString &fileName)
-    -> QFuture<QString> {
+auto static getCorrespondingFile(PluginManager *manager,
+                                 const QString &fileName) -> QFuture<QString> {
 
     // First - choose easy solution, file aside the original one
     auto fileInfo = QFileInfo(fileName);
@@ -191,7 +191,6 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
         auto const columnNumber = tag[GlobalArguments::ColumnNumber].toInt();
 
-
         auto address = rawAddress;
         if (address.startsWith(START_MARKER) && address.endsWith(END_MARKER) &&
             address.length() > MIN_LENGTH) {
@@ -214,7 +213,10 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         auto simpleFileName = fi.fileName();
         auto title = QString();
         if (lineNumber > 0) {
-            title = QString("%1:%2 - %3 %4").arg(simpleFileName).arg(lineNumber).arg(fieldType, fieldValue);
+            title = QString("%1:%2 - %3 %4")
+                        .arg(simpleFileName)
+                        .arg(lineNumber)
+                        .arg(fieldType, fieldValue);
         } else {
             title = QString("%1 - %2 %3").arg(simpleFileName, fieldType, fieldValue);
         }
@@ -1709,7 +1711,7 @@ QFuture<void> qmdiEditor::reformatContent() {
 
                 switch (exitCode) {
                 case GlobalResults::ExecutableNotFound:
-                    this->displayBannerMessage(processStderr, 15);
+                    // this->displayBannerMessage(processStderr, 15);
                     break;
                 case GlobalResults::ExecutableError:
                     this->displayBannerMessage(processStderr, 25);
