@@ -8,7 +8,7 @@
 extern "C" const TSLanguage *tree_sitter_cpp();
 extern "C" const TSLanguage *tree_sitter_c();
 
-TreeSitterEngine::TreeSitterEngine()  {}
+TreeSitterEngine::TreeSitterEngine() {}
 
 TreeSitterEngine::~TreeSitterEngine() {}
 
@@ -55,7 +55,8 @@ void TreeSitterEngine::updateFile(const QString &fileName, const QByteArray &con
 
     if (!newTree) {
         if (cancelFlag.load(std::memory_order_relaxed)) {
-            qDebug() << "TreeSitterEngine: cancelled while parsing" << QFileInfo(fileName).fileName();
+            qDebug() << "TreeSitterEngine: cancelled while parsing"
+                     << QFileInfo(fileName).fileName();
         }
         return;
     }
@@ -67,9 +68,8 @@ void TreeSitterEngine::updateFile(const QString &fileName, const QByteArray &con
     fileContexts[fileName] = context;
 }
 
-
 QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &fileName,
-                                                              const QByteArray &content) {
+                                                             const QByteArray &content) {
     auto context = std::shared_ptr<FileContext>{};
     auto fileId = quint64{};
     {
@@ -239,9 +239,9 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                     }
                 }
                 if (params.id) {
-                    auto pStr = QString::fromUtf8(content.mid(
-                        ts_node_start_byte(params),
-                        ts_node_end_byte(params) - ts_node_start_byte(params)));
+                    auto pStr = QString::fromUtf8(
+                        content.mid(ts_node_start_byte(params),
+                                    ts_node_end_byte(params) - ts_node_start_byte(params)));
                     sym.signature = QString("%1 %2%3").arg(sym.type, sym.name, pStr);
                 }
             }
@@ -428,7 +428,8 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
         auto lang = fileContexts[file]->language;
         auto localParser = ts_parser_new();
         ts_parser_set_language(localParser, lang);
-        auto *t = ts_parser_parse_string(localParser, nullptr, fileContent.data(), fileContent.size());
+        auto *t =
+            ts_parser_parse_string(localParser, nullptr, fileContent.data(), fileContent.size());
         ts_parser_delete(localParser);
         return t;
     };
@@ -561,7 +562,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
 
     return results.isEmpty() ? otherProjectResults : results;
 }
-
 
 bool TreeSitterEngine::isFunctionOrBlock(std::string_view type) {
     return type == TSNodeTypes::FunctionDefinition || type == TSNodeTypes::LambdaExpression ||

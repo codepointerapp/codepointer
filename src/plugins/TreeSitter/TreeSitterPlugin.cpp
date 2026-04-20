@@ -191,8 +191,8 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
                 const bool isHeader = TreeSitterEngine::isHeaderFile(filePath);
                 const qint64 maxFileSize = isHeader ? 2 * 1024 * 1024 : 512 * 1024;
                 if (f.size() > maxFileSize) {
-                    qDebug() << "TreeSitterPlugin: skipping large file"
-                             << filePath << "(" << f.size() / 1024 << "KB)";
+                    qDebug() << "TreeSitterPlugin: skipping large file" << filePath << "("
+                             << f.size() / 1024 << "KB)";
                     processedCount.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
@@ -264,7 +264,8 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
         qDebug() << "TreeSitterPlugin:" << projectLabel << "- Found" << totalClasses.load()
                  << "classes/structs and" << totalFunctions.load() << "functions;"
                  << "wall:" << wallMs << "ms cpu:" << cpuMs << "ms"
-                 << QString("(%1x vs sequential)").arg(cpuMs > 0 ? double(cpuMs) / wallMs : 1.0, 0, 'f', 1)
+                 << QString("(%1x vs sequential)")
+                        .arg(cpuMs > 0 ? double(cpuMs) / wallMs : 1.0, 0, 'f', 1)
                  << "; slowest file" << slowestMs.load() << "ms:" << slowestFile;
         return CommandArgs{};
     });
