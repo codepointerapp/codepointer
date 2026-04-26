@@ -627,8 +627,8 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                                     auto typeNode =
                                         ts_node_child_by_field_name(n, TSFieldNames::Type, 4);
                                     cur = extractNameFromNode(typeNode, fileContent);
-                                    qDebug() << "TreeSitterEngine: resolved file-local alias"
-                                             << st << "->" << cur;
+                                    qDebug() << "TreeSitterEngine: resolved file-local alias" << st
+                                             << "->" << cur;
                                     break;
                                 }
                             }
@@ -684,10 +684,10 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                                             auto sym = Symbol{};
                                             sym.name = fieldName;
                                             sym.parentName = className;
-                                            sym.type = extractNameFromNode(
-                                                ts_node_child_by_field_name(bn, TSFieldNames::Type,
-                                                                            4),
-                                                fileContent);
+                                            sym.type =
+                                                extractNameFromNode(ts_node_child_by_field_name(
+                                                                        bn, TSFieldNames::Type, 4),
+                                                                    fileContent);
                                             sym.line = ts_node_start_point(bn).row;
                                             sym.column = ts_node_start_point(bn).column;
                                             sym.isDefinition = true;
