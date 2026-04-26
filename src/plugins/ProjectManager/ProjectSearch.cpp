@@ -228,7 +228,7 @@ ProjectSearch::ProjectSearch(QWidget *parent, ProjectBuildModel *m)
         }
         auto fileName = parent->text(2);
         auto line = item->text(1).toInt() - 1;
-        host->openFile(fileName, line);
+        host->openFile(fileName, 0, line);
         auto w = dynamic_cast<QWidget *>(host->currentClient());
         if (w) {
             w->setFocus();

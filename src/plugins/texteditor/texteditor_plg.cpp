@@ -480,8 +480,6 @@ qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, in
         auto f = editor->font();
         f.setPointSize(zoom);
         editor->setFont(f);
-    } else {
-        // Commands non i
     }
 
     auto langInfo = ::Qutepart::chooseLanguage({}, {}, fileName);
@@ -496,8 +494,11 @@ qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, in
     editor->setPreviewEnabled(canOpenPreview);
     editor->setPreviewVisible(canOpenPreview && shouldAutoPreview);
     editor->setHistoryModel(historyModel);
-    editor->goTo(x, y);
     mdiServer->addClient(editor);
+    if (x >= 0 || y >= 0) {
+        editor->loadContent(true);
+        editor->goTo(x, y);
+    }
     return editor;
 }
 
