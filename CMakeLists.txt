@@ -288,3 +288,9 @@ else()
     install(FILES org.codepointerapp.codepointer.appdata.xml
             DESTINATION share/metainfo)
 endif()
+
+option(CODEPOINTER_BUILD_TESTS "Build unit tests" OFF)
+if(CODEPOINTER_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(src/plugins/TreeSitter/tests)
+endif()

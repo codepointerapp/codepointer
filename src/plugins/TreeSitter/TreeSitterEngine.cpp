@@ -182,10 +182,12 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                     ts_node_child_by_field_name(p, TSFieldNames::Name, 4), content);
             }
         } else if (isTypeAlias(symbolType)) {
-            auto nameField = (symbolType == TSNodeTypes::AliasDeclaration)
-                                 ? TSFieldNames::Name
-                                 : TSFieldNames::Declarator;
-            nameNodes.append(ts_node_child_by_field_name(symbolNode, nameField, 10));
+            if (symbolType == TSNodeTypes::AliasDeclaration) {
+                nameNodes.append(ts_node_child_by_field_name(symbolNode, TSFieldNames::Name, 4));
+            } else {
+                nameNodes.append(
+                    ts_node_child_by_field_name(symbolNode, TSFieldNames::Declarator, 10));
+            }
             typeName = extractNameFromNode(
                 ts_node_child_by_field_name(symbolNode, TSFieldNames::Type, 4), content);
         } else {
@@ -461,6 +463,49 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                 qDebug() << "TreeSitterEngine: found local declaration of" << prev << "with type"
                          << type;
             }
+            // Scan the current file's AST for a local variable or parameter declaration
+            // with name `prev` at or before the cursor.  Locals shadow class members, so
+            // this runs before the class-member fallback below.
+            if (type.isEmpty()) {
+                if (auto *tempTree = parseTempTree()) {
+                    auto root = ts_tree_root_node(tempTree);
+                    auto stack = QList<TSNode>{root};
+                    auto bestLine = -1;
+                    while (!stack.isEmpty()) {
+                        auto n = stack.takeFirst();
+                        if (!n.id) {
+                            continue;
+                        }
+                        auto const nt = std::string_view(ts_node_type(n));
+                        if (nt == TSNodeTypes::Declaration ||
+                            nt == TSNodeTypes::ParameterDeclaration) {
+                            auto startRow = (int)ts_node_start_point(n).row;
+                            if (startRow <= line && startRow > bestLine) {
+                                auto declNode =
+                                    ts_node_child_by_field_name(n, TSFieldNames::Declarator, 10);
+                                if (extractNameFromNode(declNode, fileContent) == prev) {
+                                    auto typeNode =
+                                        ts_node_child_by_field_name(n, TSFieldNames::Type, 4);
+                                    auto candidateType = extractNameFromNode(typeNode, fileContent);
+                                    if (!candidateType.isEmpty()) {
+                                        type = candidateType;
+                                        bestLine = startRow;
+                                    }
+                                }
+                            }
+                        }
+                        for (auto j = 0u; j < ts_node_child_count(n); ++j) {
+                            stack.append(ts_node_child(n, j));
+                        }
+                    }
+                    ts_tree_delete(tempTree);
+                    if (!type.isEmpty()) {
+                        qDebug() << "TreeSitterEngine: resolved local var" << prev << "to type"
+                                 << type;
+                    }
+                }
+            }
+            // Last resort: look for a class member with this name in the enclosing class.
             if (type.isEmpty()) {
                 if (auto *tempTree = parseTempTree()) {
                     auto isTop = true;
@@ -483,6 +528,7 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
             }
         }
 
+        auto lastSt = QString{};
         if (!type.isEmpty()) {
             auto visited = QSet<QString>{};
             auto cur = type;
@@ -507,8 +553,18 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                 }
 
                 auto st = cur;
+                lastSt = st;
                 auto sStart = st.indexOf('<');
+                auto templateArg = QString{};
                 if (sStart != -1) {
+                    auto sEnd = st.lastIndexOf('>');
+                    if (sEnd > sStart) {
+                        templateArg = st.mid(sStart + 1, sEnd - sStart - 1).trimmed();
+                        auto commaPos = templateArg.indexOf(',');
+                        if (commaPos != -1) {
+                            templateArg = templateArg.left(commaPos).trimmed();
+                        }
+                    }
                     st = st.left(sStart).trimmed();
                 }
 
@@ -541,8 +597,123 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                         break;
                     }
                 }
+
+                // If no alias was found but the type had template arguments (e.g.
+                // std::shared_ptr<ImageData>), follow the first template argument so
+                // that members of the inner type are visible for completion.
+                if (cur.isEmpty() && !templateArg.isEmpty()) {
+                    cur = templateArg;
+                    qDebug() << "TreeSitterEngine: following template arg" << templateArg;
+                }
+
+                // Last resort: look for a type alias with name `st` in the current
+                // file's AST.  This handles aliases defined in source files that are
+                // intentionally excluded from the global index (e.g. `using Icon = …`
+                // inside a .cpp file).
+                if (cur.isEmpty()) {
+                    if (auto *tempTree = parseTempTree()) {
+                        auto root = ts_tree_root_node(tempTree);
+                        auto astStack = QList<TSNode>{root};
+                        while (!astStack.isEmpty()) {
+                            auto n = astStack.takeFirst();
+                            if (!n.id) {
+                                continue;
+                            }
+                            auto const nt = std::string_view(ts_node_type(n));
+                            if (nt == TSNodeTypes::AliasDeclaration) {
+                                auto nameNode =
+                                    ts_node_child_by_field_name(n, TSFieldNames::Name, 4);
+                                if (extractNameFromNode(nameNode, fileContent) == st) {
+                                    auto typeNode =
+                                        ts_node_child_by_field_name(n, TSFieldNames::Type, 4);
+                                    cur = extractNameFromNode(typeNode, fileContent);
+                                    qDebug() << "TreeSitterEngine: resolved file-local alias"
+                                             << st << "->" << cur;
+                                    break;
+                                }
+                            }
+                            for (auto j = 0u; j < ts_node_child_count(n); ++j) {
+                                astStack.append(ts_node_child(n, j));
+                            }
+                        }
+                        ts_tree_delete(tempTree);
+                    }
+                }
             }
         }
+
+        // If the global index had no members for the resolved type (e.g. a struct defined
+        // only in a .cpp file that the light query never indexes), search the current
+        // file's AST directly for the struct/class definition and yield its fields.
+        if (results.isEmpty() && otherProjectResults.isEmpty() && !lastSt.isEmpty()) {
+            if (auto *tempTree = parseTempTree()) {
+                auto root = ts_tree_root_node(tempTree);
+                auto stack = QList<TSNode>{root};
+                while (!stack.isEmpty()) {
+                    auto n = stack.takeFirst();
+                    if (!n.id) {
+                        continue;
+                    }
+                    auto const nt = std::string_view(ts_node_type(n));
+                    if (isScopeContainer(nt)) {
+                        auto nameNode = ts_node_child_by_field_name(n, TSFieldNames::Name, 4);
+                        auto className = extractNameFromNode(nameNode, fileContent);
+                        auto unqualified = lastSt;
+                        auto nsPos = unqualified.lastIndexOf("::");
+                        if (nsPos != -1) {
+                            unqualified = unqualified.mid(nsPos + 2);
+                        }
+                        if (className == lastSt || className == unqualified) {
+                            auto bodyStack = QList<TSNode>{n};
+                            while (!bodyStack.isEmpty()) {
+                                auto bn = bodyStack.takeFirst();
+                                if (!bn.id) {
+                                    continue;
+                                }
+                                if (std::string_view(ts_node_type(bn)) ==
+                                    TSNodeTypes::FieldDeclaration) {
+                                    auto declNode = ts_node_child_by_field_name(
+                                        bn, TSFieldNames::Declarator, 10);
+                                    auto fieldName = extractNameFromNode(declNode, fileContent);
+                                    if (!fieldName.isEmpty()) {
+                                        bool match =
+                                            exactMatch
+                                                ? fieldName == name
+                                                : fieldName.startsWith(name, Qt::CaseInsensitive);
+                                        if (match) {
+                                            auto sym = Symbol{};
+                                            sym.name = fieldName;
+                                            sym.parentName = className;
+                                            sym.type = extractNameFromNode(
+                                                ts_node_child_by_field_name(bn, TSFieldNames::Type,
+                                                                            4),
+                                                fileContent);
+                                            sym.line = ts_node_start_point(bn).row;
+                                            sym.column = ts_node_start_point(bn).column;
+                                            sym.isDefinition = true;
+                                            results.append(sym);
+                                        }
+                                    }
+                                }
+                                for (auto j = 0u; j < ts_node_child_count(bn); ++j) {
+                                    bodyStack.append(ts_node_child(bn, j));
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    for (auto j = 0u; j < ts_node_child_count(n); ++j) {
+                        stack.append(ts_node_child(n, j));
+                    }
+                }
+                ts_tree_delete(tempTree);
+                if (!results.isEmpty()) {
+                    qDebug() << "TreeSitterEngine: found" << results.size()
+                             << "members in temp tree for" << lastSt;
+                }
+            }
+        }
+
         if (!results.isEmpty() || !otherProjectResults.isEmpty()) {
             auto const &finalRes = results.isEmpty() ? otherProjectResults : results;
             qDebug() << "TreeSitterEngine: found" << finalRes.size() << "members for" << prev;
