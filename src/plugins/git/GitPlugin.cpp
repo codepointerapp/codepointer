@@ -201,7 +201,7 @@ qmdiClient *GitPlugin::openFile(const QString &fileName, int, int, int) {
     auto manager = getManager();
     auto commitForm = new CommitForm(repoDir, this, manager);
     mdiServer->addClient(commitForm);
-    return nullptr;
+    return commitForm;
 }
 
 void GitPlugin::logFileHandler() {
@@ -418,14 +418,14 @@ void GitPlugin::commitHandler() {
         return;
     }
 
-    detectRepoRoot(filename).then(this, [this, manager](const std::tuple<QString, int> &res) {
+    detectRepoRoot(filename).then(this, [manager](const std::tuple<QString, int> &res) {
         auto [repoRoot, exitCode] = res;
         if (exitCode != 0 || repoRoot.isEmpty()) {
             qDebug() << "Filename is not in any git repo";
             return;
         }
-        auto commitForm = new CommitForm(repoRoot, this, manager);
-        mdiServer->addClient(commitForm);
+        auto url = QString("git:" + repoRoot);
+        manager->openFile(url);
     });
 }
 
