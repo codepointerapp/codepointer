@@ -8,10 +8,10 @@
             "mandatory": true
         },
         "windows-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.4-beta1",
-            "latest-version": "0.1.4-beta1",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.4-beta1/codepointer-v0.1.4-beta1-x86_64.exe",
-            "changelog": "Better completions for C/C++ using treesitter",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.4-rc1",
+            "latest-version": "0.1.4-rc1",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.4-rc1/codepointer-v0.1.4-rc1-x86_64.exe",
+            "changelog": "Better completions for C/C++ using treesitter, commit page updates",
             "mandatory": true
         },
         "linux": {
@@ -22,10 +22,10 @@
             "mandatory": true
         },
         "linux-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.4-beta1",
-            "latest-version": "0.1.4-beta1",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.4-beta1/codepointer-v0.1.4-beta1-x86_64.AppImage",
-            "changelog": "Better completions for C/C++ using treesitter",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.4-rc1",
+            "latest-version": "0.1.4-rc1",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.4-rc1/codepointer-v0.1.4-rc1-x86_64.AppImage",
+            "changelog": "Better completions for C/C++ using treesitter, commit page updates",
             "mandatory": true
         }
     }

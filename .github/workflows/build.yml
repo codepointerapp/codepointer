@@ -50,7 +50,7 @@ jobs:
             cxx: "clang++"
 
         qt_version:
-          - "6.11.0"
+          - "6.10.2"
         include:
           - generators: "Ninja"
           - build_type: "Release"
