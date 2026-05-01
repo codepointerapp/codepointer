@@ -506,7 +506,7 @@ qmdiClient *TextEditorPlugin::navigateFile(qmdiClient *client, int x, int y, int
     Q_UNUSED(z);
     auto *editor = dynamic_cast<qmdiEditor *>(client);
     if (editor) {
-        editor->goTo(x, y);
+        editor->goTo(y, x);
     }
     return editor;
 }

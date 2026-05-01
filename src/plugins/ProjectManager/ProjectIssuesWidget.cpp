@@ -224,7 +224,7 @@ ProjectIssuesWidget::ProjectIssuesWidget(PluginManager *parent)
         auto item = this->model->getItem(index);
         if (!item.fileName.isEmpty()) {
             this->manager->openFile(QDir::toNativeSeparators(item.fileName), item.row, item.col);
-            this->manager->openFile("projectmanager:scrolloutput", item.lineNumber);
+            this->manager->openFile("projectmanager:scrolloutput", 0, item.lineNumber);
         }
     });
 
