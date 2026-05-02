@@ -62,8 +62,8 @@ else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
 
-    CPMAddPackage("gh:diegoiast/qmdilib#1cd56fd0a955ca59e86f4834f3019639f9c22808")
-    CPMAddPackage("gh:diegoiast/qutepart-cpp#eec2e9ae5b50b591f017296ee743ee2860a280e4")
+    CPMAddPackage("gh:diegoiast/qmdilib#47737966ce1a45c23c51e78a2fa966cae6b88601")
+    CPMAddPackage("gh:diegoiast/qutepart-cpp#9767e876b2db17cacc9968065a3b2948b2094391")
     CPMAddPackage("gh:diegoiast/command-palette-widget#69eb447b61c9d042394a1404c71a0d0b54ac28c0")
     CPMAddPackage("gh:diegoiast/KodoTerm#9d016815076a451ad639fa021d46602585e91247")
     CPMAddPackage("gh:palacaze/image-viewer#125ea784f93327b471cd9b6b156285e40e70280a")
@@ -78,6 +78,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+# FIXME: the plugin-demo framework (iplugin, pluginmanager, filesystembrowser)
+# should be a proper exported target inside qmdilib, not demo source files
+# compiled directly into consumers. Move them out of demos/ into qmdilib's
+# library so they can be consumed via target_link_libraries without needing
+# ${qmdilib_SOURCE_DIR}.
 set(codepointer_sources
     ${qmdilib_SOURCE_DIR}/demos/common/common.qrc
     ${qmdilib_SOURCE_DIR}/demos/plugin-demo/iplugin.cpp
@@ -91,9 +96,6 @@ set(codepointer_sources
     ${qmdilib_SOURCE_DIR}/demos/plugin-demo/plugins/filesystem/filesystembrowser.h
     ${qmdilib_SOURCE_DIR}/demos/plugin-demo/plugins/filesystem/filesystemwidget.cpp
     ${qmdilib_SOURCE_DIR}/demos/plugin-demo/plugins/filesystem/filesystemwidget.h
-    ${qutepart_SOURCE_DIR}/qutepart-syntax-files.qrc
-    ${qutepart_SOURCE_DIR}/qutepart-theme-data.qrc
-
     src/widgets/bannermessage.ui
     src/widgets/bannerwidget.cpp
     src/widgets/bannerwidget.h
@@ -226,9 +228,10 @@ else()
     target_compile_definitions(codepointer PRIVATE -DBUILD_OFFICIAL)
 endif()
 
+# FIXME: ${qmdilib_SOURCE_DIR}/demos/plugin-demo should not be needed here.
+# Once the plugin-demo framework is a proper qmdilib target this line goes away.
 target_include_directories(codepointer PUBLIC
     ${qmdilib_SOURCE_DIR}/demos/plugin-demo
-    ${qutepart_SOURCE_DIR}/include
     src/plugins/TreeSitter/tree-sitter/lib/include
     src
 )
