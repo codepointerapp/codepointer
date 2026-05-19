@@ -1124,9 +1124,9 @@ bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
                     if (pluginManager) {
                         // Lines start on the editor from 0
                         if (l.newLine >= 0) {
-                            pluginManager->openFile(l.file, l.newLine - 1);
+                            pluginManager->openFile(l.file, 0, l.newLine - 1);
                         } else {
-                            pluginManager->openFile(l.file, l.oldLine - 1);
+                            pluginManager->openFile(l.file, 0, l.oldLine - 1);
                         }
                     } else {
                         qDebug() << "qmdiEditor::eventFilter - cannot open file from diff/patch";

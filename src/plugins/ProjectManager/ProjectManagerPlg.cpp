@@ -504,7 +504,7 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
                         }
                     }
                 }
-                getManager()->openFile(fileName, row, col);
+                getManager()->openFile(fileName, col, row);
             });
 
     connect(outputPanel->clearOutput, &QAbstractButton::clicked, this,
