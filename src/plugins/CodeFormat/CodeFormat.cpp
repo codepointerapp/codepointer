@@ -250,19 +250,20 @@ QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const 
             return result;
         }
 
+        // Always drain both channels to prevent pipe-buffer stalls on subsequent runs.
+        auto stdoutData = proc.readAllStandardOutput();
+        auto stderrData = proc.readAllStandardError();
         if (proc.exitCode() != 0) {
-            auto processStderr = proc.readAllStandardError();
             qDebug() << "CodeFormatPlugin:" << indenter->binary << "code:" << proc.exitCode();
-            qDebug() << "CodeFormatPlugin stderr:" << processStderr;
+            qDebug() << "CodeFormatPlugin stderr:" << stderrData;
             result[GlobalArguments::ExitCode] = proc.exitCode();
-            result[GlobalArguments::ErrorMessage] = processStderr;
+            result[GlobalArguments::ErrorMessage] = stderrData;
             return result;
         }
 
         if (indenter->processStdout) {
-            auto out = proc.readAllStandardOutput();
-            if (!out.isEmpty()) {
-                result[GlobalArguments::Content] = QString::fromUtf8(out);
+            if (!stdoutData.isEmpty()) {
+                result[GlobalArguments::Content] = QString::fromUtf8(stdoutData);
                 return result;
             } else {
                 qDebug() << "CodeFormatPlugin: stdout is empty for" << indenter->binary;
