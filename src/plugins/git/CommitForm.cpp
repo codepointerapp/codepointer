@@ -354,6 +354,17 @@ CommitForm::~CommitForm() { delete ui; }
 
 QString CommitForm::mdiClientFileName() { return QString("git:%1").arg(repoRoot); }
 
+bool CommitForm::event(QEvent *e) {
+    switch (e->type()) {
+    case QEvent::Show:
+        updateGitStatus();
+        break;
+    default:
+        break;
+    }
+    return QWidget::event(e);
+}
+
 void CommitForm::keyPressEvent(QKeyEvent *event) {
 #if 0
     Commenting this out. I am not giving this up, but I think that for now hiding the bottom

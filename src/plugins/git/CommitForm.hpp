@@ -22,6 +22,7 @@ class CommitForm : public QWidget, public qmdiClient {
     virtual QString mdiClientFileName() override;
 
   protected:
+    bool event(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 
   public slots:
