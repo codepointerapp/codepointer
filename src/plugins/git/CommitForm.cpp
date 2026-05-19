@@ -1,5 +1,6 @@
 #include <QAbstractListModel>
 #include <QAbstractTableModel>
+#include <QDir>
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QTemporaryFile>
@@ -413,6 +414,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     case GitFileStatus::Modified: {
         ui->diffLoading->start();
         ui->diffLabel->setText("git diff");
+        ui->revertCurrentButton->setText(tr("Revert current"));
         git->runGit({"-C", repoRoot, "diff", filename})
             .then(this, [this, updateEditor](const std::tuple<QString, int> &res) {
                 auto [output2, exitCode] = res;
@@ -429,6 +431,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     }
     case GitFileStatus::Deleted:
         ui->diffLabel->setText(tr("Deleted"));
+        ui->revertCurrentButton->setText(tr("Revert current"));
         updateEditor("", highlighter);
         break;
     case GitFileStatus::Added:
@@ -467,6 +470,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         if (langInfo.isValid()) {
             highlighter = langInfo.id;
         }
+        ui->revertCurrentButton->setText(tr("Delete"));
         ui->diffLabel->setText(tr("Content"));
         updateEditor(output, highlighter);
         break;
@@ -480,10 +484,18 @@ void CommitForm::revertCurrentImpl() {
     auto selected = ui->tableView->currentIndex();
     auto idx = model->index(selected.row(), 2);
     auto fileName = model->data(idx, Qt::DisplayRole).toString();
+    auto status =
+        static_cast<GitFileStatus>(model->data(idx, GitStatusTableModel::StatusRole).toInt());
 
     auto msgBox = QMessageBox();
     msgBox.setWindowTitle("Revert file");
-    msgBox.setText(tr("Are you sure you want to revert this file?<br><br><b>%1</b>").arg(fileName));
+    if (status == GitFileStatus::Modified) {
+        msgBox.setText(
+            tr("Are you sure you want to revert this file?<br><br><b>%1</b>").arg(fileName));
+    } else {
+        msgBox.setText(
+            tr("Are you sure you want to delete this file?<br><br><b>%1</b>").arg(fileName));
+    }
     msgBox.setTextFormat(Qt::RichText);
     msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     msgBox.setDefaultButton(QMessageBox::No);
@@ -493,14 +505,21 @@ void CommitForm::revertCurrentImpl() {
         return;
     }
 
-    auto args = QStringList{"-C", repoRoot, "checkout", fileName};
-    git->runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
-        auto [output, exitCode] = res;
-        ui->gitOutput->setText(output.trimmed());
-        if (exitCode == 0) {
-            updateGitStatus();
+    if (status == GitFileStatus::Modified) {
+        auto args = QStringList{"-C", repoRoot, "checkout", fileName};
+        git->runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
+            auto [output, exitCode] = res;
+            ui->gitOutput->setText(output.trimmed());
+        });
+    } else {
+        auto fullPath = QDir(repoRoot).filePath(fileName);
+        if (QFile::remove(fullPath)) {
+            ui->gitOutput->setText(tr("Deleted %1").arg(fileName));
+        } else {
+            ui->gitOutput->setText(tr("Failed deleting %1").arg(fileName));
         }
-    });
+    }
+    updateGitStatus();
 }
 
 void CommitForm::revertSelectionImpl() {
