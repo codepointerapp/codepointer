@@ -1,4 +1,4 @@
-**Full Changelog**: <https://github.com/diegoiast/codepointer/codepointer/v0.1.3...v0.1.4>
+**Full Changelog**: <https://github.com/codepointerapp/codepointer/compare/v0.1.3...v0.1.4>
 
 # May 2026 - release v0.1.4 - Fist my bump
 
