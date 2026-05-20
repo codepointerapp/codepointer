@@ -1261,11 +1261,56 @@ QFuture<CommandArgs> qmdiEditor::getCommandForLocation(const QPoint &localPositi
     }
 
     auto symbol = cursor.selectedText();
+    int lineNumber = cursor.blockNumber();
+    int columnNumber = cursor.selectionStart() - cursor.block().position();
+
+    QString previousWord;
+    QString separator;
+
+    auto contextCursor = cursor;
+    contextCursor.setPosition(cursor.selectionStart());
+
+    // Check for "->" or "::" or "."
+    contextCursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, 2);
+    auto twoChar = contextCursor.selectedText();
+    if (twoChar == "->" || twoChar == "::") {
+        separator = twoChar;
+    } else {
+        contextCursor.setPosition(cursor.selectionStart());
+        contextCursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, 1);
+        auto oneChar = contextCursor.selectedText();
+        if (oneChar == "." || oneChar == ":") {
+            separator = oneChar;
+        }
+    }
+
+    if (!separator.isEmpty()) {
+        contextCursor.setPosition(cursor.selectionStart() - separator.length());
+
+        // Skip whitespace
+        while (contextCursor.position() > contextCursor.block().position() &&
+               contextCursor.document()->characterAt(contextCursor.position() - 1).isSpace()) {
+            contextCursor.movePosition(QTextCursor::Left);
+        }
+
+        auto endOfPrevWord = contextCursor.position();
+        contextCursor.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor);
+        contextCursor.select(QTextCursor::WordUnderCursor);
+        if (contextCursor.selectionEnd() == endOfPrevWord) {
+            previousWord = contextCursor.selectedText();
+        }
+    }
+
     // clang-format off
     auto res = pluginManager->handleCommandAsync(cmd, {
         {GlobalArguments::RequestedSymbol, symbol },
         {GlobalArguments::FileName, mdiClientFileName() },
         {GlobalArguments::ExactMatch, true },
+        {GlobalArguments::LineNumber, lineNumber },
+        {GlobalArguments::ColumnNumber, columnNumber },
+        {GlobalArguments::Content, textEditor->toPlainText() },
+        {GlobalArguments::PreviousWord, previousWord },
+        {GlobalArguments::Separator, separator },
     });
     // clang-format on
     return res;

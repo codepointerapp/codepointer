@@ -338,9 +338,18 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
     } else if (command == GlobalCommands::KeywordTooltip) {
         auto filename = args[GlobalArguments::FileName].toString();
         auto symbol = args[GlobalArguments::RequestedSymbol].toString();
+        auto content = args[GlobalArguments::Content].toByteArray();
+        auto line = args[GlobalArguments::LineNumber].toInt();
+        auto col = args[GlobalArguments::ColumnNumber].toInt();
+        auto prev = args[GlobalArguments::PreviousWord].toString();
+        auto sep = args[GlobalArguments::Separator].toString();
+
+        if (!content.isEmpty() && !filename.isEmpty()) {
+            engine.updateFile(filename, content);
+        }
 
         QString tooltip;
-        auto symbols = engine.findSymbolsGlobal(symbol, true);
+        auto symbols = engine.findSymbolsGlobal(symbol, true, prev, sep, filename, line, col, content);
 
         QList<TreeSitterEngine::Symbol> definitions;
         for (const auto &sym : symbols) {
