@@ -382,7 +382,7 @@ QString TreeSitterEngine::resolveAutoType(TSNode nameNode, const QString &baseTy
 }
 
 QString TreeSitterEngine::resolveParentScope(TSNode symbolNode, const QByteArray &content,
-                                              bool &isTopLevel) {
+                                             bool &isTopLevel) {
     auto parents = QStringList{};
     isTopLevel = true;
     auto current = ts_node_parent(symbolNode);
@@ -467,7 +467,8 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                 if (nt == TSNodeTypes::Declaration || nt == TSNodeTypes::ParameterDeclaration) {
                     auto startRow = (int)ts_node_start_point(n).row;
                     if (startRow <= line && startRow > bestLine) {
-                        auto declNode = ts_node_child_by_field_name(n, TSFieldNames::Declarator, 10);
+                        auto declNode =
+                            ts_node_child_by_field_name(n, TSFieldNames::Declarator, 10);
                         auto nodeName = extractNameFromNode(declNode, fileContent);
                         bool match = exactMatch ? nodeName == name
                                                 : nodeName.startsWith(name, Qt::CaseInsensitive);
@@ -495,11 +496,11 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
 
             // Not found locally, check if it's a member of 'this'
             bool isTop = true;
-            auto cls = resolveParentScope(
-                ts_node_descendant_for_point_range(ts_tree_root_node(tempTree),
-                                                   {(uint32_t)line, (uint32_t)col},
-                                                   {(uint32_t)line, (uint32_t)col}),
-                fileContent, isTop);
+            auto cls =
+                resolveParentScope(ts_node_descendant_for_point_range(
+                                       ts_tree_root_node(tempTree), {(uint32_t)line, (uint32_t)col},
+                                       {(uint32_t)line, (uint32_t)col}),
+                                   fileContent, isTop);
             ts_tree_delete(tempTree);
             if (!cls.isEmpty()) {
                 for (auto it = globalIndex.begin(); it != globalIndex.end(); ++it) {

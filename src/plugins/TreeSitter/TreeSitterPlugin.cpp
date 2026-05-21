@@ -349,7 +349,8 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
         }
 
         QString tooltip;
-        auto symbols = engine.findSymbolsGlobal(symbol, true, prev, sep, filename, line, col, content);
+        auto symbols =
+            engine.findSymbolsGlobal(symbol, true, prev, sep, filename, line, col, content);
 
         QList<TreeSitterEngine::Symbol> definitions;
         for (const auto &sym : symbols) {
