@@ -103,20 +103,25 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
         "(enumerator) @symbol (namespace_definition) @symbol (function_definition) @symbol "
         "(field_declaration) @symbol (declaration) @symbol (parameter_declaration) @symbol "
         "(alias_declaration) @symbol (type_definition) @symbol ";
-    static const char *cppLightQuery = "(function_definition) @symbol ";
+    static const char *cppLightQuery = "(function_definition) @symbol (declaration) @symbol ";
 
     static const char *cFullQuery =
         "(struct_specifier) @symbol (enum_specifier) @symbol (enumerator) @symbol "
         "(function_definition) @symbol (field_declaration) @symbol (declaration) @symbol "
         "(parameter_declaration) @symbol (type_definition) @symbol ";
-    static const char *cLightQuery = "(function_definition) @symbol ";
+    static const char *cLightQuery = "(function_definition) @symbol (declaration) @symbol ";
 
     const bool isHeader = isHeaderFile(fileName);
     const char *queryStr;
+    bool isCppOrC = false;
     if (context->language == tree_sitter_cpp()) {
         queryStr = isHeader ? cppFullQuery : cppLightQuery;
-    } else {
+        isCppOrC = true;
+    } else if (context->language == tree_sitter_c()) {
         queryStr = isHeader ? cFullQuery : cLightQuery;
+        isCppOrC = true;
+    } else {
+        queryStr = isHeader ? cppFullQuery : cppLightQuery; // Fallback
     }
 
     auto errorOffset = uint32_t{};
@@ -206,9 +211,22 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
             }
 
             auto sym = Symbol{};
-            sym.name = name;
+            if (isCppOrC && name.contains("::")) {
+                auto parts = name.split("::");
+                sym.name = parts.last();
+                parts.removeLast();
+                auto extraScope = parts.join("::");
+                if (parentName.isEmpty()) {
+                    sym.parentName = extraScope;
+                } else {
+                    sym.parentName = parentName + "::" + extraScope;
+                }
+            } else {
+                sym.name = name;
+                sym.parentName = parentName;
+            }
+
             sym.fileId = fileId;
-            sym.parentName = parentName;
             sym.line = ts_node_start_point(symbolNode).row;
             sym.column = ts_node_start_point(symbolNode).column;
             sym.type = resolveAutoType(node, typeName, content, symbolType);

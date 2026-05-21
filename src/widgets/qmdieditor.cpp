@@ -170,8 +170,16 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
     QVariantList definitions;
     QVariantList otherTags;
 
+    bool isCpp = false;
     for (const QVariant &item : std::as_const(tags)) {
         auto const tag = item.toHash();
+        auto fileName = tag[GlobalArguments::FileName].toString().toLower();
+        if (fileName.endsWith(".cpp") || fileName.endsWith(".c") || fileName.endsWith(".hpp") ||
+            fileName.endsWith(".h") || fileName.endsWith(".cc") || fileName.endsWith(".hh") ||
+            fileName.endsWith(".cxx") || fileName.endsWith(".hxx")) {
+            isCpp = true;
+        }
+
         if (tag[GlobalArguments::IsDefinition].toBool()) {
             definitions.append(item);
         } else {
@@ -179,8 +187,9 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         }
     }
 
-    // If we have definitions, only show them. Otherwise show everything.
-    const auto &tagsToShow = definitions.isEmpty() ? otherTags : definitions;
+    // Show both definitions and declarations (e.g. .h and .cpp) only for C/C++.
+    // For other languages, prioritize definitions if they exist.
+    const auto &tagsToShow = isCpp ? tags : (definitions.isEmpty() ? otherTags : definitions);
 
     for (const QVariant &item : std::as_const(tagsToShow)) {
         auto const tag = item.toHash();
