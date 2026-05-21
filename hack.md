@@ -127,7 +127,7 @@ sudo apt install python3-pip python3-pipx build-essential xorg-dev libcups2-dev 
 Install the following packages:
 
 ```
-sudo dnf install python3-devel python3-pip wayland-devel mesa-libGL-devel cups-devel clang clang-tools-extra ninja cmake ccache mold
+iudo dnf install python3-devel python3-pip wayland-devel mesa-libGL-devel cups-devel clang clang-tools-extra ninja cmake ccache mold libicu-devel
 ```
 
 ### Arch
