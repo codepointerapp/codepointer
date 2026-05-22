@@ -19,8 +19,8 @@
     <name>CodePointer Developers</name>
   </developer>
 
-  <url type="homepage">https://gitlab.com/codepointer/codepointer</url>
-  <url type="bugtracker">https://gitlab.com/codepointer/codepointer/-/issues</url>
+  <url type="homepage">https://github.com/codepointerapp/codepointer/issues/</url>
+  <url type="bugtracker">https://github.com/codepointerapp/codepointer/issues/</url>
 
   <categories>
     <category>Development</category>
