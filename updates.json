@@ -1,30 +1,30 @@
 {
     "updates": {
         "windows": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.4",
-            "latest-version": "0.1.4",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.4/codepointer-v0.1.4-x86_64.exe",
-            "changelog": "Better completions for C/C++ using treesitter, git commit page updates",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5",
+            "latest-version": "0.1.5",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5/codepointer-v0.1.5-x86_64.exe",
+            "changelog": "Minor updates, and quaility of life",
             "mandatory": true
         },
         "windows-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5-alpha1",
-            "latest-version": "0.1.5-alpha1",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5-alpha1/codepointer-v0.1.5-alpha1-x86_64.exe",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5",
+            "latest-version": "0.1.5",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5/codepointer-v0.1.5-x86_64.exe",
             "changelog": "Minor updates, and quaility of life",
             "mandatory": true
         },
         "linux": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.4",
-            "latest-version": "0.1.4",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.4/codepointer-v0.1.4-x86_64.AppImage",
-            "changelog": "Better completions for C/C++ using treesitter, git commit page updates",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5",
+            "latest-version": "0.1.5",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5/codepointer-v0.1.5-x86_64.AppImage",
+            "changelog": "Minor updates, and quaility of life",
             "mandatory": true
         },
         "linux-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5-alpha1",
-            "latest-version": "0.1.5-alpha1",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5-alpha1/codepointer-v0.1.5-alpha1-x86_64.AppImage",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5",
+            "latest-version": "0.1.5",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5/codepointer-v0.1.5-x86_64.AppImage",
             "changelog": "Minor updates, and quaility of life",
             "mandatory": true
         }
