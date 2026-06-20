@@ -1,10 +1,13 @@
 #include <QAbstractListModel>
 #include <QAbstractTableModel>
+#include <QClipboard>
 #include <QDir>
 #include <QKeyEvent>
 #include <QMessageBox>
+#include <QStyledItemDelegate>
 #include <QTemporaryFile>
 #include <QTextStream>
+#include <QToolTip>
 #include <QtAlgorithms>
 
 #include "CommitForm.hpp"
@@ -12,6 +15,21 @@
 #include "plugins/texteditor/texteditor_plg.h"
 #include "ui_CommitForm.h"
 #include "widgets/qmdieditor.h"
+
+class PathElideDelegate : public QStyledItemDelegate {
+  public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override {
+        QStyleOptionViewItem opt(option);
+        initStyleOption(&opt, index);
+        opt.text = opt.fontMetrics.elidedText(opt.text, Qt::ElideLeft, opt.rect.width() - 10);
+        opt.textElideMode = Qt::ElideNone;
+        auto *style = opt.widget ? opt.widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
+    }
+};
 
 struct GitStatusEntry {
     QString filename;
@@ -102,11 +120,14 @@ auto GitStatusTableModel::data(const QModelIndex &index, int role) const -> QVar
     if (index.column() == 0 && role == Qt::CheckStateRole) {
         return e.checked ? Qt::Checked : Qt::Unchecked;
     }
-    if (role != Qt::DisplayRole) {
+    if (role != Qt::DisplayRole && role != Qt::ToolTipRole) {
         return {};
     }
     switch (index.column()) {
     case 1:
+        if (role != Qt::DisplayRole) {
+            return {};
+        }
         return statusToText(e.status);
     case 2:
         return e.filename;
@@ -115,8 +136,8 @@ auto GitStatusTableModel::data(const QModelIndex &index, int role) const -> QVar
     }
 }
 
-auto GitStatusTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
-    -> bool {
+auto GitStatusTableModel::setData(const QModelIndex &index, const QVariant &value,
+                                  int role) -> bool {
     if (!index.isValid()) {
         return false;
     }
@@ -143,8 +164,8 @@ auto GitStatusTableModel::flags(const QModelIndex &index) const -> Qt::ItemFlags
     return f;
 }
 
-auto GitStatusTableModel::headerData(int section, Qt::Orientation orientation, int role) const
-    -> QVariant {
+auto GitStatusTableModel::headerData(int section, Qt::Orientation orientation,
+                                     int role) const -> QVariant {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) {
         return {};
     }
@@ -217,7 +238,6 @@ bool GitStatusTableModel::hasAnyChecked() const {
     return false;
 }
 
-/////////
 CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     : QWidget(parent), ui(new Ui::CommitForm) {
     ui->setupUi(this);
@@ -288,6 +308,18 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     ui->tableView->setModel(model);
     ui->tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tableView->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->tableView->setItemDelegateForColumn(2, new PathElideDelegate(this));
+    connect(ui->tableView, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
+        if (index.column() == 2) {
+            auto text = index.data(Qt::ToolTipRole).toString();
+            QApplication::clipboard()->setText(text);
+            QTimer::singleShot(150, this, [this, text]() {
+                QToolTip::showText(QCursor::pos(), tr("Copied to clipboard: %1").arg(text),
+                                   ui->tableView, {}, 1500);
+            });
+        }
+    });
+
     ui->revertSelectedButton->setEnabled(false);
     ui->commitButton->setEnabled(false);
     ui->commitMessage->setFocusPolicy(Qt::StrongFocus);
