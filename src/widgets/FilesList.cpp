@@ -249,7 +249,7 @@ bool FilesList::matchesFilters(const QString &filename,
     auto segments = normPath.split('/', Qt::SkipEmptyParts);
 
     for (auto const &rx : excludeRegexes) {
-        for (auto const &segment : segments) {
+        for (auto const &segment : std::as_const(segments)) {
             if (rx.match(segment).hasMatch()) {
                 return false;
             }
@@ -259,7 +259,7 @@ bool FilesList::matchesFilters(const QString &filename,
     if (!showRegexes.isEmpty() || !showTokens.isEmpty()) {
         auto matched = false;
         for (auto const &rx : showRegexes) {
-            for (auto const &segment : segments) {
+            for (auto const &segment : std::as_const(segments)) {
                 if (rx.match(segment).hasMatch()) {
                     matched = true;
                     break;
@@ -270,7 +270,7 @@ bool FilesList::matchesFilters(const QString &filename,
             }
         }
         if (!matched && !showTokens.isEmpty()) {
-            for (auto const &segment : segments) {
+            for (auto const &segment : std::as_const(segments)) {
                 const auto lowerSegment = segment.toLower();
                 for (auto const &token : showTokens) {
                     if (lowerSegment.contains(token)) {
@@ -335,10 +335,10 @@ int FilesListModel::rowCount(const QModelIndex &) const { return displayFiles.si
 QVariant FilesListModel::data(const QModelIndex &index, int role) const {
     switch (role) {
     case Qt::DisplayRole:
-        return displayFiles[index.row()];
+        return QDir::toNativeSeparators(displayFiles[index.row()]);
         break;
     case Qt::ToolTipRole:
-        return baseDir + displayFiles[index.row()];
+        return QDir::toNativeSeparators(baseDir + displayFiles[index.row()]);
         break;
     default:
         return {};
