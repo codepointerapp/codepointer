@@ -86,8 +86,8 @@ static auto regenerateKits(const std::filesystem::path &directoryPath) -> void {
                                   KitDetector::platformUnix);
 }
 
-static auto getCommandInterpreter(const QString &externalCommand)
-    -> std::tuple<QString, QStringList> {
+static auto
+getCommandInterpreter(const QString &externalCommand) -> std::tuple<QString, QStringList> {
     QString interpreter;
     QStringList command;
 
@@ -471,7 +471,7 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
                 }
 
                 auto fi = QFileInfo(link.toLocalFile());
-                auto fileName = fi.filePath();
+                auto fileName = QDir::toNativeSeparators(fi.filePath());
                 auto dirName = fi.dir().dirName();
 
                 if (fi.isRelative() || dirName == "./") {
