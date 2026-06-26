@@ -1060,7 +1060,7 @@ void ProjectManagerPlugin::newProjectSelected(int index) {
 void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QString &program,
                                       const QStringList &arguments,
                                       const QProcessEnvironment &customEnv, bool capture) {
-    if (runProcess.processId() != 0) {
+    if (runProcess.state() != QProcess::NotRunning) {
         runProcess.kill();
         return;
     }
@@ -1069,7 +1069,6 @@ void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
 
 #if defined(USE_TTY_FOR_TASKS)
     auto usingPty = false;
-    auto masterFd = -1;
 #endif
 
     // Reset redirections
@@ -1084,9 +1083,9 @@ void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
             runProcess.setProcessChannelMode(QProcess::MergedChannels);
             auto notifier = new QSocketNotifier(masterFd, QSocketNotifier::Read, &runProcess);
             connect(&runProcess, &QProcess::finished, notifier, [notifier]() { delete notifier; });
-            connect(notifier, &QSocketNotifier::activated, notifier, [this, masterFd]() {
+            connect(notifier, &QSocketNotifier::activated, notifier, [this, fd = masterFd]() {
                 char buffer[4096];
-                auto bytesRead = read(masterFd, buffer, sizeof(buffer) - 1);
+                auto bytesRead = read(fd, buffer, sizeof(buffer) - 1);
                 if (bytesRead > 0) {
                     buffer[bytesRead] = '\0';
                     QString lines = QString::fromUtf8(buffer, bytesRead);

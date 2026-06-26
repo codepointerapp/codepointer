@@ -130,6 +130,7 @@ class ProjectManagerPlugin : public IPlugin {
     int selectedTaskIndex = -1;
 
     QProcess runProcess;
+    int masterFd = -1;
 
     KitDefinitionModel *kitsModel = nullptr;
     ProjectBuildModel *projectModel = nullptr;
