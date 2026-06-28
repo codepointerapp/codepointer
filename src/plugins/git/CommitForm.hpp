@@ -20,6 +20,8 @@ class CommitForm : public QWidget, public qmdiClient {
     ~CommitForm();
 
     virtual QString mdiClientFileName() override;
+    virtual qmdiClientState getState() const override;
+    virtual void setState(const qmdiClientState &state) override;
 
   protected:
     bool event(QEvent *event) override;

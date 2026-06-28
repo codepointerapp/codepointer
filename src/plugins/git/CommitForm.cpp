@@ -386,6 +386,45 @@ CommitForm::~CommitForm() { delete ui; }
 
 QString CommitForm::mdiClientFileName() { return QString("git:%1").arg(repoRoot); }
 
+qmdiClientState CommitForm::getState() const {
+    auto c = ui->commitMessage->textCursor();
+
+    auto state = qmdiClientState();
+    state["COLUMN"] = c.positionInBlock();
+    state["ROW"] = c.blockNumber();
+    state["TEXT"] = ui->commitMessage->toPlainText();
+
+    return state;
+}
+
+void CommitForm::setState(const qmdiClientState &state) {
+    if (state.contains("TEXT")) {
+        auto t = state["TEXT"].toString();
+        ui->commitMessage->setPlainText(t);
+    }
+
+    auto col = 0;
+    auto row = 0;
+    if (state.contains("COLUMN")) {
+        col = state["COLUMN"].toInt();
+    }
+    if (state.contains("ROW")) {
+        row = state["ROW"].toInt();
+    }
+
+    auto block = ui->commitMessage->document()->findBlockByNumber(row);
+    auto cursor = QTextCursor(block);
+    if (col != 0) {
+        if (col < 0) {
+            col = 0;
+        } else if (col > cursor.block().length()) {
+            col = cursor.block().length() - 1;
+        }
+        cursor.setPosition(cursor.position() + col);
+    }
+    ui->commitMessage->setTextCursor(cursor);
+}
+
 bool CommitForm::event(QEvent *e) {
     switch (e->type()) {
     case QEvent::Show:
