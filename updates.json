@@ -8,9 +8,9 @@
             "mandatory": true
         },
         "windows-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5",
-            "latest-version": "0.1.5",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5/codepointer-v0.1.5-x86_64.exe",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6-beta",
+            "latest-version": "0.1.6-beta",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6-beta/codepointer-v0.1.6-beta-x86_64.exe",
             "changelog": "Minor updates, and quaility of life",
             "mandatory": true
         },
@@ -22,9 +22,9 @@
             "mandatory": true
         },
         "linux-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5",
-            "latest-version": "0.1.5",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5/codepointer-v0.1.5-x86_64.AppImage",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6-beta",
+            "latest-version": "0.1.6-beta",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6-beta/codepointer-v0.1.6-beta-x86_64.AppImage",
             "changelog": "Minor updates, and quaility of life",
             "mandatory": true
         }
