@@ -1,9 +1,28 @@
 #include "TreeSitterEngine.hpp"
 #include <QDebug>
+#include <QDir>
 #include <QFileInfo>
 #include <QMutexLocker>
 #include <algorithm>
 #include <string_view>
+
+namespace {
+auto appendUniqueSymbol(QList<TreeSitterEngine::Symbol> &list,
+                        const TreeSitterEngine::Symbol &sym) -> void {
+    if (!list.contains(sym)) {
+        list.append(sym);
+    }
+}
+
+auto dedupeSymbolList(QList<TreeSitterEngine::Symbol> symbols)
+    -> QList<TreeSitterEngine::Symbol> {
+    auto unique = QList<TreeSitterEngine::Symbol>{};
+    for (const auto &sym : symbols) {
+        appendUniqueSymbol(unique, sym);
+    }
+    return unique;
+}
+} // namespace
 
 extern "C" const TSLanguage *tree_sitter_cpp();
 extern "C" const TSLanguage *tree_sitter_c();
@@ -13,8 +32,13 @@ TreeSitterEngine::TreeSitterEngine() {}
 TreeSitterEngine::~TreeSitterEngine() {}
 
 quint64 TreeSitterEngine::internFileId(const QString &fileName) {
-    auto id = static_cast<quint64>(qHash(fileName));
-    fileNamePool.insert(id, fileName);
+    auto fi = QFileInfo(fileName);
+    auto path = fi.canonicalFilePath();
+    if (path.isEmpty()) {
+        path = QDir::cleanPath(fi.absoluteFilePath());
+    }
+    auto id = static_cast<quint64>(qHash(path));
+    fileNamePool.insert(id, path);
     return id;
 }
 
@@ -240,6 +264,9 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
 
             if (symbolType == TSNodeTypes::FieldDeclaration) {
                 sym.isDefinition = true;
+            } else if (isScopeContainer(symbolType)) {
+                sym.isDefinition =
+                    ts_node_child_by_field_name(symbolNode, "body", 4).id != nullptr;
             } else if (isTopLevel) {
                 if (symbolType == TSNodeTypes::Declaration) {
                     sym.isDefinition =
@@ -272,7 +299,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
                     sym.signature = QString("%1 %2%3").arg(sym.type, sym.name, pStr);
                 }
             }
-            symbols.append(sym);
+            appendUniqueSymbol(symbols, sym);
         }
     }
     ts_query_cursor_delete(cursor);
@@ -456,9 +483,9 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
 
     auto prioritize = [&](const Symbol &sym) {
         if (!file.isEmpty() && fileNamePool.value(sym.fileId).startsWith(projectRoot)) {
-            results.append(sym);
+            appendUniqueSymbol(results, sym);
         } else {
-            otherProjectResults.append(sym);
+            appendUniqueSymbol(otherProjectResults, sym);
         }
     };
 
@@ -514,8 +541,8 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
             }
             if (bestLine != -1) {
                 ts_tree_delete(tempTree);
-                results.append(localSym);
-                return results;
+                appendUniqueSymbol(results, localSym);
+                return dedupeSymbolList(results);
             }
 
             // Not found locally, check if it's a member of 'this'
@@ -535,7 +562,7 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                     }
                 }
                 if (!results.isEmpty() || !otherProjectResults.isEmpty()) {
-                    return results.isEmpty() ? otherProjectResults : results;
+                    return dedupeSymbolList(results.isEmpty() ? otherProjectResults : results);
                 }
             }
         }
@@ -825,7 +852,7 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                                             sym.line = ts_node_start_point(bn).row;
                                             sym.column = ts_node_start_point(bn).column;
                                             sym.isDefinition = true;
-                                            results.append(sym);
+                                            appendUniqueSymbol(results, sym);
                                         }
                                     }
                                 }
@@ -849,7 +876,8 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
         }
 
         if (!results.isEmpty() || (!exactMatch && !otherProjectResults.isEmpty())) {
-            auto const &finalRes = results.isEmpty() ? otherProjectResults : results;
+            auto const finalRes =
+                dedupeSymbolList(results.isEmpty() ? otherProjectResults : results);
             qDebug() << "TreeSitterEngine: found" << finalRes.size() << "members for" << prev;
             return finalRes;
         }
@@ -867,7 +895,7 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
 
     // For exact match (Follow Symbol), never fall back to other-project results —
     // jumping to the wrong project is worse than finding nothing.
-    return (results.isEmpty() && !exactMatch) ? otherProjectResults : results;
+    return dedupeSymbolList((results.isEmpty() && !exactMatch) ? otherProjectResults : results);
 }
 
 bool TreeSitterEngine::isFunctionOrBlock(std::string_view type) {
