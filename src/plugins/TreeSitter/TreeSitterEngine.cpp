@@ -366,7 +366,18 @@ QString TreeSitterEngine::resolveAutoType(TSNode nameNode, const QString &baseTy
             if (nt == TSNodeTypes::CallExpression) {
                 auto func = ts_node_child_by_field_name(n, TSFieldNames::Function, 8);
                 if (func.id) {
-                    if (std::string_view(ts_node_type(func)) == TSNodeTypes::TemplateFunction) {
+                    auto funcType = std::string_view(ts_node_type(func));
+                    // std::make_unique<T>() parses as qualified_identifier whose "name"
+                    // child is a template_function — unwrap it so we can extract T.
+                    if (funcType == "qualified_identifier") {
+                        auto nameNode = ts_node_child_by_field_name(func, TSFieldNames::Name, 4);
+                        if (nameNode.id &&
+                            std::string_view(ts_node_type(nameNode)) == TSNodeTypes::TemplateFunction) {
+                            func = nameNode;
+                            funcType = TSNodeTypes::TemplateFunction;
+                        }
+                    }
+                    if (funcType == TSNodeTypes::TemplateFunction) {
                         auto args = ts_node_child_by_field_name(func, TSFieldNames::Arguments, 10);
                         if (args.id && ts_node_named_child_count(args) > 0) {
                             return extractNameFromNode(ts_node_named_child(args, 0), content);
@@ -632,7 +643,35 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                 qDebug() << "TreeSitterEngine: resolving effective type..." << cur;
                 if (cur.endsWith("()")) {
                     auto fn = cur.left(cur.length() - 2);
-                    auto c = fn.lastIndexOf("::");
+                    // If the function name carries template args (e.g.
+                    // "std::make_unique<toolkit::MenuBar>"), use the first template
+                    // argument as the return type rather than trying to look up the
+                    // function in the index (lastIndexOf("::") would land inside the
+                    // angle brackets and produce a garbage symbol name).
+                    auto tStart = fn.indexOf('<');
+                    if (tStart != -1 && fn.endsWith('>')) {
+                        auto tArg = fn.mid(tStart + 1, fn.length() - tStart - 2);
+                        auto comma = tArg.indexOf(',');
+                        if (comma != -1) {
+                            tArg = tArg.left(comma);
+                        }
+                        cur = tArg.trimmed();
+                        qDebug() << "TreeSitterEngine: resolved template factory call to type" << cur;
+                        continue;
+                    }
+                    // Find the last "::" at the top level (not inside angle brackets).
+                    auto c = -1;
+                    auto depth = 0;
+                    for (auto i = fn.length() - 1; i > 0; --i) {
+                        if (fn[i] == '>') {
+                            ++depth;
+                        } else if (fn[i] == '<') {
+                            --depth;
+                        } else if (depth == 0 && fn[i] == ':' && fn[i - 1] == ':') {
+                            c = i - 1;
+                            break;
+                        }
+                    }
                     auto sn = (c == -1) ? fn : fn.mid(c + 2);
                     auto values = globalIndex.values(sn);
                     for (const auto &s : std::as_const(values)) {

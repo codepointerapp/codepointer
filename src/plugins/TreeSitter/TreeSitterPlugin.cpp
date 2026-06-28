@@ -368,11 +368,15 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
             if (!tooltip.isEmpty()) {
                 tooltip += "\n---\n";
             }
+            auto symFile = engine.resolveFileId(sym.fileId);
+            auto symBasename =
+                symFile.isEmpty() ? QStringLiteral("?") : QFileInfo(symFile).fileName();
             if (!sym.signature.isEmpty()) {
                 tooltip += sym.signature;
             } else {
                 tooltip += QString("%1 %2").arg(sym.type, sym.name);
             }
+            tooltip += QString(" [%1:%2]").arg(symBasename).arg(sym.line + 1);
         }
 
         if (!tooltip.isEmpty()) {
