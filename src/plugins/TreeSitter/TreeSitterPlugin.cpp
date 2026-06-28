@@ -364,7 +364,13 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
         }
 
         const auto &toShow = definitions.isEmpty() ? symbols : definitions;
+        QSet<QString> seenLocations;
         for (const auto &sym : toShow) {
+            auto locationKey = QString("%1:%2:%3").arg(sym.fileId).arg(sym.line).arg(sym.column);
+            if (seenLocations.contains(locationKey)) {
+                continue;
+            }
+            seenLocations.insert(locationKey);
             if (!tooltip.isEmpty()) {
                 tooltip += "\n---\n";
             }
