@@ -97,6 +97,8 @@ class TreeSitterEngine {
     void cancelParsing() { cancelFlag.store(1, std::memory_order_relaxed); }
     void resetCancel() { cancelFlag.store(0, std::memory_order_relaxed); }
 
+    void addProjectRoot(const QString &dir);
+
   private:
     struct FileContext {
         TSTree *tree = nullptr;
@@ -118,6 +120,8 @@ class TreeSitterEngine {
     // Interned file paths: hash(path) -> path  (call internFileId only while holding mutex)
     QHash<quint64, QString> fileNamePool;
     quint64 internFileId(const QString &fileName);
+
+    QStringList knownProjectRoots;
 
     mutable QMutex mutex;
     std::atomic<size_t> cancelFlag{0};

@@ -81,7 +81,7 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
     {
         auto locker = QMutexLocker(&queueMutex);
         if (!pendingScanDirs.contains(sourceDir)) {
-            pendingScanDirs.append(sourceDir);
+            pendingScanDirs.prepend(sourceDir);
             qDebug() << "TreeSitterPlugin: Queued scan for" << QDir(sourceDir).dirName();
         }
     }
@@ -122,6 +122,10 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
             dirsToScan.append(QDir::toNativeSeparators(dir));
         }
         pendingScanDirs.clear();
+    }
+
+    for (const auto &dir : std::as_const(dirsToScan)) {
+        engine.addProjectRoot(dir);
     }
 
     scanFuture = QtConcurrent::run([this, dirsToScan]() -> CommandArgs {

@@ -23,6 +23,13 @@ QString TreeSitterEngine::resolveFileId(quint64 id) const {
     return fileNamePool.value(id);
 }
 
+void TreeSitterEngine::addProjectRoot(const QString &dir) {
+    auto locker = QMutexLocker(&mutex);
+    if (!knownProjectRoots.contains(dir)) {
+        knownProjectRoots.append(dir);
+    }
+}
+
 bool TreeSitterEngine::isHeaderFile(const QString &fileName) {
     const auto ext = QFileInfo(fileName).suffix().toLower();
     return ext == "h" || ext == "hpp" || ext == "hh" || ext == "hxx";
@@ -422,12 +429,18 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
     auto results = QList<Symbol>{};
     auto otherProjectResults = QList<Symbol>{};
 
-    // Identify current project branch to prioritize local symbols
-    QString currentFileDir = QFileInfo(file).absolutePath();
-    // Go up one level from 'src' or 'include' if possible to get the project root
-    QString projectRoot = currentFileDir;
-    if (projectRoot.endsWith("/src") || projectRoot.endsWith("/include")) {
-        projectRoot = projectRoot.left(projectRoot.lastIndexOf('/'));
+    // Identify the current project root by matching the file against known scanned roots
+    QString projectRoot;
+    if (!file.isEmpty()) {
+        for (const auto &root : std::as_const(knownProjectRoots)) {
+            if (file.startsWith(root)) {
+                projectRoot = root;
+                break;
+            }
+        }
+        if (projectRoot.isEmpty()) {
+            projectRoot = QFileInfo(file).absolutePath();
+        }
     }
 
     auto prioritize = [&](const Symbol &sym) {
@@ -795,7 +808,7 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
             }
         }
 
-        if (!results.isEmpty() || !otherProjectResults.isEmpty()) {
+        if (!results.isEmpty() || (!exactMatch && !otherProjectResults.isEmpty())) {
             auto const &finalRes = results.isEmpty() ? otherProjectResults : results;
             qDebug() << "TreeSitterEngine: found" << finalRes.size() << "members for" << prev;
             return finalRes;
@@ -812,7 +825,9 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
         }
     }
 
-    return results.isEmpty() ? otherProjectResults : results;
+    // For exact match (Follow Symbol), never fall back to other-project results —
+    // jumping to the wrong project is worse than finding nothing.
+    return (results.isEmpty() && !exactMatch) ? otherProjectResults : results;
 }
 
 bool TreeSitterEngine::isFunctionOrBlock(std::string_view type) {
