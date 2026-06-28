@@ -136,8 +136,8 @@ auto GitStatusTableModel::data(const QModelIndex &index, int role) const -> QVar
     }
 }
 
-auto GitStatusTableModel::setData(const QModelIndex &index, const QVariant &value,
-                                  int role) -> bool {
+auto GitStatusTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
+    -> bool {
     if (!index.isValid()) {
         return false;
     }
@@ -164,8 +164,8 @@ auto GitStatusTableModel::flags(const QModelIndex &index) const -> Qt::ItemFlags
     return f;
 }
 
-auto GitStatusTableModel::headerData(int section, Qt::Orientation orientation,
-                                     int role) const -> QVariant {
+auto GitStatusTableModel::headerData(int section, Qt::Orientation orientation, int role) const
+    -> QVariant {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) {
         return {};
     }

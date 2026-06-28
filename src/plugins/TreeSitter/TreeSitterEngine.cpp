@@ -371,8 +371,8 @@ QString TreeSitterEngine::resolveAutoType(TSNode nameNode, const QString &baseTy
                     // child is a template_function — unwrap it so we can extract T.
                     if (funcType == "qualified_identifier") {
                         auto nameNode = ts_node_child_by_field_name(func, TSFieldNames::Name, 4);
-                        if (nameNode.id &&
-                            std::string_view(ts_node_type(nameNode)) == TSNodeTypes::TemplateFunction) {
+                        if (nameNode.id && std::string_view(ts_node_type(nameNode)) ==
+                                               TSNodeTypes::TemplateFunction) {
                             func = nameNode;
                             funcType = TSNodeTypes::TemplateFunction;
                         }
@@ -656,7 +656,8 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                             tArg = tArg.left(comma);
                         }
                         cur = tArg.trimmed();
-                        qDebug() << "TreeSitterEngine: resolved template factory call to type" << cur;
+                        qDebug() << "TreeSitterEngine: resolved template factory call to type"
+                                 << cur;
                         continue;
                     }
                     // Find the last "::" at the top level (not inside angle brackets).
