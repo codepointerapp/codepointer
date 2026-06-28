@@ -908,6 +908,7 @@ void qmdiEditor::setupActions() {
     indentGroup->addAction(indentMenu->addAction(tr("Python based indentation")))
         ->setCheckable(true);
     indentGroup->addAction(indentMenu->addAction(tr("Ruby based indentation")))->setCheckable(true);
+    indentGroup->addAction(indentMenu->addAction(tr("Markdown based indentation")))->setCheckable(true);
     indentGroup->setExclusive(true);
 
     buttonChangeIndenter->setMenu(indentMenu);

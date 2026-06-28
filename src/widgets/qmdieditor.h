@@ -194,6 +194,9 @@ class qmdiEditor : public QWidget, public qmdiClient {
     inline void setHighlighter(const QString &languageId) {
         textEditor->setHighlighter(languageId);
     }
+    inline void setIndentAlgorithm(Qutepart::IndentAlg alg) {
+        textEditor->setIndentAlgorithm(alg);
+    }
 
   protected:
     virtual void focusInEvent(QFocusEvent *event) override;

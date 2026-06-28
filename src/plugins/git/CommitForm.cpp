@@ -294,6 +294,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 e->setLineNumbersVisible(false);
                 e->setMinimapVisible(false);
                 e->setHighlighter("markdown.xml");
+                e->setIndentAlgorithm(Qutepart::INDENT_ALG_MARKDOWN);
                 e->setDrawSolidEdge(true);
                 e->setLineLengthEdge(72);
                 e->setSoftLineWrapping(true);
