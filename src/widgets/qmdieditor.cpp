@@ -68,8 +68,8 @@
 auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
 auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
 
-auto static getCorrespondingFile(PluginManager *manager, const QString &fileName)
-    -> QFuture<QString> {
+auto static getCorrespondingFile(PluginManager *manager,
+                                 const QString &fileName) -> QFuture<QString> {
 
     // First - choose easy solution, file aside the original one
     auto fileInfo = QFileInfo(fileName);
@@ -1131,12 +1131,14 @@ bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
                     auto l = diffMetadata.mappings[blockNumber];
                     auto pluginManager = mdiServer ?
                         dynamic_cast<PluginManager *>(mdiServer->mdiHost) : nullptr;
+                    auto filename = l.file;
+                    filename = QDir::toNativeSeparators(filename);
                     if (pluginManager) {
                         // Lines start on the editor from 0
                         if (l.newLine >= 0) {
-                            pluginManager->openFile(l.file, 0, l.newLine - 1);
+                            pluginManager->openFile(filename, 0, l.newLine - 1);
                         } else {
-                            pluginManager->openFile(l.file, 0, l.oldLine - 1);
+                            pluginManager->openFile(filename, 0, l.oldLine - 1);
                         }
                     } else {
                         qDebug() << "qmdiEditor::eventFilter - cannot open file from diff/patch";
@@ -1495,8 +1497,9 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
     if (filenameChanged && makeExecutable) {
         auto firstLine = textEditor->lines().first();
         if (firstLine.length() >= 3) {
-            auto firstChar = firstLine.text()[0];
-            auto secondChar = firstLine.text()[1];
+            auto line = firstLine.text();
+            auto firstChar = line[0];
+            auto secondChar = line[1];
             if (firstChar == '#' && secondChar == '!') {
                 auto currentPermissions = file.permissions();
                 auto newPermissions = currentPermissions | QFileDevice::ExeUser;
