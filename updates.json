@@ -1,31 +1,31 @@
 {
     "updates": {
         "windows": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5",
-            "latest-version": "0.1.5",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5/codepointer-v0.1.5-x86_64.exe",
-            "changelog": "Minor updates, and quaility of life",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6",
+            "latest-version": "0.1.6",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6/codepointer-v0.1.6-x86_64.exe",
+            "changelog": "Dark mode updates, git diff fixes, tree sitter updates",
             "mandatory": true
         },
         "windows-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6-beta",
-            "latest-version": "0.1.6-beta",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6-beta/codepointer-v0.1.6-beta-x86_64.exe",
-            "changelog": "Minor updates, and quaility of life",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6",
+            "latest-version": "0.1.6",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6/codepointer-v0.1.6-x86_64.exe",
+            "changelog": "Dark mode updates, git diff fixes, tree sitter updates",
             "mandatory": true
         },
         "linux": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.5",
-            "latest-version": "0.1.5",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.5/codepointer-v0.1.5-x86_64.AppImage",
-            "changelog": "Minor updates, and quaility of life",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6",
+            "latest-version": "0.1.6",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6/codepointer-v0.1.6-x86_64.AppImage",
+            "changelog": "Dark mode updates, git diff fixes, tree sitter updates",
             "mandatory": true
         },
         "linux-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6-beta",
-            "latest-version": "0.1.6-beta",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6-beta/codepointer-v0.1.6-beta-x86_64.AppImage",
-            "changelog": "Minor updates, and quaility of life",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6",
+            "latest-version": "0.1.6",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6/codepointer-v0.1.6-x86_64.AppImage",
+            "changelog": "Dark mode updates, git diff fixes, tree sitter updates",
             "mandatory": true
         }
     }
