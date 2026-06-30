@@ -2,9 +2,11 @@
 
 # July 2026 - release v0.1.6 - The mother of all funk chords
 
+![Dark themes are better supported](codepointer-v0.1.6-dark.png)
+
 While dark themes are supported (the editor has dark themes) and the system
 theme was .... existing, it was not ideal. Now the system editor theme will be more
-readable.
+readable (less saturated backgrounds).
 
 One epic win this IDE has over QtCreator (for example) is that the IDE detects
 when the system theme changes - and it starts using a drak theme. In QtCreator
