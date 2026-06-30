@@ -7,15 +7,14 @@
 #include <string_view>
 
 namespace {
-auto appendUniqueSymbol(QList<TreeSitterEngine::Symbol> &list,
-                        const TreeSitterEngine::Symbol &sym) -> void {
+auto appendUniqueSymbol(QList<TreeSitterEngine::Symbol> &list, const TreeSitterEngine::Symbol &sym)
+    -> void {
     if (!list.contains(sym)) {
         list.append(sym);
     }
 }
 
-auto dedupeSymbolList(QList<TreeSitterEngine::Symbol> symbols)
-    -> QList<TreeSitterEngine::Symbol> {
+auto dedupeSymbolList(QList<TreeSitterEngine::Symbol> symbols) -> QList<TreeSitterEngine::Symbol> {
     auto unique = QList<TreeSitterEngine::Symbol>{};
     for (const auto &sym : symbols) {
         appendUniqueSymbol(unique, sym);
@@ -265,8 +264,7 @@ QList<TreeSitterEngine::Symbol> TreeSitterEngine::getSymbols(const QString &file
             if (symbolType == TSNodeTypes::FieldDeclaration) {
                 sym.isDefinition = true;
             } else if (isScopeContainer(symbolType)) {
-                sym.isDefinition =
-                    ts_node_child_by_field_name(symbolNode, "body", 4).id != nullptr;
+                sym.isDefinition = ts_node_child_by_field_name(symbolNode, "body", 4).id != nullptr;
             } else if (isTopLevel) {
                 if (symbolType == TSNodeTypes::Declaration) {
                     sym.isDefinition =
