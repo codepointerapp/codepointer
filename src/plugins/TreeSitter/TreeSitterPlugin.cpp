@@ -141,8 +141,6 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
         }
         const auto projectLabel = projectNames.join(", ");
         const auto totalFiles = static_cast<int>(fileList.size());
-        qDebug() << "TreeSitterPlugin: Scanning" << totalFiles << "files across"
-                 << projectNames.size() << "projects (" << projectLabel << ")";
         if (totalFiles == 0) {
             return CommandArgs{};
         }
@@ -171,7 +169,7 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
         mallopt(M_ARENA_MAX, 2); // prevent per-thread glibc arena explosion under parallel parsing
 #endif
         qDebug() << "TreeSitterPlugin:" << projectLabel << "- parsing with" << threadCount
-                 << "threads";
+                 << "threads, total files =" << totalFiles;
 
         std::atomic<int> nextFile{0};
 
@@ -231,10 +229,12 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
                                            ? elapsedMs * (totalFiles - done) / done
                                            : 0LL;
                     locker.unlock();
-                    qDebug() << "TreeSitterPlugin:" << projectLabel << "- Parsed" << done << "/"
-                             << totalFiles << "files (" << bucket << "%)"
-                             << "elapsed:" << elapsedMs / 1000 << "s"
-                             << (etaMs > 0 ? QString("ETA: %1s").arg(etaMs / 1000) : QString{});
+                    if (etaMs > 3000) {
+                        qDebug() << "TreeSitterPlugin:" << projectLabel << "- Parsed" << done << "/"
+                                 << totalFiles << "files (" << bucket << "%)"
+                                 << "elapsed:" << elapsedMs / 1000 << "s"
+                                 << (etaMs > 0 ? QString("ETA: %1s").arg(etaMs / 1000) : QString{});
+                    }
                 }
             }
         };

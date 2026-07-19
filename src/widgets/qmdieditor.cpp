@@ -1673,8 +1673,6 @@ void qmdiEditor::loadContent(bool useBackup) {
 
     QElapsedTimer timer;
     timer.start();
-    qDebug() << "qmdiEditor::loadContent loading " << file.fileName() << " with size "
-             << file.size();
     this->originalLineEnding = getLineEnding(file, originalLineEnding);
     auto textStream = QTextStream(&file);
     textStream.seek(0);
@@ -1720,7 +1718,9 @@ void qmdiEditor::loadContent(bool useBackup) {
 
     if (elapsed > 0) {
         // don't spam logs with very fast loads, we don't care about it
-        qDebug() << "qmdiEditor::loadContent " << fileName << "loaded in" << elapsed << "mSec";
+        qDebug() << "qmdiEditor::loadContent " << fileName << "loaded in" << elapsed
+                 << "mSec, size=" << file.size();
+        ;
     }
 
     fileName = QDir::toNativeSeparators(fileInfo.absoluteFilePath());
