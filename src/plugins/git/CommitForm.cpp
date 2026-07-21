@@ -5,6 +5,7 @@
 #include <QClipboard>
 #include <QDir>
 #include <QEvent>
+#include <QFileInfo>
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QStyledItemDelegate>
@@ -585,6 +586,9 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     case GitFileStatus::Renamed:
     case GitFileStatus::Copied:
     case GitFileStatus::Untracked: {
+        ui->revertCurrentButton->setText(tr("Delete"));
+        ui->diffLabel->setText(tr("Content"));
+
         auto manager = git->getManager();
         auto plugin = manager->findPlugin("TextEditorPlugin");
         auto p = dynamic_cast<TextEditorPlugin *>(plugin);
@@ -617,8 +621,6 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         if (langInfo.isValid()) {
             highlighter = langInfo.id;
         }
-        ui->revertCurrentButton->setText(tr("Delete"));
-        ui->diffLabel->setText(tr("Content"));
         updateEditor(output, highlighter);
         break;
     }
@@ -634,11 +636,16 @@ void CommitForm::revertCurrentImpl() {
     auto status =
         static_cast<GitFileStatus>(model->data(idx, GitStatusTableModel::StatusRole).toInt());
 
+    auto isDir = QFileInfo(QDir(repoRoot).filePath(fileName)).isDir();
+
     auto msgBox = QMessageBox();
     msgBox.setWindowTitle("Revert file");
     if (status == GitFileStatus::Modified) {
         msgBox.setText(
             tr("Are you sure you want to revert this file?<br><br><b>%1</b>").arg(fileName));
+    } else if (isDir) {
+        msgBox.setText(
+            tr("Are you sure you want to delete this directory?<br><br><b>%1</b>").arg(fileName));
     } else {
         msgBox.setText(
             tr("Are you sure you want to delete this file?<br><br><b>%1</b>").arg(fileName));
@@ -660,7 +667,8 @@ void CommitForm::revertCurrentImpl() {
         });
     } else {
         auto fullPath = QDir(repoRoot).filePath(fileName);
-        if (QFile::remove(fullPath)) {
+        auto success = isDir ? QDir(fullPath).removeRecursively() : QFile::remove(fullPath);
+        if (success) {
             ui->gitOutput->setText(tr("Deleted %1").arg(fileName));
         } else {
             ui->gitOutput->setText(tr("Failed deleting %1").arg(fileName));
