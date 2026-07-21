@@ -16,6 +16,8 @@
 // needed only for CommandArgs
 #include <pluginmanager.h>
 #include <qmdiclient.h>
+
+// FIXME: I would like qutepart to be an implementation detail, and not exposed.
 #include <qutepart/qutepart.h>
 
 #include "endlinestyle.h"

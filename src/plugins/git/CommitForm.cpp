@@ -14,6 +14,7 @@
 #include <QToolTip>
 #include <QWidget>
 #include <QtAlgorithms>
+#include <QtConcurrent>
 
 #include "CommitForm.hpp"
 #include "GitPlugin.hpp"
@@ -318,6 +319,26 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 e->setLineLengthEdge(72);
                 e->setSoftLineWrapping(true);
                 e->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+                // FIXME: qutepart implementation leaking.
+                if (auto textEditor = qobject_cast<Qutepart::Qutepart *>(e->getEditor())) {
+                    textEditor->setCompletionCallback(
+                        [this](const QString &prefix, const QString &,
+                               const QString &) -> QFuture<QSet<Qutepart::CompletionItem>> {
+                            auto items = QSet<Qutepart::CompletionItem>();
+                            if (!prefix.isEmpty()) {
+                                for (auto row = 0; row < model->rowCount(); ++row) {
+                                    auto idx = model->index(row, 2);
+                                    auto name = QFileInfo(model->data(idx, Qt::DisplayRole).toString())
+                                                    .fileName();
+                                    if (name.startsWith(prefix, Qt::CaseInsensitive)) {
+                                        items.insert(Qutepart::CompletionItem(name, tr("Changed file")));
+                                    }
+                                }
+                            }
+                            return QtFuture::makeReadyValueFuture(items);
+                        });
+                }
 
                 replaceWidget(ui->commitMessage, e);
                 ui->commitMessage = e->getEditor();
