@@ -1,17 +1,22 @@
+#include <QAbstractButton>
 #include <QAbstractListModel>
 #include <QAbstractTableModel>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QDir>
+#include <QEvent>
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QStyledItemDelegate>
 #include <QTemporaryFile>
 #include <QTextStream>
 #include <QToolTip>
+#include <QWidget>
 #include <QtAlgorithms>
 
 #include "CommitForm.hpp"
 #include "GitPlugin.hpp"
+#include "GlobalCommands.hpp"
 #include "plugins/texteditor/texteditor_plg.h"
 #include "ui_CommitForm.h"
 #include "widgets/qmdieditor.h"
@@ -34,6 +39,8 @@ class PathElideDelegate : public QStyledItemDelegate {
 struct GitStatusEntry {
     QString filename;
     GitFileStatus status;
+    bool staged = false;
+    bool unstaged = false;
     bool checked = false;
 };
 
@@ -53,12 +60,17 @@ static auto parseGitStatus(QStringView statusOutput) -> QList<GitStatusEntry> {
                       : (x == 'R' || y == 'R') ? GitFileStatus::Renamed
                       : (x == 'C' || y == 'C') ? GitFileStatus::Copied
                                                : GitFileStatus::Unknown;
-        out.append({line.mid(3).trimmed().toString(), status});
+        // x is the index/staged column, y is the worktree column; anything but ' ' or '?'
+        // means a change is present there. A file can be staged and further modified
+        // afterwards, in which case both are set (e.g. "MM", "AM").
+        auto staged = x != ' ' && x != '?';
+        auto unstaged = y != ' ' && y != '?';
+        out.append({line.mid(3).trimmed().toString(), status, staged, unstaged});
     }
     return out;
 }
 
-auto createTempFileWithContent(const QString &content) -> QString {
+static auto createTempFileWithContent(const QString &content) -> QString {
     auto file = QTemporaryFile();
     // keep file after destruction
     file.setAutoRemove(false);
@@ -69,6 +81,25 @@ auto createTempFileWithContent(const QString &content) -> QString {
     out << content;
     file.close();
     return file.fileName();
+}
+
+auto statusToText(GitFileStatus status) -> QString {
+    switch (status) {
+    case GitFileStatus::Modified:
+        return QStringLiteral("Modified");
+    case GitFileStatus::Added:
+        return QStringLiteral("Added");
+    case GitFileStatus::Deleted:
+        return QStringLiteral("Deleted");
+    case GitFileStatus::Renamed:
+        return QStringLiteral("Renamed");
+    case GitFileStatus::Copied:
+        return QStringLiteral("Copied");
+    case GitFileStatus::Untracked:
+        return QStringLiteral("Untracked");
+    default:
+        return QStringLiteral("Unknown");
+    }
 }
 
 class GitStatusTableModel final : public QAbstractTableModel {
@@ -94,8 +125,6 @@ class GitStatusTableModel final : public QAbstractTableModel {
 
   private:
     QList<GitStatusEntry> m_entries;
-
-    static auto statusToText(GitFileStatus status) -> QString;
 };
 
 GitStatusTableModel::GitStatusTableModel(QObject *parent) : QAbstractTableModel(parent) {}
@@ -113,27 +142,35 @@ auto GitStatusTableModel::data(const QModelIndex &index, int role) const -> QVar
     if (!index.isValid()) {
         return {};
     }
-    const auto &e = m_entries.at(index.row());
-    if (role == StatusRole) {
+    auto const &e = m_entries.at(index.row());
+    switch (role) {
+    case StatusRole:
         return static_cast<int>(e.status);
-    }
-    if (index.column() == 0 && role == Qt::CheckStateRole) {
-        return e.checked ? Qt::Checked : Qt::Unchecked;
-    }
-    if (role != Qt::DisplayRole && role != Qt::ToolTipRole) {
-        return {};
-    }
-    switch (index.column()) {
-    case 1:
-        if (role != Qt::DisplayRole) {
-            return {};
+    case Qt::CheckStateRole:
+        if (index.column() == 0) {
+            return e.checked ? Qt::Checked : Qt::Unchecked;
         }
-        return statusToText(e.status);
-    case 2:
+        return {};
+    case Qt::DisplayRole:
+        switch (index.column()) {
+        case 1:
+            if (e.staged && e.unstaged) {
+                return tr("Unstaged");
+            }
+            if (e.staged) {
+                return tr("Staged");
+            }
+            return statusToText(e.status);
+        case 2:
+            return e.filename;
+        }
+        return {};
+    case Qt::ToolTipRole:
         return e.filename;
     default:
-        return {};
+        break;
     }
+    return {};
 }
 
 auto GitStatusTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
@@ -196,25 +233,6 @@ auto GitStatusTableModel::checkedEntries() const -> QList<GitStatusEntry> {
         }
     }
     return out;
-}
-
-auto GitStatusTableModel::statusToText(GitFileStatus status) -> QString {
-    switch (status) {
-    case GitFileStatus::Modified:
-        return QStringLiteral("Modified");
-    case GitFileStatus::Added:
-        return QStringLiteral("Added");
-    case GitFileStatus::Deleted:
-        return QStringLiteral("Deleted");
-    case GitFileStatus::Renamed:
-        return QStringLiteral("Renamed");
-    case GitFileStatus::Copied:
-        return QStringLiteral("Copied");
-    case GitFileStatus::Untracked:
-        return QStringLiteral("Untracked");
-    default:
-        return QStringLiteral("Unknown");
-    }
 }
 
 void GitStatusTableModel::setAllChecked(bool checked) {
@@ -311,13 +329,49 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     ui->tableView->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tableView->setItemDelegateForColumn(2, new PathElideDelegate(this));
     connect(ui->tableView, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
-        if (index.column() == 2) {
+        if (ui->showDiff->isChecked() && index.column() == 2) {
             auto text = index.data(Qt::ToolTipRole).toString();
             QApplication::clipboard()->setText(text);
             QTimer::singleShot(150, this, [this, text]() {
                 QToolTip::showText(QCursor::pos(), tr("Copied to clipboard: %1").arg(text),
                                    ui->tableView, {}, 1500);
             });
+        } else {
+            auto filename = index.data(Qt::ToolTipRole).toString();
+            auto clientName = index.data(Qt::DisplayRole).toString() + ".diff";
+            auto gitFileStatus =
+                static_cast<GitFileStatus>(index.data(GitStatusTableModel::StatusRole).toInt());
+
+            switch (gitFileStatus) {
+            case GitFileStatus::Modified:
+            case GitFileStatus::Added:
+                ui->diffLoading->start();
+                ui->revertCurrentButton->setText(tr("Revert current"));
+                git->runGit({"-C", repoRoot, "diff", "HEAD", "--", filename})
+                    .then(this, [this, clientName](const std::tuple<QString, int> &res) {
+                        auto [output, exitCode] = res;
+                        ui->diffLoading->stop();
+                        if (exitCode != 0) {
+                            qDebug()
+                                << QString("git - code=%1, output=[%2]").arg(exitCode).arg(output);
+                            return;
+                        }
+                        auto position = -1;
+                        CommandArgs args = {
+                            {GlobalArguments::FileName, clientName},
+                            {GlobalArguments::Content, output},
+                            {GlobalArguments::ReadOnly, true},
+                            {GlobalArguments::Position, position},
+                            {GlobalArguments::SourceDirectory, repoRoot},
+                        };
+                        git->getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
+                    });
+
+                break;
+            default:
+                auto ff = repoRoot + QDir::separator() + filename;
+                git->getManager()->openFile(ff);
+            }
         }
     });
 
@@ -379,7 +433,10 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
         model->setAllChecked(false);
         ui->revertSelectedButton->setEnabled(false);
     });
-    connect(ui->commitButton, &QAbstractButton::clicked, this, &CommitForm::commitImpl);
+    connect(ui->showDiff, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState newState) {
+        // widget 2 is the diff viewer
+        ui->splitter->widget(2)->setVisible(newState);
+    });
     updateGitStatus();
 }
 
@@ -431,6 +488,13 @@ bool CommitForm::event(QEvent *e) {
     case QEvent::Show:
         updateGitStatus();
         break;
+    case QEvent::Resize: {
+        auto event = static_cast<QResizeEvent *>(e);
+        auto width = event->size().width();
+        auto vis = width > 1200;
+        ui->showDiff->setChecked(vis);
+        break;
+    }
     default:
         break;
     }
@@ -496,9 +560,9 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     switch (status) {
     case GitFileStatus::Modified: {
         ui->diffLoading->start();
-        ui->diffLabel->setText("git diff");
+        ui->diffLabel->setText("git diff HEAD");
         ui->revertCurrentButton->setText(tr("Revert current"));
-        git->runGit({"-C", repoRoot, "diff", filename})
+        git->runGit({"-C", repoRoot, "diff", "HEAD", "--", filename})
             .then(this, [this, updateEditor](const std::tuple<QString, int> &res) {
                 auto [output2, exitCode] = res;
                 ui->diffLoading->stop();
