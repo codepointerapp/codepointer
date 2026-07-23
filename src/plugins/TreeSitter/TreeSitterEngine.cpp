@@ -568,7 +568,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
 
     if (!sep.isEmpty() && !prev.isEmpty()) {
         auto type = QString{};
-        qDebug() << "TreeSitterEngine: findSymbolsGlobal for" << prev << sep << "name=" << name;
         if (sep == "::") {
             type = prev;
         } else if (prev == "this" && fileContexts.contains(file)) {
@@ -581,7 +580,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                     fileContent, isTop);
                 ts_tree_delete(tempTree);
             }
-            qDebug() << "TreeSitterEngine: resolved 'this' to type" << type;
         } else if (fileContexts.contains(file)) {
             auto fileId = internFileId(file);
             auto candidates = globalIndex.values(prev);
@@ -590,8 +588,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
             });
             if (it != candidates.end()) {
                 type = it->type;
-                qDebug() << "TreeSitterEngine: found local declaration of" << prev << "with type"
-                         << type;
             }
             // Scan the current file's AST for a local variable or parameter declaration
             // with name `prev` at or before the cursor.  Locals shadow class members, so
@@ -629,10 +625,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                         }
                     }
                     ts_tree_delete(tempTree);
-                    if (!type.isEmpty()) {
-                        qDebug() << "TreeSitterEngine: resolved local var" << prev << "to type"
-                                 << type;
-                    }
                 }
             }
             // Last resort: look for a class member with this name in the enclosing class.
@@ -651,8 +643,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                         });
                     if (itGlobal != globalIndex.end()) {
                         type = itGlobal->type;
-                        qDebug() << "TreeSitterEngine: found class member" << prev << "with type"
-                                 << type;
                     }
                 }
             }
@@ -665,7 +655,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
             while (!cur.isEmpty() && !visited.contains(cur)) {
                 visited.insert(cur);
                 cur = cur.remove('*').remove('&').trimmed();
-                qDebug() << "TreeSitterEngine: resolving effective type..." << cur;
                 if (cur.endsWith("()")) {
                     auto fn = cur.left(cur.length() - 2);
                     // If the function name carries template args (e.g.
@@ -681,8 +670,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                             tArg = tArg.left(comma);
                         }
                         cur = tArg.trimmed();
-                        qDebug() << "TreeSitterEngine: resolved template factory call to type"
-                                 << cur;
                         continue;
                     }
                     // Find the last "::" at the top level (not inside angle brackets).
@@ -703,8 +690,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                     for (const auto &s : std::as_const(values)) {
                         if (c == -1 || s.parentName.endsWith(fn.left(c))) {
                             cur = s.type;
-                            qDebug() << "TreeSitterEngine: resolved function" << fn
-                                     << "to return type" << cur;
                             break;
                         }
                     }
@@ -752,7 +737,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                     }
                     if (s.parentName.isEmpty() && !s.type.isEmpty() && s.type != st) {
                         cur = s.type;
-                        qDebug() << "TreeSitterEngine: resolving alias" << st << "->" << cur;
                         break;
                     }
                 }
@@ -762,7 +746,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                 // that members of the inner type are visible for completion.
                 if (cur.isEmpty() && !templateArg.isEmpty()) {
                     cur = templateArg;
-                    qDebug() << "TreeSitterEngine: following template arg" << templateArg;
                 }
 
                 // Last resort: look for a type alias with name `st` in the current
@@ -786,8 +769,6 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                                     auto typeNode =
                                         ts_node_child_by_field_name(n, TSFieldNames::Type, 4);
                                     cur = extractNameFromNode(typeNode, fileContent);
-                                    qDebug() << "TreeSitterEngine: resolved file-local alias" << st
-                                             << "->" << cur;
                                     break;
                                 }
                             }
@@ -866,20 +847,12 @@ TreeSitterEngine::findSymbolsGlobal(const QString &name, bool exactMatch, const 
                     }
                 }
                 ts_tree_delete(tempTree);
-                if (!results.isEmpty()) {
-                    qDebug() << "TreeSitterEngine: found" << results.size()
-                             << "members in temp tree for" << lastSt;
-                }
             }
         }
 
         if (!results.isEmpty() || (!exactMatch && !otherProjectResults.isEmpty())) {
-            auto const finalRes =
-                dedupeSymbolList(results.isEmpty() ? otherProjectResults : results);
-            qDebug() << "TreeSitterEngine: found" << finalRes.size() << "members for" << prev;
-            return finalRes;
+            return dedupeSymbolList(results.isEmpty() ? otherProjectResults : results);
         }
-        qDebug() << "TreeSitterEngine: no semantic results found for" << prev;
         return {};
     }
 

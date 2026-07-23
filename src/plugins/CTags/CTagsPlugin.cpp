@@ -1,5 +1,6 @@
 #include <QDesktopServices>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
 #include <QMessageBox>
@@ -318,6 +319,8 @@ QFuture<CommandArgs> CTagsPlugin::handleCommandAsync(const QString &command,
     auto future = promise->future();
     QThreadPool::globalInstance()->start([this, command, args, promise]() {
         promise->start();
+        QElapsedTimer queryTimer;
+        queryTimer.start();
         CommandArgs result;
         if (command == GlobalCommands::BuildFinished) {
             auto sourceDir = args[GlobalArguments::SourceDirectory].toString();
@@ -346,6 +349,9 @@ QFuture<CommandArgs> CTagsPlugin::handleCommandAsync(const QString &command,
             auto tags = symbolRequestReply[GlobalArguments::Tags].toList();
             auto tooltip = createTooltip(symbol, tags);
             result[GlobalArguments::Tooltip] = tooltip;
+        }
+        if (command == GlobalCommands::VariableInfo || command == GlobalCommands::KeywordTooltip) {
+            qDebug() << "CTagsPlugin:" << command << "query took" << queryTimer.elapsed() << "ms";
         }
         promise->addResult(result);
         promise->finish();
