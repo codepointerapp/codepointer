@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFuture>
 #include <QMutexLocker>
+#include <QPromise>
 #include <QThread>
 #include <QThreadPool>
 #include <QtConcurrent>
@@ -287,110 +288,129 @@ QFuture<CommandArgs> TreeSitterPlugin::handleCommandAsync(const QString &command
         return scanProjectDir(sourceDir);
     }
 
-    CommandArgs result;
-    if (command == "ListSymbols") {
-        auto filename = args[GlobalArguments::FileName].toString();
-        auto content = args[GlobalArguments::Content].toString().toUtf8();
-        if (!content.isEmpty()) {
-            engine.updateFile(filename, content);
-        }
-        auto symbols = engine.getSymbols(filename, content);
-        QVariantList tagList;
-        for (const auto &sym : symbols) {
-            tagList.append(QVariant::fromValue(CommandArgs{
-                {GlobalArguments::FileName, filename},
-                {GlobalArguments::Type, sym.type},
-                {GlobalArguments::Value, sym.name},
-                {GlobalArguments::Name, sym.name},
-                {GlobalArguments::LineNumber, sym.line + 1},
-                {GlobalArguments::ColumnNumber, sym.column + 1},
-            }));
-        }
-        result[GlobalArguments::Tags] = tagList;
-    } else if (command == GlobalCommands::VariableInfo) {
-        auto filename = args[GlobalArguments::FileName].toString();
-        auto content = args[GlobalArguments::Content].toString().toUtf8();
-        auto symbol = args[GlobalArguments::RequestedSymbol].toString();
-        auto exactMatch = args[GlobalArguments::ExactMatch].toBool();
-        auto previousWord = args[GlobalArguments::PreviousWord].toString();
-        auto separator = args[GlobalArguments::Separator].toString();
-        auto line = args[GlobalArguments::LineNumber].toInt();
-        auto column = args[GlobalArguments::ColumnNumber].toInt();
-
-        if (!content.isEmpty()) {
-            engine.updateFile(filename, content);
-            engine.getSymbols(filename, content);
-        }
-
-        QVariantList tagList;
-        auto symbols = engine.findSymbolsGlobal(symbol, exactMatch, previousWord, separator,
-                                                filename, line, column, content);
-        for (const auto &sym : symbols) {
-            tagList.append(QVariant::fromValue(CommandArgs{
-                {GlobalArguments::FileName, engine.resolveFileId(sym.fileId)},
-                {GlobalArguments::Type, sym.type},
-                {GlobalArguments::Value, sym.name},
-                {GlobalArguments::Name, sym.name},
-                {GlobalArguments::LineNumber, sym.line + 1},
-                {GlobalArguments::ColumnNumber, sym.column + 1},
-                {GlobalArguments::Raw, sym.name},
-                {GlobalArguments::IsDefinition, sym.isDefinition},
-            }));
-        }
-        result[GlobalArguments::Symbol] = symbol;
-        result[GlobalArguments::Tags] = tagList;
-    } else if (command == GlobalCommands::KeywordTooltip) {
-        auto filename = args[GlobalArguments::FileName].toString();
-        auto symbol = args[GlobalArguments::RequestedSymbol].toString();
-        auto content = args[GlobalArguments::Content].toByteArray();
-        auto line = args[GlobalArguments::LineNumber].toInt();
-        auto col = args[GlobalArguments::ColumnNumber].toInt();
-        auto prev = args[GlobalArguments::PreviousWord].toString();
-        auto sep = args[GlobalArguments::Separator].toString();
-
-        if (!content.isEmpty() && !filename.isEmpty()) {
-            engine.updateFile(filename, content);
-        }
-
-        QString tooltip;
-        auto symbols =
-            engine.findSymbolsGlobal(symbol, true, prev, sep, filename, line, col, content);
-
-        QList<TreeSitterEngine::Symbol> definitions;
-        for (const auto &sym : symbols) {
-            if (sym.isDefinition) {
-                definitions.append(sym);
+    // ListSymbols/VariableInfo/KeywordTooltip query engine.findSymbolsGlobal(), which walks
+    // the whole project's symbol index and can take long enough on large projects to freeze
+    // the UI if run inline. engine's internal QMutex already serializes access against the
+    // scan thread pool, so it's safe to run this on a worker thread too.
+    auto promise = new QPromise<CommandArgs>();
+    auto future = promise->future();
+    completionSynchronizer.addFuture(future);
+    QThreadPool::globalInstance()->start([this, command, args, promise]() {
+        promise->start();
+        QElapsedTimer queryTimer;
+        queryTimer.start();
+        CommandArgs result;
+        if (command == "ListSymbols") {
+            auto filename = args[GlobalArguments::FileName].toString();
+            auto content = args[GlobalArguments::Content].toString().toUtf8();
+            if (!content.isEmpty()) {
+                engine.updateFile(filename, content);
             }
-        }
-
-        const auto &toShow = definitions.isEmpty() ? symbols : definitions;
-        QSet<QString> seenLocations;
-        for (const auto &sym : toShow) {
-            auto locationKey = QString("%1:%2:%3").arg(sym.fileId).arg(sym.line).arg(sym.column);
-            if (seenLocations.contains(locationKey)) {
-                continue;
+            auto symbols = engine.getSymbols(filename, content);
+            QVariantList tagList;
+            for (const auto &sym : symbols) {
+                tagList.append(QVariant::fromValue(CommandArgs{
+                    {GlobalArguments::FileName, filename},
+                    {GlobalArguments::Type, sym.type},
+                    {GlobalArguments::Value, sym.name},
+                    {GlobalArguments::Name, sym.name},
+                    {GlobalArguments::LineNumber, sym.line + 1},
+                    {GlobalArguments::ColumnNumber, sym.column + 1},
+                }));
             }
-            seenLocations.insert(locationKey);
+            result[GlobalArguments::Tags] = tagList;
+        } else if (command == GlobalCommands::VariableInfo) {
+            auto filename = args[GlobalArguments::FileName].toString();
+            auto content = args[GlobalArguments::Content].toString().toUtf8();
+            auto symbol = args[GlobalArguments::RequestedSymbol].toString();
+            auto exactMatch = args[GlobalArguments::ExactMatch].toBool();
+            auto previousWord = args[GlobalArguments::PreviousWord].toString();
+            auto separator = args[GlobalArguments::Separator].toString();
+            auto line = args[GlobalArguments::LineNumber].toInt();
+            auto column = args[GlobalArguments::ColumnNumber].toInt();
+
+            if (!content.isEmpty()) {
+                engine.updateFile(filename, content);
+                engine.getSymbols(filename, content);
+            }
+
+            QVariantList tagList;
+            auto symbols = engine.findSymbolsGlobal(symbol, exactMatch, previousWord, separator,
+                                                    filename, line, column, content);
+            for (const auto &sym : symbols) {
+                tagList.append(QVariant::fromValue(CommandArgs{
+                    {GlobalArguments::FileName, engine.resolveFileId(sym.fileId)},
+                    {GlobalArguments::Type, sym.type},
+                    {GlobalArguments::Value, sym.name},
+                    {GlobalArguments::Name, sym.name},
+                    {GlobalArguments::LineNumber, sym.line + 1},
+                    {GlobalArguments::ColumnNumber, sym.column + 1},
+                    {GlobalArguments::Raw, sym.name},
+                    {GlobalArguments::IsDefinition, sym.isDefinition},
+                }));
+            }
+            result[GlobalArguments::Symbol] = symbol;
+            result[GlobalArguments::Tags] = tagList;
+        } else if (command == GlobalCommands::KeywordTooltip) {
+            auto filename = args[GlobalArguments::FileName].toString();
+            auto symbol = args[GlobalArguments::RequestedSymbol].toString();
+            auto content = args[GlobalArguments::Content].toByteArray();
+            auto line = args[GlobalArguments::LineNumber].toInt();
+            auto col = args[GlobalArguments::ColumnNumber].toInt();
+            auto prev = args[GlobalArguments::PreviousWord].toString();
+            auto sep = args[GlobalArguments::Separator].toString();
+
+            if (!content.isEmpty() && !filename.isEmpty()) {
+                engine.updateFile(filename, content);
+            }
+
+            QString tooltip;
+            auto symbols =
+                engine.findSymbolsGlobal(symbol, true, prev, sep, filename, line, col, content);
+
+            QList<TreeSitterEngine::Symbol> definitions;
+            for (const auto &sym : symbols) {
+                if (sym.isDefinition) {
+                    definitions.append(sym);
+                }
+            }
+
+            const auto &toShow = definitions.isEmpty() ? symbols : definitions;
+            QSet<QString> seenLocations;
+            for (const auto &sym : toShow) {
+                auto locationKey =
+                    QString("%1:%2:%3").arg(sym.fileId).arg(sym.line).arg(sym.column);
+                if (seenLocations.contains(locationKey)) {
+                    continue;
+                }
+                seenLocations.insert(locationKey);
+                if (!tooltip.isEmpty()) {
+                    tooltip += "\n---\n";
+                }
+                auto symFile = engine.resolveFileId(sym.fileId);
+                auto symBasename =
+                    symFile.isEmpty() ? QStringLiteral("?") : QFileInfo(symFile).fileName();
+                if (!sym.signature.isEmpty()) {
+                    tooltip += sym.signature;
+                } else {
+                    tooltip += QString("%1 %2").arg(sym.type, sym.name);
+                }
+                tooltip += QString(" [%1:%2]").arg(symBasename).arg(sym.line + 1);
+            }
+
             if (!tooltip.isEmpty()) {
-                tooltip += "\n---\n";
+                result[GlobalArguments::Tooltip] = tooltip;
             }
-            auto symFile = engine.resolveFileId(sym.fileId);
-            auto symBasename =
-                symFile.isEmpty() ? QStringLiteral("?") : QFileInfo(symFile).fileName();
-            if (!sym.signature.isEmpty()) {
-                tooltip += sym.signature;
-            } else {
-                tooltip += QString("%1 %2").arg(sym.type, sym.name);
-            }
-            tooltip += QString(" [%1:%2]").arg(symBasename).arg(sym.line + 1);
         }
 
-        if (!tooltip.isEmpty()) {
-            result[GlobalArguments::Tooltip] = tooltip;
-        }
-    }
+        qDebug() << "TreeSitterPlugin:" << command << "query took" << queryTimer.elapsed()
+                 << "ms, found" << result.value(GlobalArguments::Tags).toList().size();
+        promise->addResult(result);
+        promise->finish();
+        delete promise;
+    });
 
-    return QtFuture::makeReadyValueFuture(result);
+    return future;
 }
 
 void TreeSitterPlugin::on_client_merged(qmdiHost *host) { IPlugin::on_client_merged(host); }
@@ -417,4 +437,9 @@ void TreeSitterPlugin::cleanup() {
         scanFuture.waitForFinished();
         engine.resetCancel();
     }
+
+    // Wait for any in-flight completion queries — they run on the global thread pool
+    // and touch `engine`, so it must not be destroyed out from under them.
+    completionSynchronizer.waitForFinished();
+    completionSynchronizer.clearFutures();
 }

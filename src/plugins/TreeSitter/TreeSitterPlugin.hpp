@@ -3,6 +3,7 @@
 #include "TreeSitterEngine.hpp"
 #include "iplugin.h"
 #include <QFuture>
+#include <QFutureSynchronizer>
 #include <QFutureWatcher>
 #include <QHash>
 #include <QMutex>
@@ -40,6 +41,12 @@ class TreeSitterPlugin : public IPlugin {
 
     QStringList pendingScanDirs;
     QMutex queueMutex;
+
+    // Tracks in-flight ListSymbols/VariableInfo/KeywordTooltip queries, which run on
+    // QThreadPool::globalInstance() and touch `engine`. cleanup() must wait for these
+    // before `engine` is destroyed, or a query still running on a worker thread will
+    // use-after-free it.
+    QFutureSynchronizer<CommandArgs> completionSynchronizer;
 
     TreeSitterEngine engine;
 
