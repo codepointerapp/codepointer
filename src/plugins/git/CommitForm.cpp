@@ -329,10 +329,12 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                             if (!prefix.isEmpty()) {
                                 for (auto row = 0; row < model->rowCount(); ++row) {
                                     auto idx = model->index(row, 2);
-                                    auto name = QFileInfo(model->data(idx, Qt::DisplayRole).toString())
-                                                    .fileName();
+                                    auto name =
+                                        QFileInfo(model->data(idx, Qt::DisplayRole).toString())
+                                            .fileName();
                                     if (name.startsWith(prefix, Qt::CaseInsensitive)) {
-                                        items.insert(Qutepart::CompletionItem(name, tr("Changed file")));
+                                        items.insert(
+                                            Qutepart::CompletionItem(name, tr("Changed file")));
                                     }
                                 }
                             }
