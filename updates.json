@@ -8,10 +8,10 @@
             "mandatory": true
         },
         "windows-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6",
-            "latest-version": "0.1.6",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6/codepointer-v0.1.6-x86_64.exe",
-            "changelog": "Dark mode updates, git diff fixes, tree sitter updates",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.7-alpha",
+            "latest-version": "0.1.7-alpha",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.7-alpha/codepointer-v0.1.7-alpha-x86_64.exe",
+            "changelog": "Git commit updates, async completions, editor loading reduced, new command palette",
             "mandatory": true
         },
         "linux": {
@@ -22,10 +22,10 @@
             "mandatory": true
         },
         "linux-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.6",
-            "latest-version": "0.1.6",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.6/codepointer-v0.1.6-x86_64.AppImage",
-            "changelog": "Dark mode updates, git diff fixes, tree sitter updates",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.7-alpha",
+            "latest-version": "0.1.7-alpha",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.7-alpha/codepointer-v0.1.7-alpha-x86_64.AppImage",
+            "changelog": "Git commit updates, async completions, editor loading reduced, new command palette",
             "mandatory": true
         }
     }
