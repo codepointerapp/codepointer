@@ -1,0 +1,11 @@
+{
+  "name": "qutepart-cpp",
+  "version-date": "2026-07-24",
+  "description": "qutepart-cpp text editor widget with syntax highlighting (diegoiast fork, built from the local lib/qutepart-cpp checkout)",
+  "homepage": "https://github.com/diegoiast/qutepart-cpp",
+  "license": "MIT",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

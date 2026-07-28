@@ -30,72 +30,35 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(cmake/mold-linker.cmake)
-
-set(QMDILIB_BUILD_EXAMPLES OFF)
-set(QMDILIB_TESTS OFF)
-set(QMDILIB_USE_CMAKEFORMAT OFF)
-set(QUTEPART_TESTS OFF)
-set(QUTEPART_USE_CMAKEFORMAT OFF)
-set(QHEXVIEW_ENABLE_DIALOGS ON)
-set(COMMAND_PALLETE_ENABLE_TESTS OFF)
-
-option(CODEPOINTER_WORK_OFFLINE OFF)
+include(cmake/icons-breeze.cmake)
 
 # Disable testing for tree-sitter to avoid "ts-test" target collision between grammars
 set(OLD_BUILD_TESTING ${BUILD_TESTING})
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING ${OLD_BUILD_TESTING} CACHE BOOL "" FORCE)
 
-if (CODEPOINTER_WORK_OFFLINE)
-    # For this to work, you need to make these libraries available yourself.
-    # On Linux/macOS, you can run the script `get-code.sh`. Tested also on
-    # git/bash form Git on Windows.
-    add_subdirectory("lib/qmdilib")
-    add_subdirectory("lib/qutepart-cpp")
-    add_subdirectory("lib/command-palette-widget")
-    add_subdirectory("lib/KodoTerm")
-    add_subdirectory("lib/image-viewer")
-    add_subdirectory("lib/QJsonModel")
-    add_subdirectory("lib/QSimpleUpdater")
-    add_subdirectory("lib/QHexView")
-else()
-    include(cmake/CPM.cmake)
-    include(cmake/icons-breeze.cmake)
-
-    CPMAddPackage("gh:diegoiast/qutepart-cpp#ab227d43732f1d0d15c17887ff6cbb1cdc0797c0")
-    CPMAddPackage("gh:diegoiast/qmdilib#55fdb780262e520b1d7f87382681f13f673b11b7")
-    CPMAddPackage("gh:diegoiast/command-palette-widget#93e69488e07ed8131342433068a63afd18116697")
-    CPMAddPackage("gh:diegoiast/KodoTerm#9d016815076a451ad639fa021d46602585e91247")
-    CPMAddPackage("gh:palacaze/image-viewer#125ea784f93327b471cd9b6b156285e40e70280a")
-    CPMAddPackage("gh:dridk/QJsonModel#f5fa5988c0ee52fff39a42973c964d5480951f86")
-    CPMAddPackage("gh:alex-spataru/QSimpleUpdater#8e7017f7fbdc2b4b1a26ed1eef9ebcba6a50639c")
-    CPMAddPackage("gh:Dax89/QHexView#beadd087413a46e7ed97afbab9dab1323ab1d033")
-    download_breeze_icons(6.4.0)
-endif()
+# Dependencies are resolved via vcpkg manifest mode (vcpkg.json +
+# vcpkg-configuration.json's overlay-ports). Configure with
+# -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake ;
+# see vcpkg-ports/ for the port definitions (own repos build from the local
+# lib/ checkout populated by get-code.sh, third-party repos fetch pinned
+# commits from GitHub).
+find_package(qmdilib CONFIG REQUIRED)
+find_package(qutepart CONFIG REQUIRED)
+find_package(CommandPaletteWidget CONFIG REQUIRED)
+find_package(KodoTerm CONFIG REQUIRED)
+find_package(PalImageViewer CONFIG REQUIRED)
+find_package(QJsonModel CONFIG REQUIRED)
+find_package(QSimpleUpdater CONFIG REQUIRED)
+find_package(QHexView CONFIG REQUIRED)
+download_breeze_icons(6.4.0)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# FIXME: the plugin-demo framework (iplugin, pluginmanager, filesystembrowser)
-# should be a proper exported target inside qmdilib, not demo source files
-# compiled directly into consumers. Move them out of demos/ into qmdilib's
-# library so they can be consumed via target_link_libraries without needing
-# ${qmdilib_SOURCE_DIR}.
 set(codepointer_sources
-    ${qmdilib_SOURCE_DIR}/demos/common/common.qrc
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/iplugin.cpp
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/pluginmodel.cpp
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/pluginmodel.h
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/plugin_list.ui
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/pluginmanager.cpp
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/pluginmanager.h
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/pluginwindow.ui
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/plugins/filesystem/filesystembrowser.cpp
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/plugins/filesystem/filesystembrowser.h
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/plugins/filesystem/filesystemwidget.cpp
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo/plugins/filesystem/filesystemwidget.h
     src/widgets/bannermessage.ui
     src/widgets/bannerwidget.cpp
     src/widgets/bannerwidget.h
@@ -228,29 +191,28 @@ else()
     target_compile_definitions(codepointer PRIVATE -DBUILD_OFFICIAL)
 endif()
 
-# FIXME: ${qmdilib_SOURCE_DIR}/demos/plugin-demo should not be needed here.
-# Once the plugin-demo framework is a proper qmdilib target this line goes away.
 target_include_directories(codepointer PUBLIC
-    ${qmdilib_SOURCE_DIR}/demos/plugin-demo
     src/plugins/TreeSitter/tree-sitter/lib/include
     src
 )
 target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent Qt6::Network Qt6::Svg Qt6::Xml
-    qmdilib
-    qutepart
-    CommandPaletteWidget
+    qmdi::qmdilib
+    qmdi::qmdi-pluginframework
+    qutepart::qutepart
+    CommandPaletteWidget::CommandPaletteWidget
     KodoTerm::KodoTerm
     Pal::ImageViewer
-    QHexView
-    QSimpleUpdater
-    QJsonModelStatic
+    QHexView::QHexView
+    QSimpleUpdater::QSimpleUpdater
+    QJsonModel::QJsonModelStatic
 )
 set_target_properties(codepointer PROPERTIES OUTPUT_NAME ${CODEPOINTER_BINARY})
 
 if(MSVC)
    # if we don't do this - file will be under Debug/Relase subdir
    set_target_properties(codepointer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}$<0:>)
-   target_compile_options(codepointer PRIVATE /W4)
+   target_compile_options(codepointer PRIVATE /W4 /Gw)
+   target_link_options(codepointer PRIVATE /OPT:REF /OPT:ICF)
 
    set_source_files_properties(
        src/plugins/TreeSitter/tree-sitter/lib/src/lib.c
@@ -258,20 +220,19 @@ if(MSVC)
    )
 else()
   set_target_properties(codepointer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-  target_compile_options(codepointer PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(codepointer PRIVATE -Wall -Wextra -Wpedantic -ffunction-sections -fdata-sections)
+  target_link_options(codepointer PRIVATE -Wl,--gc-sections)
 endif()
 
 install(TARGETS codepointer
         RUNTIME DESTINATION bin)
 
-if (NOT CODEPOINTER_WORK_OFFLINE)
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/share/
-            DESTINATION share/
-            DIRECTORY_PERMISSIONS
-                OWNER_READ OWNER_WRITE OWNER_EXECUTE
-                GROUP_READ GROUP_EXECUTE
-                WORLD_READ WORLD_EXECUTE)
-endif()
+install(DIRECTORY ${CMAKE_BINARY_DIR}/share/
+        DESTINATION share/
+        DIRECTORY_PERMISSIONS
+            OWNER_READ OWNER_WRITE OWNER_EXECUTE
+            GROUP_READ GROUP_EXECUTE
+            WORLD_READ WORLD_EXECUTE)
 
 if (WIN32)
     install(FILES ${CMAKE_SOURCE_DIR}/${CODEPOINTER_ICON}.svg

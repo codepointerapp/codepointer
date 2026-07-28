@@ -1,0 +1,11 @@
+{
+  "name": "image-viewer",
+  "version-date": "2026-07-24",
+  "description": "Pal::ImageViewer widget (palacaze/image-viewer, third-party, no upstream install rules in non-standalone mode)",
+  "homepage": "https://github.com/palacaze/image-viewer",
+  "license": "MIT",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

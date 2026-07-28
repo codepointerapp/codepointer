@@ -1,0 +1,11 @@
+{
+  "name": "qhexview",
+  "version-date": "2026-07-24",
+  "description": "Hex editor widget for Qt (Dax89/QHexView, third-party, no upstream install rules)",
+  "homepage": "https://github.com/Dax89/QHexView",
+  "license": "MIT",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

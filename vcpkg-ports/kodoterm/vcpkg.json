@@ -1,0 +1,12 @@
+{
+  "name": "kodoterm",
+  "version-date": "2026-07-24",
+  "description": "Embedded terminal widget (diegoiast, built from the local lib/KodoTerm checkout)",
+  "homepage": "https://github.com/diegoiast/KodoTerm",
+  "license": "MIT",
+  "dependencies": [
+    "libvterm",
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

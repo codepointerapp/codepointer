@@ -1,0 +1,16 @@
+{
+  "name": "codepointer",
+  "version-string": "0.1.6",
+  "description": "codepointer text editor / IDE",
+  "homepage": "https://github.com/diegoiast/codepointer",
+  "dependencies": [
+    "qmdilib",
+    "qutepart-cpp",
+    "command-palette-widget",
+    "kodoterm",
+    "image-viewer",
+    "qjsonmodel",
+    "qsimpleupdater",
+    "qhexview"
+  ]
+}
