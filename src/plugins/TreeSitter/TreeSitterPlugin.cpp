@@ -36,7 +36,6 @@ TreeSitterPlugin::TreeSitterPlugin() {
 
     connect(&scanWatcher, &QFutureWatcher<CommandArgs>::finished, this, [this]() {
         auto locker = QMutexLocker(&queueMutex);
-        qDebug() << "Tree-sitter: Scan finished. Pending queue:" << pendingScanDirs;
         locker.unlock();
         QTimer::singleShot(0, this, [this]() { startNextScan(); });
     });
@@ -83,7 +82,6 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
         auto locker = QMutexLocker(&queueMutex);
         if (!pendingScanDirs.contains(sourceDir)) {
             pendingScanDirs.prepend(sourceDir);
-            qDebug() << "TreeSitterPlugin: Queued scan for" << QDir(sourceDir).dirName();
         }
     }
 
@@ -100,12 +98,10 @@ QFuture<CommandArgs> TreeSitterPlugin::scanProjectDir(const QString &sourceDir) 
 void TreeSitterPlugin::startNextScan() {
     auto locker = QMutexLocker(&queueMutex);
     if (pendingScanDirs.isEmpty()) {
-        qDebug() << "TreeSitterPlugin: startNextScan - queue empty, done.";
         return;
     }
     auto nextDir = pendingScanDirs.takeFirst();
     locker.unlock();
-    qDebug() << "TreeSitterPlugin: Starting next queued scan ->" << QDir(nextDir).dirName();
     doScanProjectDir(nextDir);
 }
 
@@ -194,8 +190,6 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
                 const bool isHeader = TreeSitterEngine::isHeaderFile(filePath);
                 const qint64 maxFileSize = isHeader ? 2 * 1024 * 1024 : 512 * 1024;
                 if (f.size() > maxFileSize) {
-                    qDebug() << "TreeSitterPlugin: skipping large file" << filePath << "("
-                             << f.size() / 1024 << "KB)";
                     processedCount.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
@@ -249,19 +243,7 @@ QFuture<CommandArgs> TreeSitterPlugin::doScanProjectDir(const QString &sourceDir
             f.waitForFinished();
         }
 
-        // Return freed heap memory (large TSTrees) back to the OS
-#if 0
-#if defined(__linux__)
-        malloc_trim(0);
-#elif defined(_WIN32)
-        _heapmin();
-#elif defined(__APPLE__)
-        malloc_zone_pressure_relief(nullptr, 0);
-#endif
-#endif
-
         if (scanIsCancelled.load()) {
-            qDebug() << "TreeSitterPlugin:" << projectLabel << "- Scan cancelled";
             return CommandArgs{};
         }
         const auto wallMs = timer.elapsed();
