@@ -205,6 +205,8 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
     manager->connect(manager, &PluginManager::newFileRequested, [this]() { fileNew(); });
 
     connect(chooseTheme, &QAction::triggered, this, [this]() {
+        auto static newThemeSelected = false;
+
         auto current = getManager()->currentClient();
         auto editor = dynamic_cast<qmdiEditor *>(current);
         if (!editor) {
@@ -225,26 +227,44 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
         p->setDataModel(model);
         p->show();
 
-        connect(p, &CommandPalette::didHide, this, [this, p, editor]() {
+        connect(p, &CommandPalette::didSelectItem, this, [editor, this](auto index, auto *) {
+            auto newTheme = const_cast<Qutepart::Theme *>(editor->getEditorTheme());
+            if (newTheme != this->theme) {
+                delete newTheme;
+            }
+            newTheme = nullptr;
+            auto themeDescription = index.data(Qt::DisplayRole).toString();
+            auto themeFileName = themeManager->getNameFromDesc(themeDescription);
+            auto themeMetaData = themeManager->getThemeMetaData(themeFileName);
+            if (!themeMetaData.name.isEmpty()) {
+                newTheme = new Qutepart::Theme();
+                const_cast<Qutepart::Theme *>(newTheme)->loadTheme(themeFileName);
+            }
+            editor->setEditorTheme(newTheme);
+        });
+        connect(p, &CommandPalette::didChooseItem, this, [p, editor, this]() {
+            // we do need to save it
+            newThemeSelected = true;
+        });
+        connect(p, &CommandPalette::didHide, this, [p, this, editor]() {
             if (!newThemeSelected) {
+                // Restore current editor's theme from the Plugin's theme
                 editor->setEditorTheme(this->theme);
                 editor->setEditorHighlighter(editor->getSyntaxID());
             } else {
-                // apply it globally
                 auto newTheme = const_cast<Qutepart::Theme *>(editor->getEditorTheme());
                 delete this->theme;
                 this->theme = newTheme;
+
+                // Theme - apply it globally
                 for (auto i = 0; i < mdiServer->getClientsCount(); i++) {
                     auto client = mdiServer->getClient(i);
                     auto e = dynamic_cast<qmdiEditor *>(client);
                     if (!e) {
-                        // current editor already has this enabled
                         continue;
                     }
-
                     e->setEditorTheme(this->theme);
                 }
-
                 if (newTheme) {
                     auto themeFileName =
                         themeManager->getNameFromDesc(newTheme->getMetaData().name);
@@ -253,29 +273,9 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
                     getConfig().setTheme("");
                 }
             }
-            chooseTheme->setEnabled(true);
             p->deleteLater();
             editor->setFocus();
-        });
-        connect(p, &CommandPalette::didSelectItem, this,
-                [editor, this](const QModelIndex index, const QAbstractItemModel *) {
-                    auto newTheme = const_cast<Qutepart::Theme *>(editor->getEditorTheme());
-                    if (newTheme != this->theme) {
-                        delete newTheme;
-                    }
-                    newTheme = nullptr;
-                    auto themeDescription = index.data(Qt::DisplayRole).toString();
-                    auto themeFileName = themeManager->getNameFromDesc(themeDescription);
-                    auto themeMetaData = themeManager->getThemeMetaData(themeFileName);
-                    if (!themeMetaData.name.isEmpty()) {
-                        newTheme = new Qutepart::Theme();
-                        const_cast<Qutepart::Theme *>(newTheme)->loadTheme(themeFileName);
-                    }
-                    editor->setEditorTheme(newTheme);
-                });
-        connect(p, &CommandPalette::didChooseItem, this, [this]() {
-            // don't restore theme on closing - user choose his new theme
-            newThemeSelected = true;
+            chooseTheme->setEnabled(true);
         });
     });
 }
