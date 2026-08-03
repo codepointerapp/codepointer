@@ -228,6 +228,112 @@ The solution is to run:
 NO_STRIP=true ./build.sh
 ```
 
+## Building the Flatpak
+
+The manifest is `org.codepointerapp.codepointer.yml`, targeting the
+`org.kde.Platform`/`org.kde.Sdk` runtime (currently version `6.10`). This is
+a separate toolchain from the "Shared install" above - you do not need Qt
+installed locally, `flatpak-builder` builds entirely inside the runtime's
+sandbox.
+
+Install `flatpak` and `flatpak-builder`:
+
+```bash
+# Debian/Ubuntu
+sudo apt install flatpak flatpak-builder
+
+# Fedora
+sudo dnf install flatpak flatpak-builder
+
+# Arch
+sudo pacman -S flatpak flatpak-builder
+```
+
+Add Flathub (if you don't already have it) and install the runtime/SDK. The
+version must match `runtime-version` in the manifest:
+
+```bash
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user -y flathub org.kde.Platform//6.10 org.kde.Sdk//6.10
+```
+
+Build. This needs network access during the build step, since CMake fetches
+dependencies itself via CPM (and KodoTerm fetches `libvterm` via its own
+`FetchContent`) - there is no vendored/offline mode for the Flatpak build:
+
+```bash
+flatpak-builder --force-clean --repo=repo builddir org.codepointerapp.codepointer.yml
+```
+
+This produces an OSTree repo in `repo/`. To install and run it locally
+without publishing anywhere:
+
+```bash
+flatpak remote-add --user --if-not-exists --no-gpg-verify codepointer-repo repo
+flatpak install --user -y --reinstall codepointer-repo org.codepointer.codepointer
+flatpak run org.codepointer.codepointer
+```
+
+### Dev loop: reinstalling after code changes
+
+Flatpak tracks builds by OSTree commit on the `master` branch, not by a
+version string, so there is no need to bump any version while iterating.
+Once the remote above is added, rebuild and update in place:
+
+```bash
+flatpak-builder --force-clean --repo=repo builddir org.codepointerapp.codepointer.yml \
+  && flatpak --user update -y org.codepointer.codepointer
+```
+
+`flatpak update` picks up the new commit every time, even though the
+`Version` field displayed by `flatpak info`/`flatpak update` never changes.
+
+### Removing the local dev install
+
+To uninstall the app itself, keeping the local remote (useful if you're
+about to rebuild and reinstall anyway):
+
+```bash
+flatpak --user uninstall -y org.codepointer.codepointer
+```
+
+To also drop the local remote (e.g. once you're done testing, or if `repo/`
+gets deleted/regenerated and the remote points nowhere useful):
+
+```bash
+flatpak --user uninstall -y org.codepointer.codepointer
+flatpak --user remote-delete codepointer-repo
+```
+
+`flatpak --user uninstall --unused -y` will additionally clean up the
+`org.kde.Platform`/`org.kde.Sdk` runtimes if nothing else on your system
+still needs them - leave that out if you have other Flatpak apps around.
+To wipe the build state itself (forces a full rebuild next time, including
+re-fetching all dependencies), delete `builddir/`, `repo/`, and
+`.flatpak-builder/`.
+
+Notes:
+1. The manifest passes `-DCODEPOINTER_BUNDLE_ICON_THEME=OFF`. The regular
+   (non-Flatpak) build bundles the Breeze icon theme (see
+   [icons-breeze.cmake](https://github.com/codepointerapp/codepointer/blob/main/cmake/icons-breeze.cmake))
+   because Qt has no reliable "default icon theme" story outside GNU/Linux.
+   Inside the Flatpak sandbox this is unnecessary: the `org.kde.Platform`
+   runtime already ships Breeze system-wide, so bundling our own copy just
+   adds ~30MB of dead weight.
+1. The manifest also passes `-DCODEPOINTER_DISABLE_UPDATES=ON`. Flatpak (and
+   Flathub) manage updates themselves; an app checking for its own updates
+   from inside the sandbox is redundant and against Flathub's guidelines.
+1. `app-id` in the manifest, the installed `.desktop`/`.appdata.xml`/icon
+   filenames, and the `<id>`/`<launchable>` inside the appdata must all
+   agree (`org.codepointer.codepointer`) or `flatpak-builder` will fail to
+   generate appstream metadata for the app ("No appstream data for
+   app/..."). The appdata file is templated
+   (`org.codepointer.codepointer.appdata.xml.in`) from `CODEPOINTER_APP_NAME`
+   the same way the `.desktop` file is, so `BUILD_VERSION=CE`/`DEV` builds
+   get their own consistent ids too.
+1. CI builds this automatically and uploads the resulting bundle as a build
+   artifact - see `.github/workflows/flatpak.yml`.
+
 ## Building in Visual Studio
 
 You should open the directory as new project, as CodePointer does not provide

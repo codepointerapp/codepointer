@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>org.codepointerapp.codepointer</id>
+  <id>org.codepointer.@CODEPOINTER_APP_NAME@</id>
 
   <name>codepointer</name>
   <summary>IDE for Rust, Go, C++ and more</summary>
@@ -33,7 +33,7 @@
   </provides>
 
   <launchable type="desktop-id">
-    org.codepointerapp.codepointer.desktop
+    org.codepointer.@CODEPOINTER_APP_NAME@.desktop
   </launchable>
 
   <content_rating type="oars-1.1"/>
