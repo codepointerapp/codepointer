@@ -1,8 +1,8 @@
 [Desktop Entry]
 Exec=@CODEPOINTER_BINARY@ %f
-Comment=Text editor
+Comment=Text editor/IDE
 Type=Application
-Icon=@CODEPOINTER_ICON@
+Icon=org.codepointer.@CODEPOINTER_APP_NAME@
 Name=@CODEPOINTER_APP_NAME@
 StartupNotify=true
 Terminal=false

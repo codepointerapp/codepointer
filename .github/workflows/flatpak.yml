@@ -1,0 +1,66 @@
+name: Flatpak build
+
+on:
+  push:
+    branches:
+      - main
+      - github-actions
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  APP_ID: org.codepointer.codepointer
+  MANIFEST: org.codepointerapp.codepointer.yml
+  RUNTIME_VERSION: '6.10'
+
+jobs:
+  flatpak:
+    name: Build Flatpak (x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install flatpak and flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Cache Flatpak runtime/SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-kde-${{ env.RUNTIME_VERSION }}
+
+      - name: Install KDE runtime and SDK
+        run: |
+          flatpak install --user -y flathub \
+            org.kde.Platform//${{ env.RUNTIME_VERSION }} \
+            org.kde.Sdk//${{ env.RUNTIME_VERSION }}
+
+      - name: Set version tag or commit SHA
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF##refs/tags/}" >> $GITHUB_ENV
+          else
+            echo "version=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          fi
+
+      - name: Build Flatpak
+        run: flatpak-builder --force-clean --repo=repo builddir ${{ env.MANIFEST }}
+
+      - name: Create Flatpak bundle
+        run: |
+          flatpak build-bundle repo \
+            ${{ env.APP_ID }}-${{ env.version }}-x86_64.flatpak \
+            ${{ env.APP_ID }}
+
+      - name: Upload Flatpak bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_ID }}-${{ env.version }}-x86_64.flatpak
+          path: ${{ env.APP_ID }}-${{ env.version }}-x86_64.flatpak
