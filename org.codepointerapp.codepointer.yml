@@ -15,6 +15,10 @@ modules:
   - name: codepointer
     buildsystem: simple
 
+    build-options:
+      build-args:
+        - --share=network
+
     build-commands:
       - cmake -S . -B build
           -G Ninja
