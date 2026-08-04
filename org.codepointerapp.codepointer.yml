@@ -17,6 +17,10 @@ modules:
 
     build-options:
       build-args:
+        # CMake fetches dependencies itself (CPM + KodoTerm's own
+        # FetchContent for libvterm), so build-time network access
+        # is required. This does not affect the sandboxed app itself,
+        # only the build step.
         - --share=network
 
     build-commands:
@@ -24,51 +28,12 @@ modules:
           -G Ninja
           -DCMAKE_INSTALL_PREFIX=/app
           -DCMAKE_BUILD_TYPE=Release
-          -DQTEDIT4_WORK_OFFLINE=ON
+          -DCODEPOINTER_BUNDLE_ICON_THEME=OFF
+          -DCODEPOINTER_DISABLE_UPDATES=ON
           -DBUILD_VERSION=OFFICIAL
       - ninja -C build
       - ninja -C build install
 
     sources:
-      # Main application
-      # - type: git
-      #   url: https://github.com/codepointerapp/codepoointer.git
-      #   commit: d09365bc68ebc1b9b543f84b9b21c71c889f1353
       - type: dir
         path: .
-
-      # Vendored dependencies (offline mode)
-      - type: git
-        url: https://github.com/diegoiast/qmdilib.git
-        commit: b687217f325500d44f868b894ee1eab72d692708
-        dest: lib/qmdilib
-
-      - type: git
-        url: https://github.com/diegoiast/qutepart-cpp.git
-        commit: 9b419096b31d637e33805f8e3e1d1a1b8f27869a
-        dest: lib/qutepart-cpp
-
-      - type: git
-        url: https://github.com/diegoiast/command-palette-widget.git
-        commit: 3c4e338216936097e89e8a19e1c325018d7e750c
-        dest: lib/command-palette-widget
-
-      - type: git
-        url: https://github.com/palacaze/image-viewer.git
-        commit: 125ea784f93327b471cd9b6b156285e40e70280a
-        dest: lib/image-viewer
-
-      - type: git
-        url: https://github.com/dridk/QJsonModel.git
-        commit: f5fa5988c0ee52fff39a42973c964d5480951f86
-        dest: lib/QJsonModel
-
-      - type: git
-        url: https://github.com/alex-spataru/QSimpleUpdater.git
-        commit: 8e7017f7fbdc2b4b1a26ed1eef9ebcba6a50639c
-        dest: lib/QSimpleUpdater
-
-      - type: git
-        url: https://github.com/Dax89/QHexView.git
-        commit: 5fe6d9851ecfae0acf26d1659ee3cb579d03202f
-        dest: lib/QHexView

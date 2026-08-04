@@ -40,6 +40,8 @@ set(QHEXVIEW_ENABLE_DIALOGS ON)
 set(COMMAND_PALLETE_ENABLE_TESTS OFF)
 
 option(CODEPOINTER_WORK_OFFLINE OFF)
+option(CODEPOINTER_BUNDLE_ICON_THEME "Download and install the Breeze icon theme (needed when no system icon theme is present, e.g. bare Linux installs or Windows)" ON)
+option(CODEPOINTER_DISABLE_UPDATES "Disable the in-app update checker (e.g. for Flatpak/store builds, where the store manages updates)" OFF)
 
 # Disable testing for tree-sitter to avoid "ts-test" target collision between grammars
 set(OLD_BUILD_TESTING ${BUILD_TESTING})
@@ -70,7 +72,9 @@ else()
     CPMAddPackage("gh:dridk/QJsonModel#f5fa5988c0ee52fff39a42973c964d5480951f86")
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#8e7017f7fbdc2b4b1a26ed1eef9ebcba6a50639c")
     CPMAddPackage("gh:Dax89/QHexView#beadd087413a46e7ed97afbab9dab1323ab1d033")
-    download_breeze_icons(6.4.0)
+    if (CODEPOINTER_BUNDLE_ICON_THEME)
+        download_breeze_icons(6.4.0)
+    endif()
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
@@ -208,6 +212,8 @@ file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}"
 
 configure_file(codepointer.qrc.in ${CMAKE_BINARY_DIR}/codepointer.qrc)
 configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop)
+configure_file(org.codepointer.codepointer.appdata.xml.in
+    ${CMAKE_BINARY_DIR}/org.codepointer.${CODEPOINTER_APP_NAME}.appdata.xml @ONLY)
 add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
     indenters.json)
 
@@ -217,6 +223,9 @@ endif()
 
 target_compile_definitions(codepointer PRIVATE -DCODEPOINTER_APP_NAME="${CODEPOINTER_APP_NAME}")
 target_compile_definitions(codepointer PRIVATE -DCODEPOINTER_ICON=":${CODEPOINTER_ICON}.ico")
+if (CODEPOINTER_DISABLE_UPDATES)
+    target_compile_definitions(codepointer PRIVATE -DDISABLE_UPDATES)
+endif()
 target_compile_definitions(codepointer PRIVATE -DCODEPOINTER_SVG_ICON=":${CODEPOINTER_ICON}.svg")
 target_compile_definitions(codepointer PRIVATE -DCODEPOINTER_MACHINE_NAME="${CODEPOINTER_MACHINE_NAME}")
 
@@ -264,7 +273,7 @@ endif()
 install(TARGETS codepointer
         RUNTIME DESTINATION bin)
 
-if (NOT CODEPOINTER_WORK_OFFLINE)
+if (NOT CODEPOINTER_WORK_OFFLINE AND CODEPOINTER_BUNDLE_ICON_THEME)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/share/
             DESTINATION share/
             DIRECTORY_PERMISSIONS
@@ -283,12 +292,12 @@ else()
             DESTINATION share/icons/hicolor/scalable/apps)
     install(FILES ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop
             DESTINATION share/applications
-            RENAME org.codepointerapp.${CODEPOINTER_APP_NAME}.desktop)
+            RENAME org.codepointer.${CODEPOINTER_APP_NAME}.desktop)
 
     install(FILES ${CMAKE_SOURCE_DIR}/${CODEPOINTER_ICON}.svg
             DESTINATION share/icons/hicolor/scalable/apps
-            RENAME org.codepointerapp.${CODEPOINTER_APP_NAME}.svg)
-    install(FILES org.codepointerapp.codepointer.appdata.xml
+            RENAME org.codepointer.${CODEPOINTER_APP_NAME}.svg)
+    install(FILES ${CMAKE_BINARY_DIR}/org.codepointer.${CODEPOINTER_APP_NAME}.appdata.xml
             DESTINATION share/metainfo)
 endif()
 
