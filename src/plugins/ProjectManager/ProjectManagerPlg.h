@@ -45,14 +45,17 @@ class ProjectBuildModel : public QAbstractListModel {
 class ProjectManagerPlugin : public IPlugin {
 
     struct Config {
+        // Actual user config,
         CONFIG_DEFINE(SaveBeforeTask, bool);
         CONFIG_DEFINE(BlackConsole, bool);
         CONFIG_DEFINE(ConsoleFont, QString)
         CONFIG_DEFINE(ExtraPath, QStringList);
+
+        // Opened projects
         CONFIG_DEFINE(OpenDirs, QStringList);
         CONFIG_DEFINE(SelectedDirectory, QString);
-        CONFIG_DEFINE(FilterShow, QString);
-        CONFIG_DEFINE(FilterOut, QString);
+
+        // State of the search panel
         CONFIG_DEFINE(SearchPath, QString);
         CONFIG_DEFINE(SearchPattern, QString);
         CONFIG_DEFINE(SearchInclude, QString);
@@ -61,6 +64,11 @@ class ProjectManagerPlugin : public IPlugin {
         CONFIG_DEFINE(SearchSensitive, bool);
         CONFIG_DEFINE(SearchRegex, bool);
         CONFIG_DEFINE(SearchCollapseFileNames, bool);
+
+        // FIXME: following need to be per project, loaded from config
+        CONFIG_DEFINE(FilterShow, QString);
+        CONFIG_DEFINE(FilterOut, QString);
+
         qmdiPluginConfig *config;
     };
     Config &getConfig() {

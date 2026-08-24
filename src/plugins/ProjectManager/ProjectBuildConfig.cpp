@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QString>
+#include <QThread>
 
 using StringHash = QHash<QString, QString>;
 using StringPair = QPair<QString, QString>;
@@ -318,7 +319,7 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
     }
 
     // Build commands
-    auto cmakeBuildParallel = "cmake --build ${build_directory} --parallel";
+    auto cmakeBuildParallel = "cmake --build ${build_directory} --parallel ${cpu_count}";
     auto cmakeBuildSingle = "cmake --build ${build_directory}";
 
     {
@@ -452,7 +453,7 @@ auto ProjectBuildConfig::tryGuessFromGo(const QString &fileName)
 std::shared_ptr<ProjectBuildConfig>
 ProjectBuildConfig::tryGuessFromMeson(const QString &mesonBuildFile) {
     auto fi = QFileInfo(mesonBuildFile);
-    if (fi.fileName().compare("build.meson", Qt::CaseSensitivity::CaseInsensitive) != 0) {
+    if (fi.fileName().compare("meson.build", Qt::CaseSensitivity::CaseInsensitive) != 0) {
         return {};
     }
     if (!fi.isReadable()) {
@@ -509,7 +510,7 @@ ProjectBuildConfig::buildFromDirectory(const QString &directory) {
         config = tryGuessFromCMake(directory + QDir::separator() + "CMakeLists.txt");
     }
     if (!config) {
-        config = tryGuessFromMeson(directory + QDir::separator() + "build.meson");
+        config = tryGuessFromMeson(directory + QDir::separator() + "meson.build");
     }
     if (!config) {
         config = tryGuessFromCargo(directory + QDir::separator() + "Cargo.toml");
@@ -677,6 +678,9 @@ bool ProjectBuildConfig::canLoadFile(const QString &filename) {
         return true;
     }
     if (fi.fileName().compare("go.mod", Qt::CaseInsensitive) == 0) {
+        return true;
+    }
+    if (fi.fileName().compare("meson.build", Qt::CaseInsensitive) == 0) {
         return true;
     }
     if (fi.fileName().compare("codepointer.json", Qt::CaseInsensitive) == 0) {
@@ -902,6 +906,7 @@ auto ProjectBuildConfig::getConfigDictionary() const -> const QHash<QString, QSt
     auto dictionary = QHash<QString, QString>();
     dictionary["source_directory"] = QDir::toNativeSeparators(sourceDir);
     dictionary["build_directory"] = QDir::toNativeSeparators(buildDir);
+    dictionary["cpu_count"] = QString::number(qMax(1, QThread::idealThreadCount()));
     return dictionary;
 }
 
