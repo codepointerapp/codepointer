@@ -211,8 +211,19 @@ configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME
 add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
     indenters.json)
 
-if (!MINGW)
-    set_property(TARGET codepointer PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+# NOTE: this used to read `if (!MINGW)`. CMake has no `!` operator - it treated
+# "!MINGW" as the name of an undefined variable, so the branch never ran and LTO
+# was silently off in every build, including the official one.
+# Only enabled for the optimised configurations: LTO on a Debug build costs link
+# time and buys nothing.
+include(CheckIPOSupported)
+check_ipo_supported(RESULT CODEPOINTER_IPO_SUPPORTED OUTPUT CODEPOINTER_IPO_ERROR)
+if (CODEPOINTER_IPO_SUPPORTED AND NOT MINGW)
+    set_property(TARGET codepointer PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    set_property(TARGET codepointer PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
+    set_property(TARGET codepointer PROPERTY INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL TRUE)
+else()
+    message(STATUS "codepointer: LTO disabled (${CODEPOINTER_IPO_ERROR})")
 endif()
 
 target_compile_definitions(codepointer PRIVATE -DCODEPOINTER_APP_NAME="${CODEPOINTER_APP_NAME}")
