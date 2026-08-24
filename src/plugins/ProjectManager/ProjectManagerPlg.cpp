@@ -366,7 +366,17 @@ ProjectManagerPlugin::ProjectManagerPlugin() {
                                      .build());
 }
 
-ProjectManagerPlugin::~ProjectManagerPlugin() { delete searchPanelUI; }
+ProjectManagerPlugin::~ProjectManagerPlugin() {
+    // runProcess is a member, so ~QProcess runs after this body and kills any task
+    // still going - which emits finished() while the plugin (and, during
+    // PluginManager teardown, other plugins) are already being destroyed. The
+    // handler calls back into the command bus, so it must not be reachable any
+    // more. Disconnect first, then reap.
+    runProcess.disconnect();
+    stopRunningTask();
+    releaseTaskPty();
+    delete searchPanelUI;
+}
 
 void ProjectManagerPlugin::showAbout() {
     QMessageBox::information(dynamic_cast<QMainWindow *>(mdiServer), tr("About"),
