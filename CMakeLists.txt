@@ -62,7 +62,7 @@ else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
 
-    CPMAddPackage("gh:diegoiast/qutepart-cpp#c1674ea4fef355d1c2c2d10ae53e226eb5e52593")
+    CPMAddPackage("gh:diegoiast/qutepart-cpp#7f5bec98772996d128b9e9b92f052cfb439e2c81")
     CPMAddPackage("gh:diegoiast/qmdilib#55fdb780262e520b1d7f87382681f13f673b11b7")
     CPMAddPackage("gh:diegoiast/command-palette-widget#dc9e7ff8b632de9b7e49c25b5b95dc8693937300")
     CPMAddPackage("gh:diegoiast/KodoTerm#9d016815076a451ad639fa021d46602585e91247")
@@ -204,6 +204,10 @@ set(codepointer_sources
     
     src/plugins/LSP/LspClientImpl.cpp
     src/plugins/LSP/LspClientImpl.hpp
+    src/plugins/LSP/LspPlugin.cpp
+    src/plugins/LSP/LspPlugin.hpp
+    src/plugins/LSP/LspDebugWidget.cpp
+    src/plugins/LSP/LspDebugWidget.hpp
     
     src/main.cpp
     ${CMAKE_BINARY_DIR}/codepointer.qrc

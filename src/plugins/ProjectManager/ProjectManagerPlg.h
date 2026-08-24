@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <QAbstractItemModel>
 #include <QFileSystemWatcher>
 #include <QProcess>
 
