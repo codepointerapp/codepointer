@@ -6,6 +6,8 @@
 #include <QFileSystemWatcher>
 #include <QProcess>
 
+class QSocketNotifier;
+
 class ProjectIssuesWidget;
 class FoldersModel;
 class DirectoryModel;
@@ -105,7 +107,7 @@ class ProjectManagerPlugin : public IPlugin {
     void removeProject_clicked();
     void newProjectSelected(int index);
 
-    void runCommand(const QString &workingDirectory, const QString &programOrCommand,
+    bool runCommand(const QString &workingDirectory, const QString &programOrCommand,
                     const QStringList &arguments, const QProcessEnvironment &env,
                     bool captureOutput);
     void do_runExecutable(const ExecutableInfo *info);
@@ -124,6 +126,11 @@ class ProjectManagerPlugin : public IPlugin {
     auto tryOpenProject(const QString &filename, const QString &dir) -> bool;
     auto tryScrollOutput(int line) -> bool;
     auto fixClientsMenu(qmdiClient *client, const QString &filename) -> void;
+    /// Kills any task still running and waits for it to be reaped, so that
+    /// `runProcess` can safely be reused. Returns false if it refused to die.
+    auto stopRunningTask() -> bool;
+    /// Closes the pty master fd (and its notifier) owned by the last task, if any.
+    auto releaseTaskPty() -> void;
 
     int panelIndex = -1;
     Ui::ProjectManagerGUI *gui = nullptr;
@@ -138,6 +145,9 @@ class ProjectManagerPlugin : public IPlugin {
     int selectedTaskIndex = -1;
 
     QProcess runProcess;
+    // Owned by the currently running task; -1 when no pty is in use.
+    int taskPtyMasterFd = -1;
+    QSocketNotifier *taskPtyNotifier = nullptr;
 
     KitDefinitionModel *kitsModel = nullptr;
     ProjectBuildModel *projectModel = nullptr;
