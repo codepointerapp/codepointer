@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -36,7 +37,6 @@ LspDebugWidget::LspDebugWidget(LspPlugin *plugin, QWidget *parent)
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
 
-    // --- servers -------------------------------------------------------------
     auto serversBox = new QGroupBox(tr("Servers"), this);
     auto serversLayout = new QVBoxLayout(serversBox);
     serversTable = makeTable({tr("Root"), tr("Server"), tr("State"), tr("Docs")});
@@ -44,7 +44,14 @@ LspDebugWidget::LspDebugWidget(LspPlugin *plugin, QWidget *parent)
     serversLayout->addWidget(serversTable);
     layout->addWidget(serversBox);
 
-    // --- documents -----------------------------------------------------------
+    progressLabel = new QLabel(tr("Idle"), serversBox);
+    progressBar = new QProgressBar(serversBox);
+    progressBar->setRange(0, 100);
+    progressBar->setTextVisible(true);
+    progressBar->hide();
+    serversLayout->addWidget(progressLabel);
+    serversLayout->addWidget(progressBar);
+
     auto documentsBox = new QGroupBox(tr("Synced documents"), this);
     auto documentsLayout = new QVBoxLayout(documentsBox);
     documentsTable = makeTable({tr("File"), tr("Version")});
@@ -52,7 +59,13 @@ LspDebugWidget::LspDebugWidget(LspPlugin *plugin, QWidget *parent)
     documentsLayout->addWidget(documentsTable);
     layout->addWidget(documentsBox);
 
-    // --- query ---------------------------------------------------------------
+    auto capabilitiesBox = new QGroupBox(tr("Capabilities"), this);
+    auto capabilitiesLayout = new QVBoxLayout(capabilitiesBox);
+    capabilitiesTable = makeTable({tr("Capability"), tr("Value")});
+    capabilitiesTable->setMaximumHeight(150);
+    capabilitiesLayout->addWidget(capabilitiesTable);
+    layout->addWidget(capabilitiesBox);
+
     auto queryBox = new QGroupBox(tr("Query"), this);
     auto queryLayout = new QVBoxLayout(queryBox);
 
@@ -75,7 +88,6 @@ LspDebugWidget::LspDebugWidget(LspPlugin *plugin, QWidget *parent)
     posRow->addWidget(columnSpin);
     posRow->addStretch(1);
     queryLayout->addLayout(posRow);
-    // LSP positions are zero based, and so are the values the editor sends.
     queryLayout->addWidget(new QLabel(tr("<i>positions are 0-based</i>"), queryBox));
 
     syncButton = new QPushButton(tr("Sync"), queryBox);
@@ -88,7 +100,6 @@ LspDebugWidget::LspDebugWidget(LspPlugin *plugin, QWidget *parent)
     queryLayout->addLayout(buttonRow);
     layout->addWidget(queryBox);
 
-    // --- log -----------------------------------------------------------------
     auto logBox = new QGroupBox(tr("Log"), this);
     auto logLayout = new QVBoxLayout(logBox);
     traceCheck = new QCheckBox(tr("Trace LSP traffic"), logBox);
@@ -124,6 +135,24 @@ void LspDebugWidget::log(const QString &message) {
     logView->appendPlainText(QTime::currentTime().toString("HH:mm:ss.zzz") + "  " + message);
 }
 
+void LspDebugWidget::showProgress(const QString &root, const QString &text, int percentage,
+                                  bool active) {
+    if (!active) {
+        progressLabel->setText(tr("Idle"));
+        progressBar->hide();
+        log(tr("[%1] background work finished").arg(QFileInfo(root).fileName()));
+        return;
+    }
+    progressLabel->setText(QStringLiteral("%1: %2").arg(QFileInfo(root).fileName(), text));
+    if (percentage >= 0) {
+        progressBar->setRange(0, 100);
+        progressBar->setValue(percentage);
+    } else {
+        progressBar->setRange(0, 0); // busy indicator
+    }
+    progressBar->show();
+}
+
 void LspDebugWidget::appendTrace(const QString &message) {
     if (traceCheck->isChecked()) {
         log(message);
@@ -149,9 +178,11 @@ void LspDebugWidget::refreshState() {
         rootItem->setData(Qt::UserRole, info.root);
         rootItem->setToolTip(info.root);
         serversTable->setItem(row, 0, rootItem);
-        serversTable->setItem(
-            row, 1,
-            new QTableWidgetItem(info.serverName.isEmpty() ? info.binary : info.serverName));
+
+        auto nameItem = new QTableWidgetItem(info.serverName.isEmpty() ? info.id : info.serverName);
+        nameItem->setData(Qt::UserRole, info.id);
+        nameItem->setToolTip(info.id);
+        serversTable->setItem(row, 1, nameItem);
         serversTable->setItem(row, 2, new QTableWidgetItem(state));
         serversTable->setItem(row, 3, new QTableWidgetItem(QString::number(info.documentCount)));
         if (info.root == selectedRoot) {
@@ -169,6 +200,17 @@ void LspDebugWidget::refreshState() {
     if (auto *item = serversTable->item(serversTable->currentRow(), 0)) {
         root = item->data(Qt::UserRole).toString();
     }
+    auto serverId = QString();
+    if (auto *item = serversTable->item(serversTable->currentRow(), 1)) {
+        serverId = item->data(Qt::UserRole).toString();
+    }
+    auto const capabilities = plugin->capabilitiesFor(root, serverId);
+    capabilitiesTable->setRowCount(capabilities.size());
+    for (auto row = 0; row < capabilities.size(); ++row) {
+        capabilitiesTable->setItem(row, 0, new QTableWidgetItem(capabilities[row].first));
+        capabilitiesTable->setItem(row, 1, new QTableWidgetItem(capabilities[row].second));
+    }
+
     auto const documents = plugin->documentsFor(root);
     documentsTable->setRowCount(documents.size());
     for (auto row = 0; row < documents.size(); ++row) {
@@ -252,8 +294,8 @@ void LspDebugWidget::runQuery(const QString &command) {
             auto result = watcher->result();
             if (command == GlobalCommands::VariableInfo) {
                 auto const tags = result[GlobalArguments::Tags].toList();
-                log(tr("<< %1 completions").arg(tags.size()));
                 auto shown = 0;
+                log(tr("<< %1 completions").arg(tags.size()));
                 for (auto const &entry : tags) {
                     if (shown++ >= 25) {
                         log(QStringLiteral("   ... %1 more").arg(tags.size() - 25));
