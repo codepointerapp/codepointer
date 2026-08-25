@@ -1,3 +1,11 @@
+/**
+ * \file ProjecManagerPlg.cpp
+ * \brief Defintion of the project mana
+ * \author Diego Iastrubni diegoiast@gmail.com
+ */
+
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include "iplugin.h"

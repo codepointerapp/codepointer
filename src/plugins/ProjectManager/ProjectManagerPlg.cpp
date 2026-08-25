@@ -1,3 +1,11 @@
+/**
+ * \file ProjecManagerPlg.cpp
+ * \brief Implementation of the project mana
+ * \author Diego Iastrubni diegoiast@gmail.com
+ */
+
+// SPDX-License-Identifier: MIT
+
 #include <QByteArray>
 #include <QClipboard>
 #include <QDesktopServices>
@@ -1323,7 +1331,7 @@ void ProjectManagerPlugin::runTask_clicked() {
     }
     auto manager = getManager();
     auto count = manager->visibleTabs();
-    for (auto i = 0ul; i < count; i++) {
+    for (auto i = 0; i < count; i++) {
         auto client = manager->getMdiClient(i);
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
             editor->removeMetaData();
@@ -1796,8 +1804,16 @@ auto ProjectManagerPlugin::fixClientsMenu(qmdiClient *client, const QString &fil
         }
     }
 
+    // This runs again on every save, not just on load - without the name lookup
+    // each pass would add another copy of the action to the context menu.
+    // qmdiActionGroup::addAction() de-duplicates by pointer, which a freshly
+    // allocated QAction can never trip.
+    if (client->contextMenu.findActionNamed("copyRelativePath")) {
+        return;
+    }
     auto widget = dynamic_cast<QObject *>(client);
     auto actionCopyFilePath = new QAction(tr("Copy path relative to project"), widget);
+    actionCopyFilePath->setObjectName("copyRelativePath");
     connect(actionCopyFilePath, &QAction::triggered, actionCopyFilePath, [client, this]() {
         auto c = QApplication::clipboard();
         auto fileName = client->mdiClientFileName();
