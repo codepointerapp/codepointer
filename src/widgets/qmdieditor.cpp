@@ -1070,6 +1070,7 @@ void qmdiEditor::updateClientName() {
 void qmdiEditor::onTextModified() {
     autoPreview = isPreviewVisible();
     updateClientName();
+    emit contentChanged();
 }
 
 void qmdiEditor::goTo(int x, int y) {
@@ -1082,6 +1083,54 @@ void qmdiEditor::goTo(int x, int y) {
 }
 
 QString qmdiEditor::getContent() const { return textEditor->toPlainText(); }
+
+qmdiEditor::Range qmdiEditor::selectionRange() const {
+    auto cursor = textEditor->textCursor();
+    auto range = Range{};
+    auto document = textEditor->document();
+    auto startBlock = document->findBlock(cursor.selectionStart());
+    auto endBlock = document->findBlock(cursor.selectionEnd());
+    range.startLine = startBlock.blockNumber();
+    range.startCharacter = cursor.selectionStart() - startBlock.position();
+    range.endLine = endBlock.blockNumber();
+    range.endCharacter = cursor.selectionEnd() - endBlock.position();
+    return range;
+}
+
+bool qmdiEditor::applyTextEdits(const QList<TextEdit> &edits) {
+    if (edits.isEmpty()) {
+        return false;
+    }
+    auto document = textEditor->document();
+
+    auto positionOf = [document](int line, int character) -> int {
+        auto block = document->findBlockByNumber(line);
+        if (!block.isValid()) {
+            return -1;
+        }
+        // Clamp: a server range may sit one past the end of a line.
+        return block.position() + qMin(character, block.length() - 1);
+    };
+
+    auto cursor = QTextCursor(document);
+    cursor.beginEditBlock();
+    {
+        PlainTextEditStateGuard guard(textEditor);
+        for (auto const &edit : edits) {
+            auto from = positionOf(edit.startLine, edit.startCharacter);
+            auto to = positionOf(edit.endLine, edit.endCharacter);
+            if (from < 0 || to < 0 || to < from) {
+                qWarning() << "qmdiEditor: skipping out-of-range edit at line" << edit.startLine;
+                continue;
+            }
+            cursor.setPosition(from);
+            cursor.setPosition(to, QTextCursor::KeepAnchor);
+            cursor.insertText(edit.newText);
+        }
+    }
+    cursor.endEditBlock();
+    return true;
+}
 
 QString qmdiEditor::getSelectedText() const
 {
@@ -1205,7 +1254,14 @@ QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QStr
 
     auto future = pluginManager->handleCommandAsync(GlobalCommands::VariableInfo, args);
 
-    return future.then([](const QFuture<CommandArgs> &f) -> QSet<Qutepart::CompletionItem> {
+    // In exclusive mode every suggestion comes from the one provider, so the source
+    // label is noise on every row. Read the flag here, on the GUI thread: the
+    // continuation below has no context object and runs on whichever thread
+    // completes the future.
+    auto const singleSource = textEditor->customCompletionsExclusive();
+
+    return future.then(
+        [singleSource](const QFuture<CommandArgs> &f) -> QSet<Qutepart::CompletionItem> {
         auto completions = QSet<Qutepart::CompletionItem>();
         if (!f.isFinished() || !f.isValid()) {
             return completions;
@@ -1222,18 +1278,21 @@ QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QStr
                 auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
 
                 if (!name.isEmpty()) {
-                    QString sourceName = tag[GlobalArguments::Source].toString();
-                    if (sourceName.isEmpty()) {
-                        sourceName = "TreeSitter";
-                        if (type == "tag" || type.isEmpty()) sourceName = "CTags";
-                    }
+                    QString sourceInfo;
+                    if (!singleSource) {
+                        QString sourceName = tag[GlobalArguments::Source].toString();
+                        if (sourceName.isEmpty()) {
+                            sourceName = "TreeSitter";
+                            if (type == "tag" || type.isEmpty()) sourceName = "CTags";
+                        }
 
-                    QString sourceInfo = sourceName;
-                    if (!fileName.isEmpty()) {
-                        QFileInfo fi(fileName);
-                        sourceInfo += "/" + fi.fileName();
-                        if (lineNumber > 0) {
-                            sourceInfo += ":" + QString::number(lineNumber);
+                        sourceInfo = sourceName;
+                        if (!fileName.isEmpty()) {
+                            QFileInfo fi(fileName);
+                            sourceInfo += "/" + fi.fileName();
+                            if (lineNumber > 0) {
+                                sourceInfo += ":" + QString::number(lineNumber);
+                            }
                         }
                     }
                     completions.insert(Qutepart::CompletionItem(name, sourceInfo));
@@ -1772,6 +1831,12 @@ QFuture<void> qmdiEditor::reformatContent() {
             auto exitCode = args[GlobalArguments::ExitCode].toInt();
             if (exitCode != 0) {
                 auto processStderr = args[GlobalArguments::ErrorMessage].toString();
+                if (processStderr.isEmpty()) {
+                    // A formatter that fails with nothing on stderr would otherwise
+                    // produce a blank banner, which reads as a glitch rather than an
+                    // error.
+                    processStderr = tr("Formatting failed (code %1)").arg(exitCode);
+                }
 
                 switch (exitCode) {
                 case GlobalResults::ExecutableNotFound:
