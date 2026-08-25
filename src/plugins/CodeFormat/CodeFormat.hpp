@@ -6,6 +6,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include <QThreadPool>
+
 #include "iplugin.h"
 #include "pluginmanager.h"
 
@@ -47,6 +49,14 @@ class CodeFormatPlugin : public IPlugin {
     }
     FormatterRegistry builtInRegistry;
     FormatterRegistry userRegistry;
+
+    /// Formatting runs an external process and blocks on waitForFinished(). On the
+    /// global pool that thread is shared with everything else using QtConcurrent -
+    /// notably TreeSitter, which dispatches a query per keystroke and serialises
+    /// them on one engine mutex. Saturate the global pool and the format task is
+    /// merely *queued*: it never starts, nothing is logged, and the failure looks
+    /// transient and unexplainable. Its own pool cannot be starved by others.
+    QThreadPool formatPool;
 
   public:
     CodeFormatPlugin();

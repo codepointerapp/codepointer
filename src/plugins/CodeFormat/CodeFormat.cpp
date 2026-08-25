@@ -90,6 +90,9 @@ CodeFormatPlugin::CodeFormatPlugin() {
     autoEnabled = true;
     alwaysEnabled = false;
 
+    formatPool.setMaxThreadCount(2);
+    formatPool.setExpiryTimeout(30000);
+
     config.pluginName = tr("Code format");
     config.configItems.push_back(
         qmdiConfigItem::Builder()
@@ -204,7 +207,7 @@ QFuture<CommandArgs> CodeFormatPlugin::handleCommandAsync(const QString &command
 
 QFuture<CommandArgs> CodeFormatPlugin::runFormat(const QString &fileName, const QString &input,
                                                  const Formatter *indenter) {
-    return QtConcurrent::run([this, fileName, input, indenter]() -> CommandArgs {
+    return QtConcurrent::run(&formatPool, [this, fileName, input, indenter]() -> CommandArgs {
         QProcess proc;
         QStringList args;
         CommandArgs result;
