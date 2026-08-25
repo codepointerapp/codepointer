@@ -1,0 +1,114 @@
+[
+    {
+        "name": "clangd",
+        "homepage": "https://clangd.llvm.org/",
+        "arguments": [
+            "--compile-commands-dir=${build_directory}",
+            "--log=error"
+        ],
+        "binary": "clangd",
+        "suffixes": {
+            "c": "c",
+            "cc": "cpp",
+            "cpp": "cpp",
+            "cxx": "cpp",
+            "h": "c",
+            "hh": "cpp",
+            "hpp": "cpp",
+            "hxx": "cpp",
+            "inl": "cpp",
+            "ipp": "cpp",
+            "m": "objective-c",
+            "mm": "objective-cpp"
+        }
+    },
+    {
+        "name": "gopls",
+        "homepage": "https://go.dev/gopls/",
+        "arguments": [],
+        "binary": "gopls",
+        "suffixes": {
+            "go": "go"
+        }
+    },
+    {
+        "name": "pylsp",
+        "homepage": "https://github.com/python-lsp/python-lsp-server",
+        "arguments": [],
+        "binary": "pylsp",
+        "suffixes": {
+            "py": "python",
+            "pyi": "python"
+        }
+    },
+    {
+        "name": "rust-analyzer",
+        "homepage": "https://rust-analyzer.github.io/",
+        "arguments": [],
+        "binary": "rust-analyzer",
+        "suffixes": {
+            "rs": "rust"
+        }
+    },
+    {
+        "name": "sourcekit-lsp",
+        "homepage": "https://www.swift.org/sourcekit-lsp/",
+        "arguments": [],
+        "binary": "sourcekit-lsp",
+        "suffixes": {
+            "swift": "swift"
+        }
+    },
+    {
+        "name": "typescript-language-server",
+        "homepage": "https://github.com/typescript-language-server/typescript-language-server",
+        "arguments": [
+            "--stdio"
+        ],
+        "binary": "typescript-language-server",
+        "suffixes": {
+            "js": "javascript",
+            "jsx": "javascript",
+            "mjs": "javascript",
+            "cjs": "javascript",
+            "ts": "typescript",
+            "tsx": "typescript"
+        }
+    },
+    {
+        "name": "bash-language-server",
+        "homepage": "https://github.com/bash-lsp/bash-language-server",
+        "arguments": [
+            "start"
+        ],
+        "binary": "bash-language-server",
+        "suffixes": {
+            "sh": "shell",
+            "bash": "shell"
+        }
+    },
+    {
+        "name": "yaml-language-server",
+        "homepage": "https://github.com/redhat-developer/yaml-language-server",
+        "arguments": [
+            "--stdio"
+        ],
+        "binary": "yaml-language-server",
+        "suffixes": {
+            "yaml": "yaml",
+            "yml": "yaml"
+        }
+    },
+    {
+        "name": "json-language-server",
+        "homepage": "https://github.com/Microsoft/vscode-json-languageservice",
+        "arguments": [
+            "--stdio"
+        ],
+        "binary": "vscode-json-language-server",
+        "suffixes": {
+            "json": "json",
+            "jsonc": "json"
+        }
+    }
+]

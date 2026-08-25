@@ -23,6 +23,7 @@ class LspDebugWidget : public QWidget {
 
   public slots:
     void appendTrace(const QString &message);
+    void showProgress(const QString &root, const QString &text, int percentage, bool active);
     void refreshState();
 
   private slots:
@@ -39,8 +40,11 @@ class LspDebugWidget : public QWidget {
 
     LspPlugin *plugin = nullptr;
 
+    class QProgressBar *progressBar = nullptr;
+    class QLabel *progressLabel = nullptr;
     QTableWidget *serversTable = nullptr;
     QTableWidget *documentsTable = nullptr;
+    QTableWidget *capabilitiesTable = nullptr;
     QLineEdit *fileEdit = nullptr;
     QSpinBox *lineSpin = nullptr;
     QSpinBox *columnSpin = nullptr;
