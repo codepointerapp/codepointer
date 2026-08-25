@@ -96,11 +96,31 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QString getSelectedText() const;
     /// Full buffer contents - what the user sees, not what is on disk.
     QString getContent() const;
+    /// Cursor position, or the selection when there is one. All values 0-based,
+    /// matching LSP ranges.
+    struct Range {
+        int startLine = 0, startCharacter = 0, endLine = 0, endCharacter = 0;
+    };
+    Range selectionRange() const;
+    /// A replacement within this document. 0-based, matching LSP ranges.
+    struct TextEdit {
+        int startLine = 0, startCharacter = 0, endLine = 0, endCharacter = 0;
+        QString newText;
+    };
+    /// Applies replacements as one undoable action. The caller must have sorted
+    /// them bottom-up; ranges are stated against the current document.
+    bool applyTextEdits(const QList<TextEdit> &edits);
+
     /// When set, the completion provider is the only source of suggestions -
     /// keywords and words scraped from the buffer are suppressed.
     inline void setCompletionExclusive(bool exclusive) {
         textEditor->setCustomCompletionsExclusive(exclusive);
     }
+
+  signals:
+    /// The buffer changed. Emitted on every keystroke, so consumers that do
+    /// expensive work (LSP document sync) must debounce.
+    void contentChanged();
 
   public slots:
     void on_fileChanged(const QString &filename);
