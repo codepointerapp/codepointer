@@ -1,6 +1,6 @@
 /**
  * \file ProjecManagerPlg.cpp
- * \brief Defintion of the project mana
+ * \brief Definition of the project mana
  * \author Diego Iastrubni diegoiast@gmail.com
  */
 
