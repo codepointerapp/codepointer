@@ -28,6 +28,7 @@ class TerminalPlugin : public IPlugin {
         CONFIG_DEFINE(AudioBell, bool)
         CONFIG_DEFINE(VisualBell, bool)
         CONFIG_DEFINE(AntiAlias, bool)
+        CONFIG_DEFINE(InitialDir, QString)
         qmdiPluginConfig *config;
     };
     Config &getConfig() {

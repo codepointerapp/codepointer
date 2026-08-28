@@ -5,13 +5,16 @@
  * License MIT
  */
 
-#include <KodoTerm/KodoTerm.hpp>
 #include <QCheckBox>
+#include <QDir>
 #include <QDockWidget>
 #include <QFontDatabase>
 #include <QKeySequence>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
+
+#include <KodoTerm/KodoTerm.hpp>
 #include <fontwidget.hpp>
 #include <qmdidialogevents.hpp>
 
@@ -83,7 +86,7 @@ TerminalPlugin::TerminalPlugin() {
     // 1. A button that will open a popup - to choose the theme. This is the main
     //    button seen on screen.
     // 2. A user defined config, to store the actual file chosen. No visible.
-    // 0. As buttons don't have label - a special label is used.
+    // 3. As buttons don't have label - a special label is used.
     config.configItems.push_back(qmdiConfigItem::Builder()
                                      .setDisplayName(tr("Theme"))
                                      .setDescription(tr("Which theme to use for the terminal"))
@@ -138,6 +141,14 @@ TerminalPlugin::TerminalPlugin() {
                                      .setKey(Config::VisualBellKey)
                                      .setType(qmdiConfigItem::Bool)
                                      .setDefaultValue(true)
+                                     .build());
+    config.configItems.push_back(qmdiConfigItem::Builder()
+                                     .setDisplayName(tr("Initial dir"))
+                                     .setKey(Config::InitialDirKey)
+                                     .setType(qmdiConfigItem::Path)
+                                     // This sets it to "dir" mode, instead of file
+                                     .setPossibleValue(false)
+                                     .setDefaultValue(QDir::toNativeSeparators(QDir::homePath()))
                                      .build());
     connect(&qmdiDialogEvents::instance(), &qmdiDialogEvents::widgetCreated, this,
             [this, monospacedFont](auto dialog, auto const &item, auto label, auto widget) {
@@ -215,9 +226,14 @@ TerminalPlugin::~TerminalPlugin() {
 
 // IPlugin interface
 void TerminalPlugin::on_client_merged(qmdiHost *host) {
+    IPlugin::on_client_merged(host);
+
     auto manager = dynamic_cast<PluginManager *>(host);
     console = new KodoTerm(manager);
     console->setProgram(systemCurrentShell());
+
+    auto dir = getConfig().getInitialDir();
+    console->setWorkingDirectory(dir);
     console->start();
     terminalDock = manager->createNewPanel(Panels::South, "terminalPanel", tr("Terminal"), console);
 }
