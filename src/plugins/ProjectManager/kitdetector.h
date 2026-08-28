@@ -13,11 +13,21 @@
 
 namespace KitDetector {
 
+enum class Toolchain {
+    Unknown,
+    MSVC,
+    MinGW,
+    GCC,
+    Clang,
+    Rust,
+};
+
 struct ExtraPath {
     std::string name;
     std::string compiler_path;
     std::string comment;
     std::string command;
+    Toolchain toolchain = Toolchain::Unknown;
 };
 
 #ifdef _WIN32
