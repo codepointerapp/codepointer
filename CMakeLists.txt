@@ -128,6 +128,8 @@ set(codepointer_sources
     src/widgets/qmdiSplitTab.h
     src/widgets/FilesList.cpp
     src/widgets/FilesList.hpp
+    src/widgets/SearchableMenuButton.cpp
+    src/widgets/SearchableMenuButton.hpp
     src/widgets/AutoShrinkLabel.cpp
     src/widgets/AutoShrinkLabel.hpp
 

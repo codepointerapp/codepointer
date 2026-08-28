@@ -63,6 +63,7 @@
 #include "ui_BuildRunOutput.h"
 #include "ui_ProjectManagerGUI.h"
 #include "widgets/qmdieditor.h"
+#include "widgets/SearchableMenuButton.hpp"
 
 #define USE_TTY_FOR_TASKS
 
@@ -415,7 +416,9 @@ qmdiActionGroup *ProjectManagerPlugin::getContextMenuActions(const QString &menu
         auto ret = msgBox.exec();
         switch (ret) {
         case QMessageBox::Yes: {
-            addProjectFromDir(dirPath);
+            if (addProjectFromDir(dirPath)) {
+                newProjectSelected(gui->projectButton->currentIndex());
+            }
             projectDock->raise();
             break;
         }
@@ -453,8 +456,6 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
             &ProjectManagerPlugin::removeProject_clicked);
     connect(gui->filesList, &FilesList::fileSelected, this, &ProjectManagerPlugin::onItemClicked);
 
-    connect(gui->projectComboBox, &QComboBox::currentIndexChanged, this,
-            &ProjectManagerPlugin::newProjectSelected);
     projectDock = manager->createNewPanel(Panels::West, "projectmamager", tr("Project"), w);
 
     projectIssues = new ProjectIssuesWidget(manager);
@@ -625,6 +626,7 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
         auto dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         auto kits = findKitDefinitions(QDir::toNativeSeparators(dataPath).toStdString());
         kitsModel->setKitDefinitions(kits);
+        updateKitsUI();
     });
     connect(recreateKits, &QAction::triggered, this, [rescanKits]() {
         auto dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -695,28 +697,15 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
     auto dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     auto kits = findKitDefinitions(QDir::toNativeSeparators(dataPath).toStdString());
     kitsModel->setKitDefinitions(kits);
+    gui->kitButton->setFilterPlaceholder(tr("Filter kits..."));
+    gui->kitButton->setPreferLastWhenInvalid(false);
+    updateKitsUI();
 
-    gui->kitComboBox->setModel(kitsModel);
-    connect(gui->kitComboBox, &QComboBox::activated, gui->kitComboBox, [this](int newIndex) {
-        if (kitsModel->rowCount() <= newIndex) {
-            qDebug() << "kitComboBox: No kits found, or wrong kit definted.";
-            return;
-        }
-        auto kit = kitsModel->getKit(newIndex);
-        auto tooltip = QString("%1\n%2").arg(QString::fromStdString(kit.name),
-                                             QString::fromStdString(kit.filePath));
-        gui->kitComboBox->setToolTip(tooltip);
-    });
-
-    auto combo = gui->projectComboBox;
-    combo->setModel(projectModel);
-    connect(gui->projectComboBox, &QComboBox::currentIndexChanged, combo, [combo](int index) {
-        auto tip = combo->itemData(index, Qt::ToolTipRole);
-        combo->setToolTip(tip.toString());
-    });
-    combo->setToolTip(combo->itemData(combo->currentIndex(), Qt::ToolTipRole).toString());
-
-    emit gui->kitComboBox->activated(0);
+    gui->projectButton->setFilterPlaceholder(tr("Filter projects..."));
+    gui->projectButton->setPreferLastWhenInvalid(true);
+    connect(gui->projectButton, &SearchableMenuButton::itemSelected, this,
+            &ProjectManagerPlugin::newProjectSelected);
+    updateProjectButtonMenu();
 
     runAction = new QAction(QIcon::fromTheme("document-save"), tr("&Run"), this);
     buildAction = new QAction(QIcon::fromTheme("document-save-as"), tr("&Run task"), this);
@@ -810,16 +799,14 @@ void ProjectManagerPlugin::loadConfig(QSettings &settings) {
 
     auto dirsToLoad = getConfig().getOpenDirs();
 
-    gui->projectComboBox->blockSignals(true);
     for (auto const &d : std::as_const(dirsToLoad)) {
         addProjectFromDir(d);
     }
-    gui->projectComboBox->blockSignals(false);
 
     auto selectedDirectory = getConfig().getSelectedDirectory();
     auto i = projectModel->findConfigDirIndex(selectedDirectory);
     if (i >= 0) {
-        gui->projectComboBox->setCurrentIndex(i);
+        gui->projectButton->setCurrentIndex(i);
         newProjectSelected(i);
     }
 }
@@ -1005,7 +992,7 @@ qmdiClient *ProjectManagerPlugin::openFile(const QString &requestedUri, int x, i
 }
 
 std::shared_ptr<ProjectBuildConfig> ProjectManagerPlugin::getCurrentConfig() const {
-    auto currentIndex = gui->projectComboBox->currentIndex();
+    auto currentIndex = gui->projectButton->currentIndex();
     if (currentIndex < 0) {
         return {};
     }
@@ -1013,7 +1000,7 @@ std::shared_ptr<ProjectBuildConfig> ProjectManagerPlugin::getCurrentConfig() con
 }
 
 const KitDefinition *ProjectManagerPlugin::getCurrentKit() const {
-    auto currentIndex = gui->kitComboBox->currentIndex();
+    auto currentIndex = gui->kitButton->currentIndex();
     if (currentIndex < 0) {
         return nullptr;
     }
@@ -1026,12 +1013,14 @@ void ProjectManagerPlugin::onItemClicked(const QString &fileName) {
 
 void ProjectManagerPlugin::addProject_clicked() {
     QString dirName = QFileDialog::getExistingDirectory(gui->filesList, tr("Add directory"));
-    addProjectFromDir(dirName);
+    if (addProjectFromDir(dirName)) {
+        newProjectSelected(gui->projectButton->currentIndex());
+    }
     getManager()->saveSettings();
 }
 
 void ProjectManagerPlugin::removeProject_clicked() {
-    auto index = gui->projectComboBox->currentIndex();
+    auto index = gui->projectButton->currentIndex();
     if (index < 0) {
         return;
     }
@@ -1051,6 +1040,9 @@ void ProjectManagerPlugin::removeProject_clicked() {
     );
     // clang-format on
     searchPanelUI->updateProjectList();
+
+    updateProjectButtonMenu();
+    newProjectSelected(gui->projectButton->currentIndex());
 }
 
 void ProjectManagerPlugin::newProjectSelected(int index) {
@@ -1077,6 +1069,35 @@ void ProjectManagerPlugin::newProjectSelected(int index) {
 
     updateTasksUI(buildConfig);
     updateExecutablesUI(buildConfig);
+}
+
+auto ProjectManagerPlugin::updateProjectButtonMenu() -> void {
+    auto names = QStringList();
+    auto tooltips = QStringList();
+    auto count = projectModel->rowCount();
+    names.reserve(count);
+    tooltips.reserve(count);
+    for (auto i = 0; i < count; i++) {
+        auto buildConfig = projectModel->getConfig(i);
+        names << buildConfig->name;
+        tooltips << QDir::toNativeSeparators(buildConfig->sourceDir);
+    }
+    gui->projectButton->setItems(names, tooltips);
+}
+
+auto ProjectManagerPlugin::updateKitsUI() -> void {
+    auto names = QStringList();
+    auto tooltips = QStringList();
+    auto count = kitsModel->rowCount();
+    names.reserve(count);
+    tooltips.reserve(count);
+    for (auto i = 0; i < count; i++) {
+        auto kit = kitsModel->getKit(i);
+        names << QString::fromStdString(kit.name);
+        tooltips << QString("%1\n%2").arg(QString::fromStdString(kit.name),
+                                          QString::fromStdString(kit.filePath));
+    }
+    gui->kitButton->setItems(names, tooltips);
 }
 
 auto ProjectManagerPlugin::releaseTaskPty() -> void {
@@ -1398,19 +1419,19 @@ void ProjectManagerPlugin::projectFile_modified(const QString &path) {
                path.toStdString().data(), QFileInfo(path).size());
         return;
     }
-    newProjectSelected(gui->projectComboBox->currentIndex());
+    newProjectSelected(gui->projectButton->currentIndex());
 
     // TODO  - new file created is not working yet.
     qDebug("Config file modified - %s", path.toStdString().data());
 }
 
-auto ProjectManagerPlugin::addProjectFromDir(const QString &dirName) -> void {
+auto ProjectManagerPlugin::addProjectFromDir(const QString &dirName) -> bool {
     if (dirName.isEmpty()) {
-        return;
+        return false;
     }
     auto buildConfig = projectModel->findConfigDir(dirName);
     if (buildConfig) {
-        return;
+        return false;
     }
     buildConfig = ProjectBuildConfig::buildFromDirectory(dirName);
     if (!buildConfig->fileName.isEmpty()) {
@@ -1430,8 +1451,10 @@ auto ProjectManagerPlugin::addProjectFromDir(const QString &dirName) -> void {
 
     projectModel->addConfig(buildConfig);
     searchPanelUI->updateProjectList();
-    gui->projectComboBox->setCurrentIndex(projectModel->rowCount() - 1);
+    updateProjectButtonMenu();
+    gui->projectButton->setCurrentIndex(projectModel->rowCount() - 1);
     searchPanelUI->updateProjectList();
+    return true;
 }
 
 auto ProjectManagerPlugin::saveAllDocuments() -> bool {

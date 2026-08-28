@@ -126,9 +126,11 @@ class ProjectManagerPlugin : public IPlugin {
     void projectFile_modified(const QString &path);
 
   private:
-    auto addProjectFromDir(const QString &dir) -> void;
+    auto addProjectFromDir(const QString &dir) -> bool;
     auto saveAllDocuments() -> bool;
     auto processBuildOutput(const QString &line) -> void;
+    auto updateKitsUI() -> void;
+    auto updateProjectButtonMenu() -> void;
     auto updateTasksUI(std::shared_ptr<ProjectBuildConfig> buildConfig) -> void;
     auto updateExecutablesUI(std::shared_ptr<ProjectBuildConfig> buildConfig) -> void;
     auto tryOpenProject(const QString &filename, const QString &dir) -> bool;
