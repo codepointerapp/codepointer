@@ -62,8 +62,8 @@
 #include "plugins/filesystem/filesystemwidget.h"
 #include "ui_BuildRunOutput.h"
 #include "ui_ProjectManagerGUI.h"
-#include "widgets/qmdieditor.h"
 #include "widgets/SearchableMenuButton.hpp"
+#include "widgets/qmdieditor.h"
 
 #define USE_TTY_FOR_TASKS
 
