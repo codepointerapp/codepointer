@@ -115,7 +115,6 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     commit = new QAction(tr("git commit"), this);
     commitAmend = new QAction(tr("git commit amend"), this);
     stash = new QAction(tr("git stash"), this);
-    branches = new QAction(tr("git branch"), this);
 
     diffFile->setToolTip(tr("git: Show changes (current file)"));
     diffFile->setShortcut(QKeySequence("Ctrl+G, D"));
@@ -130,7 +129,6 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     commitAmend->setToolTip(tr("Amend the last commit"));
     commitAmend->setShortcut(QKeySequence("Ctrl+G, A"));
     stash->setToolTip(tr("tash away changes to dirty working directory"));
-    branches->setToolTip(tr("List, create, or delete branches"));
 
     connect(logFile, &QAction::triggered, this, &GitPlugin::logFileHandler);
     connect(logProject, &QAction::triggered, this, &GitPlugin::logProjectHandler);
@@ -148,7 +146,6 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     menus[menuName]->addAction(commit);
     menus[menuName]->addAction(commitAmend);
     menus[menuName]->addAction(stash);
-    menus[menuName]->addAction(branches);
 
     auto manager = dynamic_cast<PluginManager *>(host);
     auto w = new QWidget;

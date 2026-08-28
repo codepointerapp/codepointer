@@ -68,7 +68,6 @@ class GitPlugin : public IPlugin {
     QAction *commit = nullptr;
     QAction *commitAmend = nullptr;
     QAction *stash = nullptr;
-    QAction *branches = nullptr;
     QString gitBinary = "git";
     QDockWidget *gitDock = nullptr;
     Ui::GitCommandsForm *form = nullptr;
