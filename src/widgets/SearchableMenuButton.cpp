@@ -50,9 +50,7 @@ void SearchableMenuButton::setFilterPlaceholder(const QString &placeholder) {
     m_filterPlaceholder = placeholder;
 }
 
-void SearchableMenuButton::setPreferLastWhenInvalid(bool on) {
-    m_preferLastWhenInvalid = on;
-}
+void SearchableMenuButton::setPreferLastWhenInvalid(bool on) { m_preferLastWhenInvalid = on; }
 
 QString SearchableMenuButton::tooltipFor(int index) const {
     return (index >= 0 && index < m_tooltips.size()) ? m_tooltips.at(index) : m_names.at(index);
