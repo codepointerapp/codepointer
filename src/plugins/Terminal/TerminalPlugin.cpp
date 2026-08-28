@@ -5,13 +5,16 @@
  * License MIT
  */
 
-#include <KodoTerm/KodoTerm.hpp>
 #include <QCheckBox>
+#include <QDir>
 #include <QDockWidget>
 #include <QFontDatabase>
 #include <QKeySequence>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
+
+#include <KodoTerm/KodoTerm.hpp>
 #include <fontwidget.hpp>
 #include <qmdidialogevents.hpp>
 
@@ -83,7 +86,7 @@ TerminalPlugin::TerminalPlugin() {
     // 1. A button that will open a popup - to choose the theme. This is the main
     //    button seen on screen.
     // 2. A user defined config, to store the actual file chosen. No visible.
-    // 0. As buttons don't have label - a special label is used.
+    // 3. As buttons don't have label - a special label is used.
     config.configItems.push_back(qmdiConfigItem::Builder()
                                      .setDisplayName(tr("Theme"))
                                      .setDescription(tr("Which theme to use for the terminal"))
@@ -138,6 +141,14 @@ TerminalPlugin::TerminalPlugin() {
                                      .setKey(Config::VisualBellKey)
                                      .setType(qmdiConfigItem::Bool)
                                      .setDefaultValue(true)
+                                     .build());
+    config.configItems.push_back(qmdiConfigItem::Builder()
+                                     .setDisplayName(tr("Initial dir"))
+                                     .setKey(Config::InitialDirKey)
+                                     .setType(qmdiConfigItem::Path)
+                                     // This sets it to "dir" mode, instead of file
+                                     .setPossibleValue(false)
+                                     .setDefaultValue(QDir::toNativeSeparators(QDir::homePath()))
                                      .build());
     connect(&qmdiDialogEvents::instance(), &qmdiDialogEvents::widgetCreated, this,
             [this, monospacedFont](auto dialog, auto const &item, auto label, auto widget) {
@@ -214,18 +225,11 @@ TerminalPlugin::~TerminalPlugin() {
 }
 
 // IPlugin interface
-void TerminalPlugin::on_client_merged(qmdiHost *host) {
-    auto manager = dynamic_cast<PluginManager *>(host);
-    console = new KodoTerm(manager);
-    console->setProgram(systemCurrentShell());
-    console->start();
-    terminalDock = manager->createNewPanel(Panels::South, "terminalPanel", tr("Terminal"), console);
-}
+void TerminalPlugin::on_client_merged(qmdiHost *host) { IPlugin::on_client_merged(host); }
 
 void TerminalPlugin::on_client_unmerged(qmdiHost *) { delete terminalDock; }
 
 void TerminalPlugin::loadConfig(QSettings &settings) {
-
     IPlugin::loadConfig(settings);
     configurationHasBeenModified();
 }
@@ -242,16 +246,29 @@ void TerminalPlugin::configurationHasBeenModified() {
         getConfig().setTerminalFont(tempConfig.fontString);
     }
 
-    consoleConfig.setDefaults();
-    consoleConfig.font.fromString(getConfig().getTerminalFont());
-    consoleConfig.tripleClickSelectsLine = getConfig().getTrippleClickClick();
-    consoleConfig.copyOnSelect = getConfig().getCopyOnSelect();
-    consoleConfig.pasteOnMiddleClick = getConfig().getPasteOnMiddleClick();
-    consoleConfig.textAntialiasing = getConfig().getAntiAlias();
-    consoleConfig.visualBell = getConfig().getVisualBell();
-    consoleConfig.theme = TerminalTheme::loadTheme(getConfig().getThemeFile());
-    consoleConfig.customBoxDrawing = true;
-    console->setConfig(consoleConfig);
+    this->consoleConfig.setDefaults();
+    this->consoleConfig.font.fromString(getConfig().getTerminalFont());
+    this->consoleConfig.tripleClickSelectsLine = getConfig().getTrippleClickClick();
+    this->consoleConfig.copyOnSelect = getConfig().getCopyOnSelect();
+    this->consoleConfig.pasteOnMiddleClick = getConfig().getPasteOnMiddleClick();
+    this->consoleConfig.textAntialiasing = getConfig().getAntiAlias();
+    this->consoleConfig.visualBell = getConfig().getVisualBell();
+    this->consoleConfig.theme = TerminalTheme::loadTheme(getConfig().getThemeFile());
+    this->consoleConfig.customBoxDrawing = true;
+
+    if (!console) {
+        auto manager = getManager();
+        auto dir = getConfig().getInitialDir();
+        this->console = new KodoTerm(manager);
+        this->console->setProgram(systemCurrentShell());
+        this->console->setWorkingDirectory(dir);
+        this->console->start();
+        terminalDock = manager->createNewPanel(
+            Panels::South, "terminalPanel",
+            tr("Terminal (%1)").arg(this->toggleTerminal->shortcut().toString()), console);
+        terminalDock->hide();
+    }
+    this->console->setConfig(consoleConfig);
 }
 
 void TerminalPlugin::updateTerminalPreview() {
