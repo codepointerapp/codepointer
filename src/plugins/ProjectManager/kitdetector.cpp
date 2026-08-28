@@ -6,6 +6,8 @@
  */
 
 #include "kitdetector.h"
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -227,6 +229,7 @@ auto static findRustSetup(std::vector<KitDetector::ExtraPath> &detected, bool un
         auto extraPath = KitDetector::ExtraPath();
         extraPath.name = "Rust - Cargo";
         extraPath.compiler_path = cargoHome.string();
+        extraPath.toolchain = Toolchain::Rust;
         extraPath.comment = "# found rust installation at '" + cargoHome.string() + "'";
         if (unix_target) {
             extraPath.command = "export PATH=\"" + extraPath.compiler_path + "/bin:${PATH}\"";
@@ -257,6 +260,7 @@ static auto checkVisualStudioVersion(PWSTR basePath, const std::wstring &version
         extraPath.compiler_path = wstringToString(versionPath);
         extraPath.comment = "@rem VS " + wstringToString(version);
         extraPath.command = "call %1\\VC\\Auxiliary\\Build\\vcvarsall.bat";
+        extraPath.toolchain = KitDetector::Toolchain::MSVC;
         KitDetector::replaceAll(extraPath.command, "%1", versionPath.string());
         return true;
     }
@@ -351,6 +355,21 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
                               const std::string &cc_name, const std::string &cxx_name,
                               bool unix_target) -> void {
     std::set<std::string> real_compiler_paths;
+    // clang is ambiguous on Windows (it may drive MSVC or MinGW), so it acts
+    // as a wildcard there to keep pairing with either Qt flavour. GCC on the
+    // other hand can never be MSVC.
+    auto toolchain = Toolchain::Clang;
+    if (cc_name == "gcc") {
+#if defined(_WIN32)
+        toolchain = Toolchain::MinGW;
+#else
+        toolchain = Toolchain::GCC;
+#endif
+    } else if (cc_name == "clang") {
+#if defined(_WIN32)
+        toolchain = Toolchain::Unknown;
+#endif
+    }
 
     // First detect postfixed compilers
     for (int version = 4; version < 20; version++) {
@@ -371,6 +390,7 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
             auto cxx = cxx_name + "-" + std::to_string(version);
             extraPath.name = cc;
             extraPath.compiler_path = full_path.string();
+            extraPath.toolchain = toolchain;
             extraPath.comment = unix_target ? "# detected " + full_path.string()
                                             : "@rem detected " + full_path.string();
             extraPath.command += unix_target ? "export CC=" + cc + "\nexport CXX=" + cxx
@@ -396,6 +416,7 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
         auto cxx = cxx_name + BINARY_EXT;
         extraPath.name = cc;
         extraPath.compiler_path = full_path.string();
+        extraPath.toolchain = toolchain;
         extraPath.comment = unix_target ? "# detected " + full_path.string()
                                         : "@rem detected " + full_path.string();
         extraPath.command += unix_target ? "export CC=" + cc + "\nexport CXX=" + cxx
@@ -444,6 +465,54 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
         // clang-format on
     };
 
+    std::function<Toolchain(const std::filesystem::path &)> detectQtToolchain;
+#if defined(_WIN32)
+    detectQtToolchain = [](const std::filesystem::path &qtPath) -> Toolchain {
+        auto lower = qtPath.string();
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(::tolower(c)); });
+        if (lower.find("mingw") != std::string::npos) {
+            return Toolchain::MinGW;
+        }
+        if (lower.find("msvc") != std::string::npos) {
+            return Toolchain::MSVC;
+        }
+
+        // A MinGW-built Qt ships its own runtime DLLs in bin/
+        for (const auto &dll : {"libgcc_s_seh-1.dll", "libgcc_s_dw2-1.dll",
+                                "libstdc++-6.dll", "libwinpthread-1.dll"}) {
+            if (std::filesystem::exists(qtPath / "bin" / dll)) {
+                return Toolchain::MinGW;
+            }
+        }
+
+        // Fall back to the mkspec the kit was built with
+        auto mkspecs = qtPath / "mkspecs";
+        if (std::filesystem::exists(mkspecs / "win32-g++")) {
+            return Toolchain::MinGW;
+        }
+        if (std::filesystem::exists(mkspecs / "win32-msvc")) {
+            return Toolchain::MSVC;
+        }
+        return Toolchain::Unknown;
+    };
+#else
+    detectQtToolchain = [](const std::filesystem::path &qtPath) -> Toolchain {
+        auto lower = qtPath.string();
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(::tolower(c)); });
+        if (lower.find("mingw") != std::string::npos) {
+            return Toolchain::MinGW;
+        }
+        if (lower.find("msvc") != std::string::npos) {
+            return Toolchain::MSVC;
+        }
+        // On Unix there is no MSVC/MinGW distinction, so the kit pairs with
+        // any detected compiler (GCC, clang, ...).
+        return Toolchain::Unknown;
+    };
+#endif
+
     for (const auto &envVar : qt6EnvVars) {
         auto envValue = safeGetEnv(envVar.c_str());
         if (!envValue.empty()) {
@@ -461,10 +530,12 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
     auto ss = std::stringstream(path_env);
     auto dir = std::string();
 
-    auto addDir = [&detectedQt, unix_target](const std::string &dir, std::string &name) {
+    auto addDir = [&detectedQt, &detectQtToolchain, unix_target](const std::string &dir,
+                                                                 std::string &name) {
         auto extraPath = ExtraPath();
         extraPath.name = std::string("Qt - ") + name;
         extraPath.compiler_path = dir;
+        extraPath.toolchain = detectQtToolchain(std::filesystem::path(dir));
         if (unix_target) {
             extraPath.comment = "# qt installation";
             extraPath.command = "export QTDIR=%1\n";
@@ -520,6 +591,7 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
             auto extraPath = ExtraPath();
             extraPath.name = "MinGW " + dirName;
             extraPath.compiler_path = dir.string();
+            extraPath.toolchain = Toolchain::MinGW;
             if (unix_target) {
                 // TODO
                 // I am unsure what this part of the code does, as it makes no sense.
@@ -592,57 +664,84 @@ void generateKitFiles(const std::filesystem::path &directoryPath,
     auto SCRIPT_SUFFIX = unix_target ? SCRIPT_SUFFIX_UNIX : SCRIPT_SUFFIX_WIN32;
     auto compilersSize = std::max<size_t>(1, compilers.size());
     auto qtinstallSize = std::max<size_t>(1, qtInstalls.size());
+
+    // Only pair compilers with Qt installations that were built for the same
+    // toolchain (e.g. an MSVC Qt build must not be matched with a MinGW
+    // compiler). An Unknown toolchain on either side acts as a wildcard.
+    struct CompilerQtPair {
+        size_t compiler_index;
+        size_t qt_index;
+    };
+    auto validPairs = std::vector<CompilerQtPair>();
     for (auto i = 0ul; i < compilersSize; ++i) {
         for (auto j = 0ul; j < qtinstallSize; ++j) {
             auto cc = compilers.empty() ? ExtraPath() : compilers[i];
             auto qtInst = qtInstalls.empty() ? ExtraPath() : qtInstalls[j];
-
-            auto scriptName = std::string("qtedit-kit-")
-                                  .append(std::to_string(kitNumber))
-                                  .append(SCRIPT_EXTENSION);
-            auto scriptPath = directoryPath / scriptName;
-            std::ofstream scriptFile(scriptPath.string());
-            if (!scriptFile) {
-                std::cerr << "Error: Could not create script file at " << scriptPath << std::endl;
-                continue;
+            if (cc.toolchain == Toolchain::Unknown || qtInst.toolchain == Toolchain::Unknown ||
+                cc.toolchain == qtInst.toolchain) {
+                validPairs.push_back({i, j});
             }
-
-            auto scriptDisplay = std::string(SCRIPT_HEADER);
-            replaceAll(scriptDisplay, "@@NAME@@", cc.name + ", " + qtInst.name + " *");
-
-            scriptFile << scriptDisplay;
-            for (auto &tt : tools) {
-                scriptFile << tt.comment;
-                scriptFile << "\n";
-                scriptFile << tt.command;
-                scriptFile << "\n";
-            }
-
-            scriptFile << "\n";
-            if (!cc.command.empty()) {
-                scriptFile << cc.comment;
-                scriptFile << "\n";
-                scriptFile << cc.command;
-                scriptFile << "\n";
-                scriptFile << "\n";
-            }
-
-            if (!qtInst.command.empty()) {
-                scriptFile << qtInst.comment;
-                scriptFile << "\n";
-                scriptFile << qtInst.command;
-                scriptFile << "\n";
-                scriptFile << "\n";
-            }
-            scriptFile << SCRIPT_SUFFIX;
-#if defined(__APPLE__) || defined(__MACH__) || defined(__unix__) || defined(__linux__)
-            auto c_path = scriptPath.c_str();
-            if (chmod(c_path, S_IRUSR | S_IWUSR | S_IXUSR) != 0) {
-                std::perror("chmod failed");
-            }
-#endif
-            kitNumber++;
         }
+    }
+    // If no pair matches at all, fall back to all combinations rather than
+    // generating zero kits.
+    if (validPairs.empty()) {
+        for (auto i = 0ul; i < compilersSize; ++i) {
+            for (auto j = 0ul; j < qtinstallSize; ++j) {
+                validPairs.push_back({i, j});
+            }
+        }
+    }
+
+    for (const auto &pair : validPairs) {
+        auto cc = compilers.empty() ? ExtraPath() : compilers[pair.compiler_index];
+        auto qtInst = qtInstalls.empty() ? ExtraPath() : qtInstalls[pair.qt_index];
+
+        auto scriptName = std::string("qtedit-kit-")
+                              .append(std::to_string(kitNumber))
+                              .append(SCRIPT_EXTENSION);
+        auto scriptPath = directoryPath / scriptName;
+        std::ofstream scriptFile(scriptPath.string());
+        if (!scriptFile) {
+            std::cerr << "Error: Could not create script file at " << scriptPath << std::endl;
+            continue;
+        }
+
+        auto scriptDisplay = std::string(SCRIPT_HEADER);
+        replaceAll(scriptDisplay, "@@NAME@@", cc.name + ", " + qtInst.name + " *");
+
+        scriptFile << scriptDisplay;
+        for (auto &tt : tools) {
+            scriptFile << tt.comment;
+            scriptFile << "\n";
+            scriptFile << tt.command;
+            scriptFile << "\n";
+        }
+
+        scriptFile << "\n";
+        if (!cc.command.empty()) {
+            scriptFile << cc.comment;
+            scriptFile << "\n";
+            scriptFile << cc.command;
+            scriptFile << "\n";
+            scriptFile << "\n";
+        }
+
+        if (!qtInst.command.empty()) {
+            scriptFile << qtInst.comment;
+            scriptFile << "\n";
+            scriptFile << qtInst.command;
+            scriptFile << "\n";
+            scriptFile << "\n";
+        }
+        scriptFile << SCRIPT_SUFFIX;
+#if defined(__APPLE__) || defined(__MACH__) || defined(__unix__) || defined(__linux__)
+        auto c_path = scriptPath.c_str();
+        if (chmod(c_path, S_IRUSR | S_IWUSR | S_IXUSR) != 0) {
+            std::perror("chmod failed");
+        }
+#endif
+        kitNumber++;
     }
 }
 
