@@ -85,7 +85,7 @@ int main(int argc, char *argv[]) {
 
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
-    QCoreApplication::setApplicationVersion("0.1.8-alpha");
+    QCoreApplication::setApplicationVersion("0.1.8-beta1");
 
 #if defined(WIN32)
     // default style on windows is ugly and unusable.

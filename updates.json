@@ -8,9 +8,9 @@
             "mandatory": true
         },
         "windows-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.8-alpha",
-            "latest-version": "0.1.8-alpha",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.8-alpha/codepointer-v0.1.8-alpha-x86_64.exe",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.8-beta1",
+            "latest-version": "0.1.8-beta1",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.8-beta1/codepointer-v0.1.8-beta1-x86_64.exe",
             "changelog": "Memory consumption reduced, editor loading reduced",
             "mandatory": true
         },
@@ -22,9 +22,9 @@
             "mandatory": true
         },
         "linux-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.8-alpha",
-            "latest-version": "0.1.8-alpha",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.8-alpha/codepointer-v0.1.8-alpha-x86_64.AppImage",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.8-beta1",
+            "latest-version": "0.1.8-beta1",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.8-beta1/codepointer-v0.1.8-beta1-x86_64.AppImage",
             "changelog": "Memory consumption reduced, editor loading reduced",
             "mandatory": true
         }
