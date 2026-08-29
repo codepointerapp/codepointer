@@ -223,7 +223,7 @@ ProjectIssuesWidget::ProjectIssuesWidget(PluginManager *parent)
     connect(ui->issuesList, &QTableView::clicked, this, [this](const QModelIndex &index) {
         auto item = this->model->getItem(index);
         if (!item.fileName.isEmpty()) {
-            this->manager->openFile(QDir::toNativeSeparators(item.fileName), item.row, item.col);
+            this->manager->openFile(QDir::toNativeSeparators(item.fileName), item.col, item.row);
             this->manager->openFile("projectmanager:scrolloutput", 0, item.lineNumber);
         }
     });
