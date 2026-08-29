@@ -9,6 +9,7 @@
 #include <QByteArray>
 #include <QClipboard>
 #include <QDesktopServices>
+#include <QDir>
 #include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
@@ -29,6 +30,7 @@
 #include <QStringListModel>
 #include <QTimer>
 #include <QWidgetAction>
+#include <qfileinfo.h>
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <fcntl.h>
@@ -64,6 +66,8 @@
 #include "ui_ProjectManagerGUI.h"
 #include "widgets/SearchableMenuButton.hpp"
 #include "widgets/qmdieditor.h"
+
+#define PROJECT_FILENAME "codepointer.json"
 
 #define USE_TTY_FOR_TASKS
 
@@ -669,7 +673,7 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
     connect(gui->editBuildConfig, &QAbstractButton::clicked, this, [this]() {
         auto buildConfig = this->getCurrentConfig();
         if (buildConfig->fileName.isEmpty()) {
-            auto path = buildConfig->sourceDir + "/" + "codepointer.json";
+            auto path = buildConfig->sourceDir + QDir::separator() + PROJECT_FILENAME;
             buildConfig->saveToFile(path);
             configWatcher.addPath(buildConfig->fileName);
         }
@@ -1355,7 +1359,7 @@ void ProjectManagerPlugin::runTask_clicked() {
     }
     auto manager = getManager();
     auto count = manager->visibleTabs();
-    for (auto i = 0; i < count; i++) {
+    for (auto i = 0u; i < count; i++) {
         auto client = manager->getMdiClient(i);
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
             editor->removeMetaData();
@@ -1693,17 +1697,22 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
         return true;
     }
 
-    project = this->projectModel->findConfigDir(dir);
-    if (project) {
-        // TODO - should we select this project?
-        return true;
-    }
-
-    if (!ProjectBuildConfig::canLoadFile(filename)) {
-        return true;
-    }
-
     project = ProjectBuildConfig::buildFromFile(filename);
+
+    // Try to find correnponding JSon file in the same dir as the project's that has been requested
+    {
+        auto fn = dir + QDir::separator() + PROJECT_FILENAME;
+        if (auto p = this->projectModel->findConfigFile(fn)) {
+            // TODO - should we select this project?
+            return true;
+        }
+
+        if (auto p = ProjectBuildConfig::buildFromJsonFile(fn)) {
+            project = p;
+            qDebug() << "Chosen " << filename << " loaded instead" << p->fileName;
+        }
+    }
+
     if (!project) {
         // project file is not parsable. just bail out.
         return false;
@@ -1729,20 +1738,21 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
 
     projectModel->addConfig(project);
     searchPanelUI->updateProjectList();
-    auto buildDirectory = project->expand(project->buildDir);
-    auto sourceDirectory = project->expand(project->sourceDir);
+    updateProjectButtonMenu();
+    updateTasksUI(project);
+    updateExecutablesUI(project);
 
     projectDock->show();
     projectDock->raise();
     getManager()->saveSettings();
 
-    // clang-format off
+    auto buildDirectory = project->expand(project->buildDir);
+    auto sourceDirectory = project->expand(project->sourceDir);
     getManager()->handleCommandAsync(GlobalCommands::ProjectLoaded, {
         {GlobalArguments::ProjectName, project->name },
         {GlobalArguments::SourceDirectory, sourceDirectory },
         {GlobalArguments::BuildDirectory, buildDirectory },
     });
-    // clang-format on
     return true;
 }
 
