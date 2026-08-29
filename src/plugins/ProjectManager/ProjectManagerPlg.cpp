@@ -179,6 +179,9 @@ void ProjectBuildModel::removeConfig(size_t index) {
 }
 
 std::shared_ptr<ProjectBuildConfig> ProjectBuildModel::getConfig(size_t index) const {
+    if (index >= this->configs.size()) {
+        return {};
+    }
     return this->configs.at(index);
 }
 
