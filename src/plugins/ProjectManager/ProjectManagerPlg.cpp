@@ -1236,10 +1236,9 @@ void ProjectManagerPlugin::do_runExecutable(const ExecutableInfo *info) {
     auto workingDirectory = info->runDirectory.isEmpty() ? project->buildDir : info->runDirectory;
     executablePath = project->expand(executablePath);
 
-    workingDirectory = project->expand(workingDirectory);
+    workingDirectory = QDir::toNativeSeparators(project->expand(workingDirectory));
     outputPanel->commandOuput->clear();
-    appendAnsiText(outputPanel->commandOuput, "cd " + QDir::toNativeSeparators(workingDirectory),
-                   {});
+    appendAnsiText(outputPanel->commandOuput, "cd " + workingDirectory, {});
     appendAnsiText(outputPanel->commandOuput, QString("\n%1\n").arg(executablePath), {});
     outputDock->raise();
     outputDock->show();
