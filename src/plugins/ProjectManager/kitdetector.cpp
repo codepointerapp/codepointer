@@ -479,8 +479,8 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
         }
 
         // A MinGW-built Qt ships its own runtime DLLs in bin/
-        for (const auto &dll : {"libgcc_s_seh-1.dll", "libgcc_s_dw2-1.dll",
-                                "libstdc++-6.dll", "libwinpthread-1.dll"}) {
+        for (const auto &dll : {"libgcc_s_seh-1.dll", "libgcc_s_dw2-1.dll", "libstdc++-6.dll",
+                                "libwinpthread-1.dll"}) {
             if (std::filesystem::exists(qtPath / "bin" / dll)) {
                 return Toolchain::MinGW;
             }
@@ -697,9 +697,8 @@ void generateKitFiles(const std::filesystem::path &directoryPath,
         auto cc = compilers.empty() ? ExtraPath() : compilers[pair.compiler_index];
         auto qtInst = qtInstalls.empty() ? ExtraPath() : qtInstalls[pair.qt_index];
 
-        auto scriptName = std::string("qtedit-kit-")
-                              .append(std::to_string(kitNumber))
-                              .append(SCRIPT_EXTENSION);
+        auto scriptName =
+            std::string("qtedit-kit-").append(std::to_string(kitNumber)).append(SCRIPT_EXTENSION);
         auto scriptPath = directoryPath / scriptName;
         std::ofstream scriptFile(scriptPath.string());
         if (!scriptFile) {
