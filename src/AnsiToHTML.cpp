@@ -128,19 +128,14 @@ void applyAnsiCodeToFormat(QTextCharFormat &fmt, const QString &codeStr) {
 
 auto insertLinkifiedText(QTextCursor &cursor, const QString &text,
                          const QTextCharFormat &baseFormat, bool linkifyFiles,
-                         const QString &baseDir) -> void
-{
+                         const QString &baseDir) -> void {
     static QRegularExpression unixPathRegex(
-        R"(((?:~?/?[\w\-.+\\/ ]+|\./[\w\-.+/ ]+|\.\./[\w\-.+/ ]+)\.[a-zA-Z0-9+_-]{1,8})(?::(\d+))(?::(\d+))?(:)?)"
-    );
+        R"(((?:~?/?[\w\-.+\\/ ]+|\./[\w\-.+/ ]+|\.\./[\w\-.+/ ]+)\.[a-zA-Z0-9+_-]{1,8})(?::(\d+))(?::(\d+))?(:)?)");
 
     static QRegularExpression windowsPathRegex(
-        R"(([A-Za-z]:[\\/][\w\-.+\\/ ]+\.[a-zA-Z0-9+_-]{1,8})(?:\((\d+)(?:,(\d+))?\)|:(\d+)(?::(\d+))?))"
-    );
+        R"(([A-Za-z]:[\\/][\w\-.+\\/ ]+\.[a-zA-Z0-9+_-]{1,8})(?:\((\d+)(?:,(\d+))?\)|:(\d+)(?::(\d+))?))");
 
-    static QRegularExpression urlRegex(
-        R"((https?|file)://[^\s<>()]+)"
-    );
+    static QRegularExpression urlRegex(R"((https?|file)://[^\s<>()]+)");
 
     auto lastPos = 0;
     auto view = QStringView{text};
@@ -148,15 +143,9 @@ auto insertLinkifiedText(QTextCursor &cursor, const QString &text,
     QVector<QRegularExpression> regexes;
 
     if (linkifyFiles) {
-        regexes = {
-            windowsPathRegex,
-            unixPathRegex,
-            urlRegex
-        };
+        regexes = {windowsPathRegex, unixPathRegex, urlRegex};
     } else {
-        regexes = {
-            urlRegex
-        };
+        regexes = {urlRegex};
     }
 
     struct MatchInfo {
@@ -216,9 +205,7 @@ auto insertLinkifiedText(QTextCursor &cursor, const QString &text,
     // The three regexes run independently, so put their matches back
     // into text order.
     std::sort(matches.begin(), matches.end(),
-              [](const MatchInfo &a, const MatchInfo &b) {
-                  return a.start < b.start;
-              });
+              [](const MatchInfo &a, const MatchInfo &b) { return a.start < b.start; });
 
     for (const auto &match : matches) {
         // Ignore overlapping matches.
@@ -227,9 +214,7 @@ auto insertLinkifiedText(QTextCursor &cursor, const QString &text,
         }
 
         if (match.start > lastPos) {
-            cursor.insertText(
-                view.sliced(lastPos, match.start - lastPos).toString(),
-                baseFormat);
+            cursor.insertText(view.sliced(lastPos, match.start - lastPos).toString(), baseFormat);
         }
 
         auto linkFmt = baseFormat;
@@ -272,12 +257,9 @@ auto insertLinkifiedText(QTextCursor &cursor, const QString &text,
     }
 
     if (lastPos < text.length()) {
-        cursor.insertText(
-            view.sliced(lastPos).toString(),
-            baseFormat);
+        cursor.insertText(view.sliced(lastPos).toString(), baseFormat);
     }
 }
-
 
 void appendAnsiText(QTextEdit *edit, const QString &ansiText, const QString &baseDir) {
     auto cursor = edit->textCursor();

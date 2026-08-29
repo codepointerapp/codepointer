@@ -1741,11 +1741,12 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
 
     auto buildDirectory = project->expand(project->buildDir);
     auto sourceDirectory = project->expand(project->sourceDir);
-    getManager()->handleCommandAsync(GlobalCommands::ProjectLoaded, {
-        {GlobalArguments::ProjectName, project->name },
-        {GlobalArguments::SourceDirectory, sourceDirectory },
-        {GlobalArguments::BuildDirectory, buildDirectory },
-    });
+    getManager()->handleCommandAsync(GlobalCommands::ProjectLoaded,
+                                     {
+                                         {GlobalArguments::ProjectName, project->name},
+                                         {GlobalArguments::SourceDirectory, sourceDirectory},
+                                         {GlobalArguments::BuildDirectory, buildDirectory},
+                                     });
     return true;
 }
 
