@@ -126,53 +126,138 @@ void applyAnsiCodeToFormat(QTextCharFormat &fmt, const QString &codeStr) {
     }
 }
 
-void insertLinkifiedText(QTextCursor &cursor, const QString &text,
+auto insertLinkifiedText(QTextCursor &cursor, const QString &text,
                          const QTextCharFormat &baseFormat, bool linkifyFiles,
-                         const QString &baseDir) {
-    static QRegularExpression urlRegex(R"((https?|file)://[^\s<>()]+)");
-    static QRegularExpression pathRegex(
-        R"((([A-Za-z]:[\\/][\w\-.+\\/ ]+|~?/?[\w\-.+/]+|\./[\w\-.+/]+|\.\./[\w\-.+/]+)\.[a-zA-Z0-9+_-]{1,8})(:\d+)?(:\d+)?(:)?)");
+                         const QString &baseDir) -> void
+{
+    static QRegularExpression unixPathRegex(
+        R"(((?:~?/?[\w\-.+\\/ ]+|\./[\w\-.+/ ]+|\.\./[\w\-.+/ ]+)\.[a-zA-Z0-9+_-]{1,8})(?::(\d+))(?::(\d+))?(:)?)"
+    );
+
+    static QRegularExpression windowsPathRegex(
+        R"(([A-Za-z]:[\\/][\w\-.+\\/ ]+\.[a-zA-Z0-9+_-]{1,8})(?:\((\d+)(?:,(\d+))?\)|:(\d+)(?::(\d+))?))"
+    );
+
+    static QRegularExpression urlRegex(
+        R"((https?|file)://[^\s<>()]+)"
+    );
 
     auto lastPos = 0;
     auto view = QStringView{text};
-    auto matchIter = linkifyFiles ? pathRegex.globalMatch(text) : urlRegex.globalMatch(text);
 
-    while (matchIter.hasNext()) {
-        auto match = matchIter.next();
-        auto start = match.capturedStart();
-        auto end = match.capturedEnd();
-        auto full = match.captured(0);
+    QVector<QRegularExpression> regexes;
 
-        if (start > lastPos) {
-            cursor.insertText(view.sliced(lastPos, start - lastPos).toString(), baseFormat);
+    if (linkifyFiles) {
+        regexes = {
+            windowsPathRegex,
+            unixPathRegex,
+            urlRegex
+        };
+    } else {
+        regexes = {
+            urlRegex
+        };
+    }
+
+    struct MatchInfo {
+        qsizetype start;
+        qsizetype end;
+        QString full;
+        QString file;
+        QString line;
+        QString column;
+        bool isUrl;
+    };
+
+    QVector<MatchInfo> matches;
+
+    for (const auto &regex : regexes) {
+        auto matchIter = regex.globalMatch(text);
+
+        while (matchIter.hasNext()) {
+            const auto match = matchIter.next();
+
+            MatchInfo info;
+            info.start = match.capturedStart();
+            info.end = match.capturedEnd();
+            info.full = match.captured(0);
+            info.isUrl = regex == urlRegex;
+
+            if (info.isUrl) {
+                matches.append(std::move(info));
+                continue;
+            }
+
+            if (regex == windowsPathRegex) {
+                info.file = match.captured(1);
+
+                // MSVC: file.cpp(167,41)
+                if (!match.captured(2).isEmpty()) {
+                    info.line = match.captured(2);
+                    info.column = match.captured(3);
+                }
+                // GCC/Clang on Windows: file.cpp:167:41
+                else {
+                    info.line = match.captured(4);
+                    info.column = match.captured(5);
+                }
+            } else {
+                // Unix / relative GCC/Clang:
+                // file.cpp:167:41
+                info.file = match.captured(1);
+                info.line = match.captured(2);
+                info.column = match.captured(3);
+            }
+
+            matches.append(std::move(info));
+        }
+    }
+
+    // The three regexes run independently, so put their matches back
+    // into text order.
+    std::sort(matches.begin(), matches.end(),
+              [](const MatchInfo &a, const MatchInfo &b) {
+                  return a.start < b.start;
+              });
+
+    for (const auto &match : matches) {
+        // Ignore overlapping matches.
+        if (match.start < lastPos) {
+            continue;
+        }
+
+        if (match.start > lastPos) {
+            cursor.insertText(
+                view.sliced(lastPos, match.start - lastPos).toString(),
+                baseFormat);
         }
 
         auto linkFmt = baseFormat;
         QUrl linkUrl;
 
-        if (full.startsWith("http") || full.startsWith("file")) {
-            linkUrl = QUrl(full);
+        if (match.isUrl) {
+            linkUrl = QUrl(match.full);
         } else {
-            auto filePart = match.captured(1);
-            auto line = match.captured(3).mid(1);
-            auto column = match.captured(4).mid(1);
-            auto fragment = QString();
-            if (!line.isEmpty()) {
-                fragment += line;
-            }
-            if (!column.isEmpty()) {
-                fragment += "," + column;
-            }
+            auto filePath = match.file;
+            filePath.replace('\\', '/');
 
-            auto filePath = filePart;
-            filePath.replace("\\", "/");
             auto fi = QFileInfo(filePath);
+
             if (fi.isRelative()) {
                 filePath = QDir(baseDir).absoluteFilePath(filePath);
             }
+
             filePath = QDir::cleanPath(filePath);
+
             linkUrl = QUrl::fromLocalFile(filePath);
-            if (!fragment.isEmpty()) {
+
+            if (!match.line.isEmpty()) {
+                auto fragment = match.line;
+
+                if (!match.column.isEmpty()) {
+                    fragment += ',' + match.column;
+                }
+
                 linkUrl.setFragment(fragment);
             }
         }
@@ -182,14 +267,17 @@ void insertLinkifiedText(QTextCursor &cursor, const QString &text,
         linkFmt.setForeground(QBrush(Qt::blue));
         linkFmt.setFontUnderline(true);
 
-        cursor.insertText(full, linkFmt);
-        lastPos = end;
+        cursor.insertText(match.full, linkFmt);
+        lastPos = match.end;
     }
 
     if (lastPos < text.length()) {
-        cursor.insertText(view.sliced(lastPos).toString(), baseFormat);
+        cursor.insertText(
+            view.sliced(lastPos).toString(),
+            baseFormat);
     }
 }
+
 
 void appendAnsiText(QTextEdit *edit, const QString &ansiText, const QString &baseDir) {
     auto cursor = edit->textCursor();
