@@ -107,8 +107,8 @@ bool ClOutputDetector::processLine(const QString &line, const QString &, const Q
     auto match = clPattern.match(line);
     if (match.hasMatch()) {
         auto fileName = match.captured(1);
-        auto lineNumber = match.captured(2).toInt();
-        auto columnNumber = match.captured(3).toInt();
+        auto lineNumber = match.captured(2).toInt() - 1;
+        auto columnNumber = match.captured(3).toInt() - 1;
         auto type = match.captured(4);
         // auto code = match.captured(5);
         auto message = match.captured(6);
