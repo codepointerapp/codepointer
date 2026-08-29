@@ -257,12 +257,6 @@ ProjectManagerPlugin::ProjectManagerPlugin() {
 
     auto values = QStringList() << tr("Never") << tr("Always") << tr("Loaded projects");
 
-#if defined(Q_OS_LINUX)
-    clangFormatExe = "/usr/bin/clang-format";
-#else
-    clangFormatExe = R"(C:\Program Files\llvm\bin\ctags.exe)";
-#endif
-
     config.pluginName = tr("Project manager");
     config.description = tr("Add support for building using CMake/Cargo/Go");
     config.configItems.push_back(
@@ -590,15 +584,15 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
                     updateExecutablesUI(project);
                 }
 
-                // clang-format off
-                getManager()->handleCommandAsync(GlobalCommands::BuildFinished, {
-                    {GlobalArguments::BuildDirectory, buildDirectory },
-                    {GlobalArguments::SourceDirectory, sourceDirectory },
-                    {GlobalArguments::TaskName, runningTask->name},
-                    {GlobalArguments::Name, project->name},
-                    {GlobalArguments::ExitCode, exitCode},
-                });
-                // clang-format on
+                getManager()->handleCommandAsync(
+                    GlobalCommands::BuildFinished,
+                    {
+                        {GlobalArguments::BuildDirectory, buildDirectory},
+                        {GlobalArguments::SourceDirectory, sourceDirectory},
+                        {GlobalArguments::TaskName, runningTask->name},
+                        {GlobalArguments::Name, project->name},
+                        {GlobalArguments::ExitCode, exitCode},
+                    });
             }
 
             runProcess.setProperty("runningTask", {});

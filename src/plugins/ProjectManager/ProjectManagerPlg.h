@@ -163,7 +163,6 @@ class ProjectManagerPlugin : public IPlugin {
     ProjectBuildModel *projectModel = nullptr;
     CommandPalette *commandPalette = nullptr;
     ProjectSearch *searchPanelUI = nullptr;
-    QString clangFormatExe;
 
     QAction *runAction = nullptr;
     QAction *buildAction = nullptr;
