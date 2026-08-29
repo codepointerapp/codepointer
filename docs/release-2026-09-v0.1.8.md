@@ -57,3 +57,6 @@ I am also toying with the idea of using scintilla.
 - Formatting does not always work - https://github.com/codepointerapp/codepointer/issues/221
 - UI: make buttons on the project manger searchable - https://github.com/codepointerapp/codepointer/commit/dc36aae8dba28dfb2b640479f813746259fd1536
 - LTO build: https://github.com/codepointerapp/codepointer/commit/f4437f37cbe767cba298308d11020a00b5f3042f
+- Terminal: default dir is wrong - 224 - https://github.com/codepointerapp/codepointer/issues/224
+- MSVC: comilation error warnings are off by one - 226 - https://github.com/codepointerapp/codepointer/issues/226
+- Qt: mingw+msvc mixtured kit - 223 - https://github.com/codepointerapp/codepointer/issues/223
