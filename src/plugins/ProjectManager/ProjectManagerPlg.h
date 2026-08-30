@@ -158,6 +158,7 @@ class ProjectManagerPlugin : public IPlugin {
     // Owned by the currently running task; -1 when no pty is in use.
     int taskPtyMasterFd = -1;
     QSocketNotifier *taskPtyNotifier = nullptr;
+    quint64 taskPtyEpoch = 0;
 
     KitDefinitionModel *kitsModel = nullptr;
     ProjectBuildModel *projectModel = nullptr;

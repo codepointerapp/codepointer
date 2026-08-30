@@ -31,6 +31,7 @@
 #include <QTimer>
 #include <QWidgetAction>
 #include <qfileinfo.h>
+#include <utility>
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <fcntl.h>
@@ -605,6 +606,17 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
             runProcess.setProperty("runningTask", {});
             runProcess.setProperty("runningProject", {});
         });
+#if defined(USE_TTY_FOR_TASKS)
+    connect(&runProcess, &QProcess::finished, this, [this](int, QProcess::ExitStatus) {
+        auto epoch = taskPtyEpoch;
+        QTimer::singleShot(0, this, [this, epoch] {
+            if (epoch != taskPtyEpoch) {
+                return;
+            }
+            releaseTaskPty();
+        });
+    });
+#endif
     connect(&runProcess, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         auto output = QString("\n[error: code=%1]").arg((int)error);
         auto project = getCurrentConfig();
@@ -1103,15 +1115,17 @@ auto ProjectManagerPlugin::updateKitsUI() -> void {
 
 auto ProjectManagerPlugin::releaseTaskPty() -> void {
 #if defined(USE_TTY_FOR_TASKS)
-    // Stop watching before closing, so the notifier never sees a stale fd.
-    if (taskPtyNotifier) {
-        taskPtyNotifier->setEnabled(false);
-        delete taskPtyNotifier;
-        taskPtyNotifier = nullptr;
+    auto notifier = std::exchange(taskPtyNotifier, nullptr);
+    auto masterFd = std::exchange(taskPtyMasterFd, -1);
+    if (notifier) {
+        notifier->setEnabled(false);
+        delete notifier;
     }
-    if (taskPtyMasterFd >= 0) {
-        close(taskPtyMasterFd);
-        taskPtyMasterFd = -1;
+    if (masterFd >= 0) {
+        runProcess.setStandardInputFile(QString());
+        runProcess.setStandardOutputFile(QString());
+        runProcess.setStandardErrorFile(QString());
+        ::close(masterFd);
     }
 #endif
 }
@@ -1142,6 +1156,9 @@ bool ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
     }
     // The previous run's pty is dead now - reclaim it before allocating a new one.
     releaseTaskPty();
+#if defined(USE_TTY_FOR_TASKS)
+    ++taskPtyEpoch;
+#endif
 
     // Drop any stale claim; do_runTask() re-establishes it once the task starts.
     runProcess.setProperty("runningTask", {});
@@ -1167,12 +1184,11 @@ bool ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
             auto notifier = new QSocketNotifier(masterFd, QSocketNotifier::Read, &runProcess);
             taskPtyMasterFd = masterFd;
             taskPtyNotifier = notifier;
-            // SingleShotConnection: this is per-run state, so the connection must not
-            // outlive the run that created it.
-            connect(
-                &runProcess, &QProcess::finished, this, [this]() { releaseTaskPty(); },
-                Qt::SingleShotConnection);
-            connect(notifier, &QSocketNotifier::activated, notifier, [this, masterFd]() {
+            auto epoch = taskPtyEpoch;
+            connect(notifier, &QSocketNotifier::activated, notifier, [this, masterFd, epoch]() {
+                if (epoch != taskPtyEpoch || taskPtyMasterFd != masterFd) {
+                    return;
+                }
                 char buffer[4096];
                 auto bytesRead = read(masterFd, buffer, sizeof(buffer) - 1);
                 if (bytesRead > 0) {
