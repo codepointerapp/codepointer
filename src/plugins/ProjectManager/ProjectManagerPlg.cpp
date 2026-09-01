@@ -1095,7 +1095,6 @@ auto ProjectManagerPlugin::updateKitsUI() -> void {
     gui->kitButton->setItems(names, tooltips);
 }
 
-
 void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QString &program,
                                       const QStringList &arguments,
                                       const QProcessEnvironment &customEnv, bool capture) {
