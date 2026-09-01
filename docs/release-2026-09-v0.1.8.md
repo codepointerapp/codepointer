@@ -52,11 +52,15 @@ I am also toying with the idea of using scintilla.
 - Qutepart: Lisp indenter - find brace unit test fails 51 - https://github.com/diegoiast/qutepart-cpp/issues/51
 - Building consumes too much processes and memory 219 - https://github.com/codepointerapp/codepointer/issues/219
 - Copy relative path action is added sereral times to the tab widget's right click menu 222 - https://github.com/codepointerapp/codepointer/issues/222
-- Sometimes I cannot run tasks or projects - 220 - https://github.com/codepointerapp/codepointer/issues/220
-- Qutepart: make syntax highlighting 2.5x faster - https://github.com/diegoiast/qutepart-cpp/commit/221d73b866faeba843378c153f6876642ea8fa18
+~~~- Sometimes I cannot run tasks or projects - 220 - https://github.com/codepointerapp/codepointer/issues/220~~~
+- Qutepart: make syntax highlighting 2.5x faster - https://github.com/diego   iast/qutepart-cpp/commit/221d73b866faeba843378c153f6876642ea8fa18
 - Formatting does not always work - https://github.com/codepointerapp/codepointer/issues/221
 - UI: make buttons on the project manger searchable - https://github.com/codepointerapp/codepointer/commit/dc36aae8dba28dfb2b640479f813746259fd1536
 - LTO build: https://github.com/codepointerapp/codepointer/commit/f4437f37cbe767cba298308d11020a00b5f3042f
 - Terminal: default dir is wrong - 224 - https://github.com/codepointerapp/codepointer/issues/224
 - MSVC: comilation error warnings are off by one - 226 - https://github.com/codepointerapp/codepointer/issues/226
 - Qt: mingw+msvc mixtured kit - 223 - https://github.com/codepointerapp/codepointer/issues/223
+
+
+Issue 220 - this triggered a fww minor revisions. Seeme like that code is completlly broken.
+

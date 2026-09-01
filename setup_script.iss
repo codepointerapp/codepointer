@@ -1,4 +1,4 @@
-#define VersionString "0.1.8.1"
+#define VersionString "0.1.8.2"
 #define AppId "1f7e9ebf-ed92-4d88-8eac-89e3fe53282c"
 #define VC_Redist_URL "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 #define AppName "codepointer"

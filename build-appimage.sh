@@ -12,7 +12,7 @@ if [ "$1" = "--ce" ]; then
 fi
 
 APP_NAME="codepointer"
-APP_VERSION="0.1.8.1"
+APP_VERSION="0.1.8.2"
 QT_VERSION="6.10.2"
 
 NAME="${APP_NAME}-v${APP_VERSION}${NAME_SUFFIX}-x86_64"
