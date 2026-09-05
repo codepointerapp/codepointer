@@ -48,8 +48,8 @@ auto describeCapability(const lsp::json::Any &value) -> std::string {
             return "yes";
         }
         auto keys = std::string();
-        for (auto const &[key, ignored] : object) {
-            keys += (keys.empty() ? "" : ", ") + key;
+        for (auto const &pair : object.keyValueMap()) {
+            keys += (keys.empty() ? "" : ", ") + pair.first;
         }
         return "yes {" + keys + "}";
     }
@@ -150,14 +150,13 @@ void LspClientImpl::startServer(const std::string &executable,
             }
             auto const &object = params.value.object();
             auto field = [&object](const char *key) -> std::string {
-                auto it = object.find(key);
-                return (it != object.end() && it->second.isString()) ? it->second.string()
-                                                                     : std::string{};
+                auto *it = object.find(key);
+                return (it && it->isString()) ? it->string() : std::string{};
             };
             auto const kind = field("kind");
             auto percentage = -1;
-            if (auto it = object.find("percentage"); it != object.end() && it->second.isNumber()) {
-                percentage = static_cast<int>(it->second.number());
+            if (auto *it = object.find("percentage"); it && it->isNumber()) {
+                percentage = static_cast<int>(it->number());
             }
             trace("<-- $/progress " + kind + " " + field("title") + " " + field("message") +
                   (percentage >= 0 ? " " + std::to_string(percentage) + "%" : ""));
@@ -240,8 +239,8 @@ void LspClientImpl::initializeLspServer() {
                 // protocol gains capabilities this code has never heard of.
                 auto asJson = lsp::toJson(lsp::ServerCapabilities(result.capabilities));
                 if (asJson.isObject()) {
-                    for (auto const &[key, value] : asJson.object()) {
-                        m_capabilities.emplace_back(key, describeCapability(value));
+                    for (auto const &pair : asJson.object().keyValueMap()) {
+                        m_capabilities.emplace_back(pair.first, describeCapability(pair.second));
                     }
                     std::sort(m_capabilities.begin(), m_capabilities.end());
                 }
