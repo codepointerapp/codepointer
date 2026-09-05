@@ -49,12 +49,10 @@ auto describeCapability(const lsp::json::Value &value) -> std::string {
             return "yes";
         }
         auto keys = std::string();
-        // for (auto const &pair : object.keyValueMap()) {
-        //     keys += (keys.empty() ? "" : ", ") + pair.first;
-        // }
         for (const auto &[k, v] : object) {
+            (void)v;
             keys += keys.empty() ? "" : ", ";
-            keys += std::string(v.string());
+            keys += k;
         }
         return "yes {" + keys + "}";
     }
@@ -176,10 +174,13 @@ void LspClientImpl::startServer(const std::string &executable,
             try {
                 m_messageHandler->processNextMessage();
             } catch (const lsp::ConnectionError &) {
-                break; // server went away
+                break; // server went away - nothing left to read
             } catch (const std::exception &e) {
-                std::cerr << "LspClientImpl: " << e.what() << std::endl;
-                break;
+                // A single malformed message or a stuck callback must not tear
+                // down the whole connection: log it and keep reading so later
+                // responses (hover, completion, ...) still reach their callbacks.
+                std::cerr << "LspClientImpl: error handling message, skipping: " << e.what()
+                          << std::endl;
             }
         }
         m_running = false;
