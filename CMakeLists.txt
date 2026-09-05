@@ -72,7 +72,7 @@ else()
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#8e7017f7fbdc2b4b1a26ed1eef9ebcba6a50639c")
     CPMAddPackage("gh:Dax89/QHexView#beadd087413a46e7ed97afbab9dab1323ab1d033")
     CPMAddPackage("gh:Dax89/QHexView#5fe6d9851ecfae0acf26d1659ee3cb579d03202f")
-    CPMAddPackage("gh:leon-bckl/lsp-framework#ded23a93682f7d6085dd428beee7021a8b0e2f40")
+    CPMAddPackage("gh:leon-bckl/lsp-framework#26b9f47f755cb8db141f3418967b7021f1d05d25")
     
     download_breeze_icons(6.4.0)
 endif()

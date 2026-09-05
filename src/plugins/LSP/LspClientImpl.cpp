@@ -2,7 +2,8 @@
 #include <chrono>
 #include <iostream>
 
-#include <lsp/io/stream.h>
+#include <lsp/json/json.h>
+#include <lsp/uri.h>
 
 #include "LspClientImpl.hpp"
 
@@ -12,7 +13,7 @@ auto markedStringToText(const lsp::MarkedString &marked) -> std::string {
     if (std::holds_alternative<lsp::String>(marked)) {
         return std::get<lsp::String>(marked);
     }
-    return std::get<lsp::MarkedString_Language_Value>(marked).value;
+    return std::get<lsp::MarkedStringWithLanguage>(marked).value;
 }
 
 auto hoverToPlainText(const lsp::Hover &hover) -> std::string {
@@ -35,7 +36,7 @@ auto hoverToPlainText(const lsp::Hover &hover) -> std::string {
 
 /// One-line rendering of a capability value: booleans as-is, option objects
 /// summarised by their interesting keys, everything else as compact JSON.
-auto describeCapability(const lsp::json::Any &value) -> std::string {
+auto describeCapability(const lsp::json::Value &value) -> std::string {
     if (value.isBoolean()) {
         return value.boolean() ? "true" : "false";
     }
@@ -44,12 +45,16 @@ auto describeCapability(const lsp::json::Any &value) -> std::string {
     }
     if (value.isObject()) {
         auto const &object = value.object();
-        if (object.empty()) {
+        if (object.isEmpty()) {
             return "yes";
         }
         auto keys = std::string();
-        for (auto const &pair : object.keyValueMap()) {
-            keys += (keys.empty() ? "" : ", ") + pair.first;
+        // for (auto const &pair : object.keyValueMap()) {
+        //     keys += (keys.empty() ? "" : ", ") + pair.first;
+        // }
+        for (const auto &[k, v] : object) {
+            keys += keys.empty() ? "" : ", ";
+            keys += std::string(v.string());
         }
         return "yes {" + keys + "}";
     }
@@ -204,7 +209,7 @@ void LspClientImpl::stopServer() {
 
 void LspClientImpl::initializeLspServer() {
     auto initializeParams = lsp::requests::Initialize::Params{};
-    initializeParams.rootUri = lsp::FileUri::fromPath(m_documentRoot);
+    initializeParams.rootUri = lsp::Uri::fileUriFromPath(m_documentRoot);
     initializeParams.capabilities = lsp::ClientCapabilities{
         .textDocument =
             lsp::TextDocumentClientCapabilities{
@@ -288,8 +293,8 @@ void LspClientImpl::syncDocument(const std::string &fileName, const std::string 
 
     if (isNew) {
         auto params = lsp::notifications::TextDocument_DidOpen::Params{};
-        params.textDocument.uri = lsp::FileUri::fromPath(fileName);
-        params.textDocument.languageId = languageId;
+        params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
+        params.textDocument.languageId = std::string(languageId);
         params.textDocument.version = version;
         params.textDocument.text = text;
         m_messageHandler->sendNotification<lsp::notifications::TextDocument_DidOpen>(
@@ -301,9 +306,9 @@ void LspClientImpl::syncDocument(const std::string &fileName, const std::string 
     // Full-document sync. Incremental sync would need range tracking the editor
     // does not expose yet.
     auto params = lsp::notifications::TextDocument_DidChange::Params{};
-    params.textDocument.uri = lsp::FileUri::fromPath(fileName);
+    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.textDocument.version = version;
-    params.contentChanges = {lsp::TextDocumentContentChangeEvent_Text{.text = text}};
+    params.contentChanges = {lsp::TextDocumentContentChangeWholeDocument{.text = text}};
     m_messageHandler->sendNotification<lsp::notifications::TextDocument_DidChange>(
         std::move(params));
     trace("--> didChange " + fileName + " v" + std::to_string(version));
@@ -320,7 +325,7 @@ void LspClientImpl::closeDocument(const std::string &fileName) {
         return;
     }
     auto params = lsp::notifications::TextDocument_DidClose::Params{};
-    params.textDocument.uri = lsp::FileUri::fromPath(fileName);
+    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     m_messageHandler->sendNotification<lsp::notifications::TextDocument_DidClose>(
         std::move(params));
     trace("--> didClose " + fileName);
@@ -334,7 +339,7 @@ void LspClientImpl::requestCompletion(const std::string &fileName, uint line, ui
     }
 
     auto params = lsp::requests::TextDocument_Completion::Params{};
-    params.textDocument.uri = lsp::FileUri::fromPath(fileName);
+    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> completion " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
@@ -364,7 +369,7 @@ void LspClientImpl::requestDefinition(const std::string &fileName, uint line, ui
     }
 
     auto params = lsp::requests::TextDocument_Definition::Params{};
-    params.textDocument.uri = lsp::FileUri::fromPath(fileName);
+    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> definition " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
@@ -423,7 +428,7 @@ std::vector<LspClientImpl::TextEdit> LspClientImpl::flatten(const lsp::Workspace
 
     if (edit.changes.has_value()) {
         for (auto const &[uri, edits] : *edit.changes) {
-            auto path = std::string(lsp::FileUri(uri).path());
+            auto path = std::string(uri.path());
             for (auto const &textEdit : edits) {
                 append(path, textEdit);
             }
@@ -464,7 +469,7 @@ void LspClientImpl::requestCodeActions(const std::string &fileName, uint startLi
     }
 
     auto params = lsp::requests::TextDocument_CodeAction::Params{};
-    params.textDocument.uri = lsp::FileUri::fromPath(fileName);
+    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.range = {.start = {.line = startLine, .character = startCharacter},
                     .end = {.line = endLine, .character = endCharacter}};
     if (!kinds.empty()) {
@@ -520,7 +525,7 @@ void LspClientImpl::requestRename(const std::string &fileName, uint line, uint c
     }
 
     auto params = lsp::requests::TextDocument_Rename::Params{};
-    params.textDocument.uri = lsp::FileUri::fromPath(fileName);
+    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
     params.newName = newName;
 
@@ -546,7 +551,7 @@ void LspClientImpl::requestHover(const std::string &fileName, uint line, uint co
     }
 
     auto params = lsp::requests::TextDocument_Hover::Params{};
-    params.textDocument.uri = lsp::FileUri::fromPath(fileName);
+    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> hover " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));

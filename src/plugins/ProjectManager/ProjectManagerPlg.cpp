@@ -1368,7 +1368,7 @@ void ProjectManagerPlugin::runTask_clicked() {
     }
     auto manager = getManager();
     auto count = manager->visibleTabs();
-    for (auto i = 0u; i < count; i++) {
+    for (auto i = 0; i < count; i++) {
         auto client = manager->getMdiClient(i);
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
             editor->removeMetaData();
