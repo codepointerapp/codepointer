@@ -130,10 +130,10 @@ void LspClientImpl::startServer(const std::string &executable,
     // bidirectional stream - which is what lsp::Connection expects.
     m_process = std::make_unique<lsp::Process>(lsp::Process::start(executable, arguments));
     m_connection = std::make_unique<lsp::Connection>(m_process->stdIO());
-    m_messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
+    m_messageHandler = std::make_unique<lsp::MessageHandler>(std::move(*m_connection));
 
-    m_messageHandler->add<lsp::notifications::TextDocument_PublishDiagnostics>(
-        [this](lsp::notifications::TextDocument_PublishDiagnostics::Params &&params) {
+    m_messageHandler->on<lsp::notifications::TextDocumentPublishDiagnostics>(
+        [this](lsp::notifications::TextDocumentPublishDiagnostics::Params &&params) {
             trace("<-- publishDiagnostics " + std::string(params.uri.path()) + " (" +
                   std::to_string(params.diagnostics.size()) + ")");
             if (m_diagnosticsCallback) {
@@ -143,12 +143,12 @@ void LspClientImpl::startServer(const std::string &executable,
 
     // clangd asks permission before reporting background work. Refusing to answer
     // (or not advertising window.workDoneProgress) means no indexing progress at all.
-    m_messageHandler->add<lsp::requests::Window_WorkDoneProgress_Create>(
-        [](lsp::requests::Window_WorkDoneProgress_Create::Params &&) {
-            return lsp::requests::Window_WorkDoneProgress_Create::Result{};
+    m_messageHandler->on<lsp::requests::WindowWorkDoneProgressCreate>(
+        [](lsp::requests::WindowWorkDoneProgressCreate::Params &&) {
+            return lsp::requests::WindowWorkDoneProgressCreate::Result{};
         });
 
-    m_messageHandler->add<lsp::notifications::Progress>(
+    m_messageHandler->on<lsp::notifications::Progress>(
         [this](lsp::notifications::Progress::Params &&params) {
             if (!m_progressCallback || !params.value.isObject()) {
                 return;
@@ -174,7 +174,7 @@ void LspClientImpl::startServer(const std::string &executable,
     m_readerThread = std::thread([this]() {
         while (m_running.load()) {
             try {
-                m_messageHandler->processIncomingMessages();
+                m_messageHandler->processNextMessage();
             } catch (const lsp::ConnectionError &) {
                 break; // server went away
             } catch (const std::exception &e) {
@@ -242,10 +242,16 @@ void LspClientImpl::initializeLspServer() {
                 // Serialising the whole struct beats reading 36 heterogeneous
                 // Opt<OneOf<...>> fields by hand, and keeps working when the
                 // protocol gains capabilities this code has never heard of.
-                auto asJson = lsp::toJson(lsp::ServerCapabilities(result.capabilities));
+                std::string serialized;
+                {
+                    lsp::json::Writer writer(serialized);
+                    auto objectWriter = writer.beginObject();
+                    lsp::writeJson(result.capabilities, objectWriter);
+                }
+                auto asJson = lsp::json::parse(serialized);
                 if (asJson.isObject()) {
-                    for (auto const &pair : asJson.object().keyValueMap()) {
-                        m_capabilities.emplace_back(pair.first, describeCapability(pair.second));
+                    for (auto const &[key, value] : asJson.object()) {
+                        m_capabilities.emplace_back(key, describeCapability(value));
                     }
                     std::sort(m_capabilities.begin(), m_capabilities.end());
                 }
@@ -292,12 +298,12 @@ void LspClientImpl::syncDocument(const std::string &fileName, const std::string 
     }
 
     if (isNew) {
-        auto params = lsp::notifications::TextDocument_DidOpen::Params{};
+        auto params = lsp::notifications::TextDocumentDidOpen::Params{};
         params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
         params.textDocument.languageId = std::string(languageId);
         params.textDocument.version = version;
         params.textDocument.text = text;
-        m_messageHandler->sendNotification<lsp::notifications::TextDocument_DidOpen>(
+        m_messageHandler->sendNotification<lsp::notifications::TextDocumentDidOpen>(
             std::move(params));
         trace("--> didOpen " + fileName + " v" + std::to_string(version));
         return;
@@ -305,11 +311,11 @@ void LspClientImpl::syncDocument(const std::string &fileName, const std::string 
 
     // Full-document sync. Incremental sync would need range tracking the editor
     // does not expose yet.
-    auto params = lsp::notifications::TextDocument_DidChange::Params{};
+    auto params = lsp::notifications::TextDocumentDidChange::Params{};
     params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.textDocument.version = version;
     params.contentChanges = {lsp::TextDocumentContentChangeWholeDocument{.text = text}};
-    m_messageHandler->sendNotification<lsp::notifications::TextDocument_DidChange>(
+    m_messageHandler->sendNotification<lsp::notifications::TextDocumentDidChange>(
         std::move(params));
     trace("--> didChange " + fileName + " v" + std::to_string(version));
 }
@@ -324,9 +330,9 @@ void LspClientImpl::closeDocument(const std::string &fileName) {
     if (!m_ready.load()) {
         return;
     }
-    auto params = lsp::notifications::TextDocument_DidClose::Params{};
+    auto params = lsp::notifications::TextDocumentDidClose::Params{};
     params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
-    m_messageHandler->sendNotification<lsp::notifications::TextDocument_DidClose>(
+    m_messageHandler->sendNotification<lsp::notifications::TextDocumentDidClose>(
         std::move(params));
     trace("--> didClose " + fileName);
 }
@@ -338,14 +344,14 @@ void LspClientImpl::requestCompletion(const std::string &fileName, uint line, ui
         return;
     }
 
-    auto params = lsp::requests::TextDocument_Completion::Params{};
+    auto params = lsp::requests::TextDocumentCompletion::Params{};
     params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> completion " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
-    m_messageHandler->sendRequest<lsp::requests::TextDocument_Completion>(
+    m_messageHandler->sendRequest<lsp::requests::TextDocumentCompletion>(
         std::move(params),
-        [this, callback](lsp::requests::TextDocument_Completion::Result &&result) {
+        [this, callback](lsp::requests::TextDocumentCompletion::Result &&result) {
             auto items = std::vector<lsp::CompletionItem>();
             if (result.holdsAlternative<lsp::CompletionList>()) {
                 items = std::move(result.get<lsp::CompletionList>().items);
@@ -368,14 +374,14 @@ void LspClientImpl::requestDefinition(const std::string &fileName, uint line, ui
         return;
     }
 
-    auto params = lsp::requests::TextDocument_Definition::Params{};
+    auto params = lsp::requests::TextDocumentDefinition::Params{};
     params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> definition " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
-    m_messageHandler->sendRequest<lsp::requests::TextDocument_Definition>(
+    m_messageHandler->sendRequest<lsp::requests::TextDocumentDefinition>(
         std::move(params),
-        [this, callback](lsp::requests::TextDocument_Definition::Result &&result) {
+        [this, callback](lsp::requests::TextDocumentDefinition::Result &&result) {
             auto out = std::vector<Location>();
             auto addLocation = [&out](const lsp::Location &location) {
                 out.push_back(Location{std::string(location.uri.path()),
@@ -468,7 +474,7 @@ void LspClientImpl::requestCodeActions(const std::string &fileName, uint startLi
         return;
     }
 
-    auto params = lsp::requests::TextDocument_CodeAction::Params{};
+    auto params = lsp::requests::TextDocumentCodeAction::Params{};
     params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.range = {.start = {.line = startLine, .character = startCharacter},
                     .end = {.line = endLine, .character = endCharacter}};
@@ -483,9 +489,9 @@ void LspClientImpl::requestCodeActions(const std::string &fileName, uint startLi
     }
 
     trace("--> codeAction " + fileName + ":" + std::to_string(startLine));
-    m_messageHandler->sendRequest<lsp::requests::TextDocument_CodeAction>(
+    m_messageHandler->sendRequest<lsp::requests::TextDocumentCodeAction>(
         std::move(params),
-        [this, callback](lsp::requests::TextDocument_CodeAction::Result &&result) {
+        [this, callback](lsp::requests::TextDocumentCodeAction::Result &&result) {
             auto actions = std::vector<CodeAction>();
             if (!result.isNull()) {
                 for (auto const &entry : *result) {
@@ -524,15 +530,15 @@ void LspClientImpl::requestRename(const std::string &fileName, uint line, uint c
         return;
     }
 
-    auto params = lsp::requests::TextDocument_Rename::Params{};
+    auto params = lsp::requests::TextDocumentRename::Params{};
     params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
     params.newName = newName;
 
     trace("--> rename " + fileName + ":" + std::to_string(line) + " -> " + newName);
-    m_messageHandler->sendRequest<lsp::requests::TextDocument_Rename>(
+    m_messageHandler->sendRequest<lsp::requests::TextDocumentRename>(
         std::move(params),
-        [this, callback](lsp::requests::TextDocument_Rename::Result &&result) {
+        [this, callback](lsp::requests::TextDocumentRename::Result &&result) {
             auto edits = result.isNull() ? std::vector<TextEdit>() : flatten(*result);
             trace("<-- rename result (" + std::to_string(edits.size()) + " edits)");
             callback(std::move(edits));
@@ -550,14 +556,14 @@ void LspClientImpl::requestHover(const std::string &fileName, uint line, uint co
         return;
     }
 
-    auto params = lsp::requests::TextDocument_Hover::Params{};
+    auto params = lsp::requests::TextDocumentHover::Params{};
     params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> hover " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
-    m_messageHandler->sendRequest<lsp::requests::TextDocument_Hover>(
+    m_messageHandler->sendRequest<lsp::requests::TextDocumentHover>(
         std::move(params),
-        [this, callback](lsp::requests::TextDocument_Hover::Result &&result) {
+        [this, callback](lsp::requests::TextDocumentHover::Result &&result) {
             auto text = result.isNull() ? std::string{} : hoverToPlainText(*result);
             trace("<-- hover result (" + std::to_string(text.size()) + " chars)");
             callback(text);
