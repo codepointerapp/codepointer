@@ -931,10 +931,13 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
                 auto converted = QList<Diagnostic>();
                 converted.reserve(static_cast<int>(items.size()));
                 for (auto const &item : items) {
+                    auto msg = std::holds_alternative<lsp::MarkupContent>(item.message)
+                                   ? std::get<lsp::MarkupContent>(item.message).value
+                                   : std::get<lsp::String>(item.message);
                     converted.append(Diagnostic{
                         static_cast<int>(item.range.start.line),
                         item.severity.has_value() ? static_cast<int>(*item.severity) : 1,
-                        QString::fromStdString(item.message),
+                        QString::fromStdString(msg),
                     });
                 }
                 {
