@@ -77,7 +77,7 @@ else()
     if (CODEPOINTER_BUNDLE_ICON_THEME)
         download_breeze_icons(6.4.0)
     endif()
-    CPMAddPackage("gh:leon-bckl/lsp-framework#c5cd680693d9f03e105df5de64d2483b28dd7604")
+    CPMAddPackage("gh:leon-bckl/lsp-framework#26b9f47f755cb8db141f3418967b7021f1d05d25")
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
