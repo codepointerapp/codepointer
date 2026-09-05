@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include <QHash>
@@ -56,20 +55,19 @@ struct LspServerInfo {
 };
 
 class LspPlugin : public IPlugin {
-    /// A one-pointer view over `IPlugin::config`. `Writable` picks the
-    /// constness of that pointer; the setters are member functions of a class
-    /// template, so they are only instantiated when called - which is what lets
-    /// the read-only instantiation compile while still rejecting a `setX()`.
-    template <bool Writable> struct ConfigT {
-        CONFIG_DEFINE(ServersJson, QString)
-        CONFIG_DEFINE(ExtraPaths, QStringList)
-        std::conditional_t<Writable, qmdiPluginConfig *, const qmdiPluginConfig *> config;
+    struct Config {
+        CONFIG_DEFINE(ServersJson, QString);
+        CONFIG_DEFINE(ExtraPaths, QStringList);
+        qmdiPluginConfig *config = nullptr;
     };
-    using Config = ConfigT<true>;
-    using ConstConfig = ConfigT<false>;
+    struct ConstConfig {
+        static constexpr auto ServersJsonKey = "ServersJson";
+        static constexpr auto ExtraPathsKey = "ExtraPaths";
+        QString getServersJson() const { return config->getVariable<QString>(ServersJsonKey); }
+        QStringList getExtraPaths() const { return config->getVariable<QStringList>(ExtraPathsKey); }
+        const qmdiPluginConfig *config = nullptr;
+    };
 
-    /// Both are returned by value - the view is one pointer wide, so there is
-    /// nothing to save by handing out a reference.
     Config getConfig() { return Config{&this->config}; }
     ConstConfig getConstConfig() const { return ConstConfig{&this->config}; }
 
