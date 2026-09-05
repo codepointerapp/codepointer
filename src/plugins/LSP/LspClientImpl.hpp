@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -10,7 +9,7 @@
 #include <vector>
 
 #include <lsp/connection.h>
-#include <lsp/messagehandler.h>
+#include <lsp/message_handler.h>
 #include <lsp/messages.h>
 #include <lsp/process.h>
 
