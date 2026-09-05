@@ -154,12 +154,11 @@ auto static setupPty(QProcess &process, int &masterFd) -> bool {
 
     close(slaveFd);
 
-    QObject::connect(&process, &QProcess::finished, [&]() {
-        if (masterFd >= 0) {
-            close(masterFd);
-            masterFd = -1;
-        }
-    });
+    // NOTE: ownership of masterFd passes to the caller, which must close it once
+    // the process is done. Registering the cleanup here used to capture `masterFd`
+    // by reference - a reference to a local of runCommand() that is long dead by
+    // the time QProcess::finished fires - and the connection was never
+    // disconnected, so every task run added another lambda closing a garbage fd.
     return true;
 #else
     Q_UNUSED(process);
@@ -385,6 +384,8 @@ ProjectManagerPlugin::~ProjectManagerPlugin() {
     // handler calls back into the command bus, so it must not be reachable any
     // more. Disconnect first, then reap.
     runProcess.disconnect();
+    stopRunningTask();
+    releaseTaskPty();
     delete searchPanelUI;
 }
 
@@ -576,7 +577,13 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
                 projectName = d.dirName();
             }
 
-            if (project && runningTask && runningTask->isBuild) {
+            // GlobalCommands::BuildFinished is documented as "build succeeded", and
+            // CTags/TreeSitter reindex on it - so a build that exited non-zero must
+            // not trigger it. Note exitStatus only says whether the process crashed;
+            // the exit code is what says whether the build worked.
+            auto const buildSucceeded =
+                exitStatus == QProcess::ExitStatus::NormalExit && exitCode == 0;
+            if (project && runningTask && runningTask->isBuild && buildSucceeded) {
                 qDebug() << "Notifying about a good build" << project->buildDir << buildDirectory
                          << project->sourceDir << sourceDirectory << runningTask->name;
 
@@ -599,6 +606,17 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
             runProcess.setProperty("runningTask", {});
             runProcess.setProperty("runningProject", {});
         });
+#if defined(USE_TTY_FOR_TASKS)
+    connect(&runProcess, &QProcess::finished, this, [this](int, QProcess::ExitStatus) {
+        auto epoch = taskPtyEpoch;
+        QTimer::singleShot(0, this, [this, epoch] {
+            if (epoch != taskPtyEpoch) {
+                return;
+            }
+            releaseTaskPty();
+        });
+    });
+#endif
     connect(&runProcess, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         auto output = QString("\n[error: code=%1]").arg((int)error);
         auto project = getCurrentConfig();
@@ -1095,13 +1113,56 @@ auto ProjectManagerPlugin::updateKitsUI() -> void {
     gui->kitButton->setItems(names, tooltips);
 }
 
-void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QString &program,
+auto ProjectManagerPlugin::releaseTaskPty() -> void {
+#if defined(USE_TTY_FOR_TASKS)
+    auto notifier = std::exchange(taskPtyNotifier, nullptr);
+    auto masterFd = std::exchange(taskPtyMasterFd, -1);
+    if (notifier) {
+        notifier->setEnabled(false);
+        delete notifier;
+    }
+    if (masterFd >= 0) {
+        runProcess.setStandardInputFile(QString());
+        runProcess.setStandardOutputFile(QString());
+        runProcess.setStandardErrorFile(QString());
+        ::close(masterFd);
+    }
+#endif
+}
+
+auto ProjectManagerPlugin::stopRunningTask() -> bool {
+    // processId() is 0 while the process is still in the Starting state, so it is
+    // not a usable liveness test - use state() instead.
+    if (runProcess.state() == QProcess::NotRunning) {
+        return true;
+    }
+    runProcess.kill();
+    // kill() is asynchronous: without waiting for the process to be reaped, the
+    // following start() would hit "QProcess::start: Process is already running"
+    // and silently do nothing.
+    if (!runProcess.waitForFinished(3000)) {
+        return false;
+    }
+    return runProcess.state() == QProcess::NotRunning;
+}
+
+bool ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QString &program,
                                       const QStringList &arguments,
                                       const QProcessEnvironment &customEnv, bool capture) {
-    if (runProcess.processId() != 0) {
-        runProcess.kill();
-        return;
+    if (!stopRunningTask()) {
+        processBuildOutput("Could not stop the currently running task\n");
+        qWarning() << "Could not stop the currently running task";
+        return false;
     }
+    // The previous run's pty is dead now - reclaim it before allocating a new one.
+    releaseTaskPty();
+#if defined(USE_TTY_FOR_TASKS)
+    ++taskPtyEpoch;
+#endif
+
+    // Drop any stale claim; do_runTask() re-establishes it once the task starts.
+    runProcess.setProperty("runningTask", {});
+    runProcess.setProperty("runningProject", {});
 
     auto env = customEnv;
 
@@ -1121,7 +1182,13 @@ void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
         if (usingPty && masterFd >= 0) {
             runProcess.setProcessChannelMode(QProcess::MergedChannels);
             auto notifier = new QSocketNotifier(masterFd, QSocketNotifier::Read, &runProcess);
-            connect(notifier, &QSocketNotifier::activated, notifier, [this, masterFd]() {
+            taskPtyMasterFd = masterFd;
+            taskPtyNotifier = notifier;
+            auto epoch = taskPtyEpoch;
+            connect(notifier, &QSocketNotifier::activated, notifier, [this, masterFd, epoch]() {
+                if (epoch != taskPtyEpoch || taskPtyMasterFd != masterFd) {
+                    return;
+                }
                 char buffer[4096];
                 auto bytesRead = read(masterFd, buffer, sizeof(buffer) - 1);
                 if (bytesRead > 0) {
@@ -1165,8 +1232,13 @@ void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
     runProcess.start();
     if (!runProcess.waitForStarted()) {
         processBuildOutput("Process failed to start\n");
-        qWarning() << "Process failed to start";
+        qWarning() << "Process failed to start:" << program << runProcess.errorString();
+        // finished() never fires for a process that never started, so the pty
+        // would leak if we did not reclaim it here.
+        releaseTaskPty();
+        return false;
     }
+    return true;
 }
 
 void ProjectManagerPlugin::do_runExecutable(const ExecutableInfo *info) {
@@ -1259,14 +1331,20 @@ void ProjectManagerPlugin::do_runTask(const TaskInfo *task) {
         arguments = {};
     }
 
+    // These must be assigned *after* the process has started. runCommand() may kill
+    // and reap a previous task, which fires its finished() handler synchronously -
+    // and that handler reads these very properties. Setting them up front made the
+    // outgoing task report the incoming task's name, project and directories.
+    auto capture = outputPanel ? outputPanel->captureTasksOutput->isChecked() : true;
+    if (!runCommand(workingDirectory, program, arguments, env, capture)) {
+        return;
+    }
+
     runProcess.setProperty("runningTask", QVariant::fromValue(reinterpret_cast<quintptr>(task)));
     runProcess.setProperty("runningProject", QVariant::fromValue(project));
     runProcess.setProperty("workingDirectory", QVariant::fromValue(workingDirectory));
     runProcess.setProperty(GlobalArguments::BuildDirectory, QVariant::fromValue(buildDirectory));
     runProcess.setProperty(GlobalArguments::SourceDirectory, QVariant::fromValue(sourceDirectory));
-
-    auto capture = outputPanel ? outputPanel->captureTasksOutput->isChecked() : true;
-    runCommand(workingDirectory, program, arguments, env, capture);
 }
 
 void ProjectManagerPlugin::runButton_clicked() {
