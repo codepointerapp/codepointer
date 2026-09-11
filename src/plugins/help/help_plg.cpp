@@ -27,6 +27,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSimpleUpdater.h>
+#include <QSvgRenderer>
 #include <QTimer>
 #include <QUrl>
 #include <QWidget>
@@ -510,6 +511,116 @@ void HelpPlugin::showWelcomeScreen() {
     manager->handleCommandAsync(GlobalCommands::DisplayText, args);
 }
 
+static const char flatpackSVG[] = R"svg(
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="1.18 0 21.65 24">
+    <path fill="#4a90d9" d="M12 0c-.556 0-1.111.144-1.61.432l-7.603 4.39a3.22 3.22 0 0 0-1.61 2.788v8.78c0 1.151.612 2.212 1.61 2.788l7.603 4.39a3.22 3.22 0 0 0 3.22 0l7.603-4.39a3.22 3.22 0 0 0 1.61-2.788V7.61a3.22 3.22 0 0 0-1.61-2.788L13.61.432A3.2 3.2 0 0 0 12 0m0 2.358c.15 0 .299.039.431.115l7.604 4.39c.132.077.24.187.315.316L12 12v9.642a.86.86 0 0 1-.431-.116l-7.604-4.39a.87.87 0 0 1-.431-.746V7.61c0-.153.041-.302.116-.43L12 12Z"/>
+</svg>
+)svg";
+
+static const char *default_wayland_icon_xpm[] = {
+    "32 32 69 2", "   c None", ".. c #ffff40", ".: c #fff820", ".- c #ffe030", ".= c #ffe038",
+    ".+ c #ffff38", ".* c #ffff50", ".# c #ffff68", ".% c #ffd038", ".@ c #ffc808", ".o c #ffd018",
+    ".O c #ffd020", ".X c #ffc008", ".0 c #ffc000", ".1 c #ffc800", ".2 c #ffc010", ".3 c #ffff60",
+    ".4 c #ffc838", ".5 c #ffc828", ".6 c #ffd040", ".7 c #ffc020", ".8 c #ffb800", ".9 c #ffc810",
+    ".a c #fff838", ".b c #ffc018", ".c c #ffc818", ".d c #ffc028", ".e c #ffff88", ".f c #ffc820",
+    ".g c #ffd010", ".h c #ffff20", ".i c #ffe048", ".j c #ffc848", ".k c #ffffc8", ".l c #ffe830",
+    ".m c #fff018", ".n c #ffd838",
+
+    // Removed duplicate:
+    // ".o c #ffe820",
+
+    ".p c #ffd028", ".q c #ffd048", ".r c #ffe828", ".s c #fff030", ".t c #ffff90", ".u c #fff828",
+    ".v c #ffd008", ".w c #ffd818", ".x c #ffff48", ".y c #fff840", ".z c #ffd840", ".A c #ffe018",
+    ".B c #ffff58", ".C c #ffd828", ".D c #fff038", ".E c #ffffe8", ".F c #ffff30", ".G c #ffd830",
+    ".H c #ffffd8", ".I c #ffe028", ".J c #ffffe0", ".K c #ffff80", ".L c #fff830", ".M c #ffff70",
+    ".N c #ffd000", ".O c #fff040", ".P c #ffd030", ".Q c #fff028", ".R c #ffff98", ".S c #ffffa0",
+    ".T c #fff020", ".U c #ffe020",
+
+    "                                                                ",
+    "                          ...:.-.=.+.*                          ",
+    "                    .#.%.@.o.O.X.0.1.1.@.2.3                    ",
+    "                ...%.%.4.0.5.6.7.0.0.0.0.8.@.9.a                ",
+    "                .@.0.0.8.0.8.8.8.8.b.7.8.0.0.0.0.c              ",
+    "                .3.1.0.0.0.8.8.2.d.2.2.0.0.0.0.0.1              ",
+    "        .3.e      .f.0.8.X.4.2.b.7.8.8.0.0.0.0.0.@              ",
+    "        .g.h      .i.0.8.d.j.X.8.8.0.7.0.0.X.X.0.o    .k        ",
+    "      .l.1.m        .n.0.8.8.0.0.0.0.2.0.0.X.X.1..    .c.o      ",
+    "      .@.8.c        .p.0.0.8.0.2.X.0.8.X.q.8.0.@      .X.@      ",
+    "    .r.0.0.2        .f.0.0.0.s  .e.@.0.0.0.0.2.o    .t.1.0.u    ",
+    "    .9.0.8.2        .-.0.0.v      .w.f.b.8.0.1.x    ...1.0.9    ",
+    "    .1.0.0.9        .y.0.0.9      .3.g.X.b.z.y      .A.0.0.1    ",
+    "  ...1.0.0.o        .x.1.0.B        .@.0.0.0.C      .9.0.0.1..  ",
+    "  .D.0.0.8.g.E        .1.X          .-.0.0.1.B    .e.1.0.0.1.F  ",
+    "  .G.0.X.4.@.H        .v.I    .a.x    .1.0.X      .h.1.0.0.0.l  ",
+    "  .G.0.b.%.1.J        .5.K    .g.+    .C.0.f      .L.0.0.0.0.l  ",
+    "  .l.0.0.8.1.K              .M.1.o    .K.N.+      .O.0.0.0.1.F  ",
+    "  ...1.0.0.1.F              .O.0.1      .C        .v.0.0.0.1.x  ",
+    "    .1.0.0.0.I              .c.X.@.*              .I.0.8.0.1    ",
+    "    .9.0.0.0.2              .1.4.c.F              .9.0.0.8.2    ",
+    "    .o.0.0.0.p            .J.P.0.0.p            .K.@.0.0.1.Q    ",
+    "      .v.0.0.O.3          .-.b.2.2.@            .*.0.0.0.@      ",
+    "      .I.0.0.0.C          .X.8.X.X.1.3        .R.N.0.0.0.l      ",
+    "        .@.0.0.@          .9.0.0.0.0.g        .g.0.0.0.9        ",
+    "          .v.0.0.u      .S.1.0.0.0.0.@      .x.1.0.0.@          ",
+    "          .M.v.0.0.L    .F.1.0.0.0.0.1.t    .@.0.0.g.R          ",
+    "              .9.0.0.9.x.X.0.0.0.0.0.0.T  .U.1.0.9              ",
+    "                .u.@.0.0.0.0.0.8.8.0.0.0.2.1.@.a                ",
+    "                    .s.9.1.1.0.0.0.0.1.1.9.L                    ",
+    "                          .x.a.=.=.a.x                          ",
+    "                                                                "};
+
+static const char *default_x11_icon_xpm[] = {
+    "32 32 79 2", "   c None", ".. c #303030", ".: c #404040", ".- c #606060", ".= c #707070",
+    ".+ c #202020", ".* c #808080", ".# c #b0b0b0", ".% c #404030", ".@ c #505050", ".o c #202030",
+    ".O c #506060", ".X c #f0b090", ".0 c #ffa070", ".1 c #ffe0b0", ".2 c #fff0c0", ".3 c #ffffff",
+    ".4 c #ffe0c0", ".5 c #605050", ".6 c #706060", ".7 c #ffd0a0", ".8 c #908080", ".9 c #ffffe0",
+    ".a c #fff0d0", ".b c #ff8040", ".c c #ff7030", ".d c #a09080", ".e c #ffffd0", ".f c #ffa080",
+    ".g c #ff6020", ".h c #f06020", ".i c #e0c0b0", ".j c #ffe0a0", ".k c #f05010", ".l c #f06030",
+    ".m c #101010", ".n c #ffe090",
+
+    // Removed duplicate:
+    // ".o c #f05020",
+
+    ".p c #304040", ".q c #f06040", ".r c #000000", ".s c #ffd080", ".t c #ff9040", ".u c #fff080",
+    ".v c #ffff90", ".w c #ff9050", ".x c #e05010", ".y c #f07040", ".z c #ffd070", ".A c #ff6030",
+    ".B c #909090", ".C c #ffffc0", ".D c #ffd060", ".E c #ff7040", ".F c #ffe070", ".G c #f08040",
+    ".H c #102020", ".I c #904020", ".J c #e07030", ".K c #100000", ".L c #403010", ".M c #a07030",
+    ".N c #ffb040", ".O c #e0a040", ".P c #c06030", ".Q c #f07030", ".R c #ff8030", ".S c #ffa060",
+    ".T c #ffb070", ".U c #ffb080", ".V c #ffc090", ".W c #ffd090", ".Y c #ffc080", ".Z c #f0a040",
+    ":. c #ffa040", ":: c #d09030", ":- c #604020", ":= c #707080", ":+ c #f09040", ":* c #302020",
+
+    "                                                                ",
+    "                                                                ",
+    "                                                                ",
+    "                                                                ",
+    "                                                                ",
+    "            .....:.:.-                          .=..            ",
+    "              .+...:.:.*                      .#..              ",
+    "              .......:.:.#                    .:                ",
+    "                .....%.%.@                  .@..                ",
+    "                  .o...%...O.X.0.1  .2.2.3.-.:                  ",
+    "                .4.5.+.......6.7        .8.+  .9                ",
+    "            .a.b.c  .+.+.....o.d        ..        .e            ",
+    "          .f.g.h      .+.+.+.+...i    .:..          .j          ",
+    "        .0.k.l          .+.+.+.m.:  .:.+              .n        ",
+    "        .o.h            .+.m.m.m.p.-.m                  .e      ",
+    "      .q.k.l              .m.r.m.*.m.@                  .s      ",
+    "      .h.o.t              .@.r.*.+.r.+                  .u      ",
+    "      .o.o                .+.@...r.r.r.:                .v      ",
+    "      .o.o.w            ...m  .m.r.r.r.r.=              .u      ",
+    "      .h.x.y          .@.m      .m.r.r.r.m              .z      ",
+    "      .A.o.h.1      .B.m          .r.r.r.r..          .C.D      ",
+    "        .g.k.E      .+            .+.r.r.r.r.@        .F        ",
+    "          .g.k.G.a.H.r              .m.r.r.r.m      .F          ",
+    "            .l.h.h.I                  .r.r.r.r.+.j.D            ",
+    "              .J.h.c.w.7              .O.K.L.M.N.O              ",
+    "              .m.P.t.Q.R.t.S.T.U.V.W.Y.T.Z:.:::-.r:=            ",
+    "            ...m          .t.t:+:+:..N    :*.r.r.r.+            ",
+    "                                                                ",
+    "                                                                ",
+    "                                                                ",
+    "                                                                "};
+
 void HelpPlugin::actionAbout_triggered() {
     auto appName = QCoreApplication::applicationName();
     auto version = QCoreApplication::applicationVersion();
@@ -518,12 +629,8 @@ void HelpPlugin::actionAbout_triggered() {
 <p>A versatile text editor</p>
 <p>Home page: <a href="%3">%3</a></p>
 <p>Mirror: <a href="%4">%4</a></p>
-
-
 <p>Licensed under the GNU General Public License v2 (GPLv2) or later</p>
-
 <p>This project uses <a href="https://www.qt.io/">Qt6</a>, and the following libraries:</p>
-
 <ul>
     <li><a href="https://github.com/diegoiast/qmdilib">qmdilib</a></li>
     <li><a href="https://github.com/diegoiast/qutepart-cpp">qutepart-cpp</a></li>
@@ -535,7 +642,7 @@ void HelpPlugin::actionAbout_triggered() {
 </ul>
 
 <p>Copyright © 2024-2026 <a href="mailto:diegoiast@gmail.com">Diego Iastrubni</a></p>
-    )");
+)");
 
     QDialog aboutDialog(getManager());
     aboutDialog.setWindowTitle(tr("About %1").arg(appName));
@@ -556,7 +663,52 @@ void HelpPlugin::actionAbout_triggered() {
     textLabel->setWordWrap(true);
     textLabel->setOpenExternalLinks(true);
     textLabel->setTextFormat(Qt::RichText);
-    contentLayout->addWidget(textLabel);
+
+    auto textLayout = new QHBoxLayout;
+    textLayout->addWidget(textLabel);
+
+    if (!qEnvironmentVariableIsSet("FLATPAK_ID")) {
+        // Flatpak is still SVG, so handle it separately.
+        auto flatpakIcon = new QLabel;
+        flatpakIcon->setFixedSize(32, 32);
+        flatpakIcon->setToolTip(tr("Running as a Flatpak"));
+        flatpakIcon->setAlignment(Qt::AlignCenter);
+
+        auto renderer =
+            new QSvgRenderer(QByteArray(flatpackSVG, sizeof(flatpackSVG) - 1), flatpakIcon);
+
+        auto pixmap = QPixmap(32, 32);
+        pixmap.fill(Qt::transparent);
+
+        QPainter painter(&pixmap);
+        renderer->render(&painter);
+
+        flatpakIcon->setPixmap(pixmap);
+        textLayout->addWidget(flatpakIcon, 0, Qt::AlignTop);
+    }
+
+    auto addPlatformIcon = [&](const char *xpm[], const QString &tooltip) {
+        auto icon = new QLabel;
+        icon->setFixedSize(32, 32);
+        icon->setToolTip(tooltip);
+        icon->setAlignment(Qt::AlignCenter);
+
+        auto pixmap = QPixmap(xpm);
+        icon->setPixmap(pixmap.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        textLayout->addWidget(icon, 0, Qt::AlignTop);
+    };
+
+    auto platform = QGuiApplication::platformName();
+    if (platform == "wayland") {
+        qDebug() << "Platform is wayland!";
+        addPlatformIcon(default_wayland_icon_xpm, tr("Running on Wayland"));
+    }
+    if (platform == "xcb") {
+        qDebug() << "Platform is xcb/x11!";
+        addPlatformIcon(default_x11_icon_xpm, tr("Running on X11"));
+    }
+
+    contentLayout->addLayout(textLayout);
     mainLayout->addWidget(contentWidget);
 
     auto closeButton = new QPushButton(tr("Close"));
@@ -564,10 +716,10 @@ void HelpPlugin::actionAbout_triggered() {
     buttonLayout->addStretch();
     buttonLayout->addWidget(closeButton);
     buttonLayout->addStretch();
-
     connect(closeButton, &QPushButton::clicked, &aboutDialog, &QDialog::accept);
     contentLayout->addLayout(buttonLayout);
     aboutDialog.setLayout(mainLayout);
+    aboutDialog.adjustSize();
     aboutDialog.exec();
 }
 
