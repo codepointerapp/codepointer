@@ -93,6 +93,14 @@ CodeFormatPlugin::CodeFormatPlugin() {
     formatPool.setMaxThreadCount(2);
     formatPool.setExpiryTimeout(30000);
 
+    auto defaultExtraPath = QStringList();
+    auto insideFlatpak = !qEnvironmentVariableIsEmpty("FLATPAK_ID");
+    if (insideFlatpak) {
+        defaultExtraPath.append("/run/host/bin");
+        defaultExtraPath.append("/run/host/usr/bin");
+        defaultExtraPath.append("/run/host/usr/local/bin");
+    }
+
     config.pluginName = tr("Code format");
     config.configItems.push_back(
         qmdiConfigItem::Builder()
@@ -100,6 +108,7 @@ CodeFormatPlugin::CodeFormatPlugin() {
             .setDescription(tr("If a format tool is not on the standard PATH, add it here"))
             .setKey(Config::ExtraPathsKey)
             .setType(qmdiConfigItem::PathList)
+            .setDefaultValue(defaultExtraPath)
             .build());
     config.configItems.push_back(
         qmdiConfigItem::Builder()

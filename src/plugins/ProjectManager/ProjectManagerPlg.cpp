@@ -1110,11 +1110,6 @@ void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
     auto masterFd = -1;
 #endif
 
-    // Reset redirections
-    runProcess.setStandardInputFile(QString());
-    runProcess.setStandardOutputFile(QString());
-    runProcess.setStandardErrorFile(QString());
-
 #if defined(USE_TTY_FOR_TASKS)
     if (capture) {
         usingPty = setupPty(runProcess, masterFd);
@@ -1137,10 +1132,40 @@ void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
     env.insert("TERM", "xterm-256color");
 #endif
 
-    runProcess.setWorkingDirectory(workingDirectory);
+    // Reset redirections
+    runProcess.setStandardInputFile(QString());
+    runProcess.setStandardOutputFile(QString());
+    runProcess.setStandardErrorFile(QString());
     runProcess.setProcessEnvironment(env);
-    runProcess.setProgram(program);
-    runProcess.setArguments(arguments);
+
+    auto insideFlatpak = !qEnvironmentVariableIsEmpty("FLATPAK_ID");
+    if (insideFlatpak) {
+        auto hostArguments = QStringList();
+        hostArguments << QStringLiteral("--host");
+
+        for (auto &key : env.keys()) {
+            hostArguments << QStringLiteral("--env=%1=%2").arg(key, env.value(key));
+        }
+        if (!workingDirectory.isEmpty()) {
+            hostArguments << QStringLiteral("--directory=%1").arg(workingDirectory);
+            processBuildOutput("flatpak-spawm " + hostArguments.join(" "));
+        } else {
+            processBuildOutput("Warning - direcotry");
+        }
+        hostArguments << program;
+        hostArguments << arguments;
+        runProcess.setProgram(QStringLiteral("flatpak-spawn"));
+        runProcess.setArguments(hostArguments);
+
+        qDebug() << arguments;
+    } else {
+        runProcess.setWorkingDirectory(workingDirectory);
+        runProcess.setProgram(program);
+        runProcess.setArguments(arguments);
+    }
+
+    runProcess.setProcessEnvironment(env);
+    runProcess.setWorkingDirectory(workingDirectory);
 
     if (capture) {
 #if defined(Q_OS_WIN)

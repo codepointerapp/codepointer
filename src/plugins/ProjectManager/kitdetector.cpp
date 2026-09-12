@@ -189,25 +189,43 @@ using PathCallback = std::function<void(const std::filesystem::path &full_filena
 
 static auto findCommandInPath(const std::string &cmd, PathCallback callback) -> void {
     auto path_env = safeGetEnv("PATH");
-    if (path_env.empty()) {
-        return;
-    }
-    auto ss = std::stringstream(path_env);
-    auto dir = std::string();
-    while (std::getline(ss, dir, ENV_SEPARATOR)) {
-        auto full_path = std::filesystem::path(dir) / std::filesystem::path(cmd);
+
+    auto searchPath = [&](const std::string &path) {
+        auto ss = std::stringstream(path);
+        auto dir = std::string();
+
+        while (std::getline(ss, dir, ENV_SEPARATOR)) {
+            if (dir.empty()) {
+                continue;
+            }
+
+            auto full_path = std::filesystem::path(dir) / std::filesystem::path(cmd);
+
 #if defined(_WIN32)
-        if (_waccess(full_path.c_str(), 04) != 0) {
-            continue;
-        }
+            if (_waccess(full_path.c_str(), 04) != 0) {
+                continue;
+            }
 #else
-        if (access(full_path.c_str(), X_OK) != 0) {
-            continue;
-        }
+            if (access(full_path.c_str(), X_OK) != 0) {
+                continue;
+            }
 #endif
-        callback(full_path);
+
+            callback(full_path);
+        }
+    };
+
+    // Normal environment PATH.
+    if (!path_env.empty()) {
+        searchPath(path_env);
     }
-    return;
+
+#if !defined(_WIN32)
+    // When running inside Flatpak, also search the host filesystem.
+    if (!safeGetEnv("FLATPAK_ID").empty()) {
+        searchPath("/run/host/bin:/run/host/usr/bin:/run/host/usr/local/bin");
+    }
+#endif
 }
 
 auto static findRustSetup(std::vector<KitDetector::ExtraPath> &detected, bool unix_target) -> void {
@@ -372,7 +390,7 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
     }
 
     // First detect postfixed compilers
-    for (int version = 4; version < 20; version++) {
+    for (auto version = 4; version < 30; version++) {
         auto cc = cc_name + "-" + std::to_string(version) + BINARY_EXT;
 
         findCommandInPath(cc, [&, version](const std::filesystem::path &full_path) {
