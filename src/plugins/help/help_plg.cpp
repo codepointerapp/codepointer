@@ -667,22 +667,19 @@ void HelpPlugin::actionAbout_triggered() {
     auto textLayout = new QHBoxLayout;
     textLayout->addWidget(textLabel);
 
-    if (!qEnvironmentVariableIsSet("FLATPAK_ID")) {
-        // Flatpak is still SVG, so handle it separately.
+    // Flatpak is still SVG, so handle it separately.
+    if (qEnvironmentVariableIsSet("FLATPAK_ID")) {
         auto flatpakIcon = new QLabel;
+        auto renderer =
+            new QSvgRenderer(QByteArray(flatpackSVG, sizeof(flatpackSVG) - 1), flatpakIcon);
+        auto pixmap = QPixmap(32, 32);
+        auto painter = QPainter(&pixmap);
+
         flatpakIcon->setFixedSize(32, 32);
         flatpakIcon->setToolTip(tr("Running as a Flatpak"));
         flatpakIcon->setAlignment(Qt::AlignCenter);
-
-        auto renderer =
-            new QSvgRenderer(QByteArray(flatpackSVG, sizeof(flatpackSVG) - 1), flatpakIcon);
-
-        auto pixmap = QPixmap(32, 32);
         pixmap.fill(Qt::transparent);
-
-        QPainter painter(&pixmap);
         renderer->render(&painter);
-
         flatpakIcon->setPixmap(pixmap);
         textLayout->addWidget(flatpakIcon, 0, Qt::AlignTop);
     }
