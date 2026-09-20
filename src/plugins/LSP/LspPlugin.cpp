@@ -1,19 +1,19 @@
 #include <atomic>
 #include <memory>
 
+#include <QAction>
 #include <QDebug>
 #include <QDir>
-#include <QFileInfo>
-#include <QMutexLocker>
-#include <QPromise>
-
-#include <QAction>
 #include <QDockWidget>
+#include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMenu>
+#include <QMutexLocker>
+#include <QPromise>
 #include <QStandardPaths>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -28,114 +28,25 @@
 
 namespace {
 
-// FIXME: this should be a JSON file installed on the app's share dir, and users
-// should be able to append to the list, in a user defined json. Just like indenters.
-// See src/plugins/CodeFormat/CodeFormat.cpp.
-
-/// Shipped defaults. Everything here is overridable through the ServersJson
-/// setting; the shape is documented next to that config item.
-auto builtinDefinitions() -> QList<LspServerDefinition> {
-    auto clangd = LspServerDefinition{
-        .name = "clangd",
-        .homepage = "https://clangd.llvm.org/",
-        // ${build_directory} is substituted per project, exactly as task strings
-        // in ProjectBuildConfig are. Other servers need no arguments at all,
-        // which is the point: nothing here is special-cased for clangd.
-        .arguments = {"--compile-commands-dir=${build_directory}", "--log=error"},
-        .binary = "clangd",
-        .suffixes = {{"m", "objective-c"}, {"mm", "objective-cpp"}},
-    };
-    for (auto const &suffix : {"cc", "cpp", "cxx", "hh", "hpp", "hxx", "inl", "ipp"}) {
-        clangd.suffixes.insert(suffix, "cpp");
-    }
-    // clangd serves C too, but the document has to be announced as "c".
-    for (auto const &suffix : {"c", "h"}) {
-        clangd.suffixes.insert(suffix, "c");
-    }
-
-    return {
-        clangd,
-        LspServerDefinition{
-            .name = "gopls",
-            .homepage = "https://go.dev/gopls/",
-            .arguments = {},
-            .binary = "gopls",
-            .suffixes = {{"go", "go"}},
-        },
-        LspServerDefinition{
-            .name = "pylsp",
-            .homepage = "https://github.com/python-lsp/python-lsp-server",
-            .arguments = {},
-            .binary = "pylsp",
-            .suffixes = {{"py", "python"}, {"pyi", "python"}},
-        },
-        LspServerDefinition{
-            .name = "rust-analyzer",
-            .homepage = "https://rust-analyzer.github.io/",
-            .arguments = {},
-            .binary = "rust-analyzer",
-            .suffixes = {{"rs", "rust"}},
-        },
-        LspServerDefinition{
-            .name = "sourcekit-lsp",
-            .homepage = "https://www.swift.org/sourcekit-lsp/",
-            .arguments = {},
-            .binary = "sourcekit-lsp",
-            .suffixes = {{"swift", "swift"}},
-        },
-        LspServerDefinition{
-            .name = "typescript-language-server",
-            .homepage = "https://github.com/typescript-language-server/typescript-language-server",
-            .arguments = {"--stdio"},
-            .binary = "typescript-language-server",
-            .suffixes = {{"js", "javascript"},
-                         {"jsx", "javascript"},
-                         {"mjs", "javascript"},
-                         {"cjs", "javascript"},
-                         {"ts", "typescript"},
-                         {"tsx", "typescript"}},
-        },
-        LspServerDefinition{
-            .name = "bash-language-server",
-            .homepage = "https://github.com/bash-lsp/bash-language-server",
-            .arguments = {"start"},
-            .binary = "bash-language-server",
-            .suffixes = {{"sh", "shell"}, {"bash", "shell"}},
-        },
-        LspServerDefinition{
-            .name = "yaml-language-server",
-            .homepage = "https://github.com/redhat-developer/yaml-language-server",
-            .arguments = {"--stdio"},
-            .binary = "yaml-language-server",
-            .suffixes = {{"yaml", "yaml"}, {"yml", "yaml"}},
-        },
-        LspServerDefinition{
-            .name = "json-language-server",
-            .homepage = "https://github.com/Microsoft/vscode-json-languageservice",
-            .arguments = {"--stdio"},
-            .binary = "vscode-json-language-server",
-            .suffixes = {{"json", "json"}, {"jsonc", "json"}},
-        },
-    };
-}
-
-/// An array of server objects, matching `src/plugins/LSP/servers.json`.
-QString definitionsToJson(const QList<LspServerDefinition> &definitions) {
-    auto root = QJsonArray();
-    for (auto const &definition : definitions) {
-        auto suffixes = QJsonObject();
-        for (auto it = definition.suffixes.cbegin(); it != definition.suffixes.cend(); ++it) {
-            suffixes.insert(it.key(), it.value());
+/// \@breif function to load a file, and reload it on change
+///
+/// This function should be used to load a file. You pass to it the function to
+/// be called to `fopen()` the file - and do your loading/parsing from there.
+/// That same callback will be called when the file gets modified.
+///
+/// FIXME: move to a shared place
+auto autoReloadFile(QObject *parent, const QString &path, std::function<bool(QString)> loadFile)
+    -> QFileSystemWatcher {
+    auto w = new QFileSystemWatcher(parent);
+    auto reloadFile = [loadFile](const QString &path) {
+        if (!loadFile(path)) {
+            qDebug() << "Reloading failed" << path;
         }
-        root.append(QJsonObject{
-            {"name", definition.name},
-            {"homepage", definition.homepage},
-            {"arguments", QJsonArray::fromStringList(definition.arguments)},
-            {"binary", definition.binary},
-            {"suffixes", suffixes},
-        });
-    }
-    return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    };
+    w->addPath(path);
+    w->connect(w, &QFileSystemWatcher::fileChanged, parent, reloadFile);
+    reloadFile(path);
+    return w;
 }
 
 /// Guards against a promise being completed twice - the server callback and any
@@ -153,6 +64,77 @@ struct PendingRequest {
         promise.finish();
     }
 };
+
+/// One entry of the servers array. Returns false and explains itself when the
+/// entry cannot be used.
+auto definitionFromJson(const QJsonObject &entry, LspServerDefinition &out) -> bool {
+    out.name = entry.value("name").toString().trimmed();
+    if (out.name.isEmpty()) {
+        qWarning() << "LspPlugin: server entry has no \"name\"; ignored";
+        return false;
+    }
+    out.homepage = entry.value("homepage").toString();
+    // A definition that only renames the binary is the common case, so the
+    // binary defaults to the server name rather than being required.
+    out.binary = entry.value("binary").toString(out.name);
+    for (auto const &argument : entry.value("arguments").toArray()) {
+        out.arguments << argument.toString();
+    }
+    // Extension -> LSP languageId, because one server can serve several
+    // languages and didOpen has to name the right one.
+    auto const suffixes = entry.value("suffixes").toObject();
+    for (auto it = suffixes.constBegin(); it != suffixes.constEnd(); ++it) {
+        out.suffixes.insert(it.key().toLower(), it.value().toString());
+    }
+    if (out.suffixes.isEmpty()) {
+        qWarning() << "LspPlugin: server" << out.name << "has no \"suffixes\"; ignored";
+        return false;
+    }
+    return true;
+}
+
+// Try to parse the servers definition form "bytearray" - the raw data read from
+// QIODevice. Code must be valid utf8.
+auto loadDefinitionsFromRawJson(QByteArray raw) -> QList<LspServerDefinition> {
+    QList<LspServerDefinition> definitions;
+
+    auto parseError = QJsonParseError{};
+    auto document = QJsonDocument::fromJson(raw, &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        qWarning() << "LspPlugin: ServersJson is not valid JSON:" << parseError.errorString()
+                   << "- using built-in definitions";
+        return definitions;
+    }
+    if (!document.isArray()) {
+        qWarning() << "LspPlugin: invalid input, cannot loading lsp servers definitions";
+        return definitions;
+    }
+
+    auto const array = document.array();
+    for (auto const &value : array) {
+        if (!value.isObject()) {
+            qWarning() << "LspPlugin: invalid input, cannot loading lsp servers definitions";
+            break;
+        }
+        auto definition = LspServerDefinition{};
+        if (!definitionFromJson(value.toObject(), definition)) {
+            qWarning() << "LspPlugin: invalid input, cannot loading lsp servers definitions";
+            break;
+        }
+        definitions.append(definition);
+    }
+    return definitions;
+}
+
+auto loadDefinitionsFromFile(QString jsonFile) -> QList<LspServerDefinition> {
+    auto f = QFile(jsonFile);
+    if (!f.open(QIODevice::ReadOnly)) {
+        qDebug() << "LSP: Could not open" << jsonFile << f.errorString();
+        return {};
+    }
+    auto json = f.readAll();
+    return loadDefinitionsFromRawJson(json);
+}
 
 /// What actually gets typed into the buffer. clangd's `label` for a function is
 /// the full signature ("foo(int a)"), so inserting it verbatim is wrong; the spec
@@ -192,8 +174,8 @@ auto executableCandidates(const QString &path) -> QStringList {
 
 /// Substitutes the same ${...} placeholders ProjectBuildConfig uses in tasks, so
 /// server arguments are configured the way build commands already are.
-QStringList expandArguments(const QStringList &arguments, const QString &sourceDir,
-                            const QString &buildDir) {
+auto expandArguments(const QStringList &arguments, const QString &sourceDir,
+                     const QString &buildDir) -> QStringList {
     auto out = QStringList();
     out.reserve(arguments.size());
     for (auto const &argument : arguments) {
@@ -215,7 +197,7 @@ LspPlugin::LspPlugin() {
     alwaysEnabled = false;
 
     refactorAction = new QAction(tr("Refactor..."), this);
-    refactorAction->setShortcut(QKeySequence("Ctrl+Shift+R"));
+    refactorAction->setShortcut(QKeySequence("Ctrl+Alt+R"));
     refactorAction->setShortcutContext(Qt::ApplicationShortcut);
     connect(refactorAction, &QAction::triggered, this, &LspPlugin::refactorAtCursor);
     menus[tr("&Edit")]->addAction(refactorAction);
@@ -225,18 +207,6 @@ LspPlugin::LspPlugin() {
     connect(&documentSyncTimer, &QTimer::timeout, this, &LspPlugin::flushDirtyDocuments);
 
     config.pluginName = tr("LSP");
-    config.configItems.push_back(
-        qmdiConfigItem::Builder()
-            .setDisplayName(tr("Language servers"))
-            .setDescription(tr("An array of servers: name, arguments, binary and the file "
-                               "suffixes each serves. \"suffixes\" maps a file extension to the "
-                               "LSP languageId. ${source_directory} and ${build_directory} are "
-                               "expanded per project. An entry replaces the built-in of the same "
-                               "name."))
-            .setKey(Config::ServersJsonKey)
-            .setType(qmdiConfigItem::Json)
-            .setDefaultValue(definitionsToJson(builtinDefinitions()))
-            .build());
     config.configItems.push_back(
         qmdiConfigItem::Builder()
             .setDisplayName(tr("More paths for language servers"))
@@ -258,17 +228,10 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
         return;
     }
     debugWidget = new LspDebugWidget(this);
+    debugDock = manager->createNewPanel(Panels::East, "lspdebug", tr("LSP"), debugWidget);
+
     // Queued by construction when the trace originates on a reader thread.
     connect(this, &LspPlugin::traceMessage, debugWidget, &LspDebugWidget::appendTrace);
-    debugDock = manager->createNewPanel(Panels::East, "lspdebug", tr("LSP"), debugWidget);
-    connect(manager, &PluginManager::newClientAdded, this, [this](qmdiClient *) {
-        // Deferred: the editor's content is loaded after the client is added, so
-        // syncing right now would hand the server an empty buffer.
-        QTimer::singleShot(0, this, [this]() {
-            updateEditorCompletionMode();
-            syncOpenDocuments();
-        });
-    });
     connect(this, &LspPlugin::serverReady, this, &LspPlugin::updateEditorCompletionMode);
     connect(this, &LspPlugin::serverReady, this, &LspPlugin::syncOpenDocuments);
     connect(this, &LspPlugin::progressChanged, debugWidget, &LspDebugWidget::showProgress);
@@ -277,6 +240,29 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
             applyDiagnostics(QFileInfo(editor->mdiClientFileName()).absoluteFilePath());
         }
+
+        // Deferred: the editor's content is loaded after the client is added, so
+        // syncing right now would hand the server an empty buffer.
+        QTimer::singleShot(0, this, [this]() {
+            updateEditorCompletionMode();
+            syncOpenDocuments();
+        });
+    });
+
+    auto userDataDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    auto userDataFile = userDataDir + QDir::separator() + "lsp-servers.json";
+    autoReloadFile(this, userDataFile, [this](const QString &s) {
+        this->userDefinitions = loadDefinitionsFromFile(s);
+        return this->userDefinitions.size() != 0;
+    });
+
+    auto systemDataDir = QDir(QCoreApplication::applicationDirPath() + "/../share/" +
+                              QCoreApplication::applicationName())
+                             .absolutePath();
+    auto systemataFile = systemDataDir + QDir::separator() + "lsp-servers.json";
+    autoReloadFile(this, systemataFile, [this](const QString &s) {
+        this->systemDefinitions = loadDefinitionsFromFile(s);
+        return this->systemDefinitions.size() != 0;
     });
 }
 
@@ -647,7 +633,7 @@ void LspPlugin::updateEditorCompletionMode() {
 
     auto exclusive = 0;
     auto editors = 0;
-    for (auto i = 0; i < manager->visibleTabs(); ++i) {
+    for (auto i = 0u; i < manager->visibleTabs(); ++i) {
         auto editor = dynamic_cast<qmdiEditor *>(manager->getMdiClient(i));
         if (!editor) {
             continue;
@@ -733,86 +719,9 @@ LspClientImpl *LspPlugin::serverForFile(const QString &fileName) const {
     return (best && best->isReady()) ? best : nullptr;
 }
 
-namespace {
-
-/// One entry of the servers array. Returns false and explains itself when the
-/// entry cannot be used.
-bool definitionFromJson(const QJsonObject &entry, LspServerDefinition &out) {
-    out.name = entry.value("name").toString().trimmed();
-    if (out.name.isEmpty()) {
-        qWarning() << "LspPlugin: server entry has no \"name\"; ignored";
-        return false;
-    }
-    out.homepage = entry.value("homepage").toString();
-    // A definition that only renames the binary is the common case, so the
-    // binary defaults to the server name rather than being required.
-    out.binary = entry.value("binary").toString(out.name);
-    for (auto const &argument : entry.value("arguments").toArray()) {
-        out.arguments << argument.toString();
-    }
-    // Extension -> LSP languageId, because one server can serve several
-    // languages and didOpen has to name the right one.
-    auto const suffixes = entry.value("suffixes").toObject();
-    for (auto it = suffixes.constBegin(); it != suffixes.constEnd(); ++it) {
-        out.suffixes.insert(it.key().toLower(), it.value().toString());
-    }
-    if (out.suffixes.isEmpty()) {
-        qWarning() << "LspPlugin: server" << out.name << "has no \"suffixes\"; ignored";
-        return false;
-    }
-    return true;
-}
-
-} // namespace
-
 QList<LspServerDefinition> LspPlugin::serverDefinitions() const {
-    if (!cachedDefinitions.isEmpty()) {
-        return cachedDefinitions;
-    }
-    cachedDefinitions = builtinDefinitions();
-
-    auto raw = getConstConfig().getServersJson().toUtf8();
-    if (raw.isEmpty()) {
-        return cachedDefinitions;
-    }
-    auto parseError = QJsonParseError{};
-    auto document = QJsonDocument::fromJson(raw, &parseError);
-    if (parseError.error != QJsonParseError::NoError) {
-        qWarning() << "LspPlugin: ServersJson is not valid JSON:" << parseError.errorString()
-                   << "- using built-in definitions";
-        return cachedDefinitions;
-    }
-    if (!document.isArray()) {
-        qWarning() << "LspPlugin: ServersJson is not an array of servers"
-                   << "- using built-in definitions";
-        return cachedDefinitions;
-    }
-
-    // An entry replaces the built-in of the same name outright, so a user can
-    // change just the binary without inheriting arguments they did not ask for.
-    auto const array = document.array();
-    for (auto const &value : array) {
-        if (!value.isObject()) {
-            qWarning() << "LspPlugin: server entry is not an object; ignored";
-            continue;
-        }
-        auto definition = LspServerDefinition{};
-        if (!definitionFromJson(value.toObject(), definition)) {
-            continue;
-        }
-        auto replaced = false;
-        for (auto &existing : cachedDefinitions) {
-            if (existing.name == definition.name) {
-                existing = definition;
-                replaced = true;
-                break;
-            }
-        }
-        if (!replaced) {
-            cachedDefinitions.append(definition);
-        }
-    }
-    return cachedDefinitions;
+    auto d = userDefinitions + systemDefinitions;
+    return d;
 }
 
 QString LspPlugin::languageForFile(const QString &fileName) const {
