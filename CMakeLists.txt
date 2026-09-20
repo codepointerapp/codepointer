@@ -39,7 +39,7 @@ set(QHEXVIEW_ENABLE_DIALOGS on)
 set(LSP_USE_SANITIZERS off)
 option(QTEDIT4_WORK_OFFLINE "Making this off will force using CPM, if set on, first run get-code.sh" ON)
 
-option(CODEPOINTER_WORK_OFFLINE OFF)
+option(CODEPOINTER_WORK_OFFLINE ON)
 option(CODEPOINTER_BUNDLE_ICON_THEME "Download and install the Breeze icon theme (needed when no system icon theme is present, e.g. bare Linux installs or Windows)" ON)
 option(CODEPOINTER_DISABLE_UPDATES "Disable the in-app update checker (e.g. for Flatpak/store builds, where the store manages updates)" OFF)
 
@@ -75,7 +75,7 @@ else()
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#c5c136c0f79ca6423b0914a2676ae3d0e3811c5b")
     CPMAddPackage("gh:Dax89/QHexView#8893881350ea1d0bb0deafb7ae4a700e8de6683f")
     if (CODEPOINTER_BUNDLE_ICON_THEME)
-        download_breeze_icons(6.4.0)
+        #download_breeze_icons(6.4.0)
     endif()
     CPMAddPackage("gh:leon-bckl/lsp-framework#26b9f47f755cb8db141f3418967b7021f1d05d25")
 endif()
@@ -210,29 +210,25 @@ set(codepointer_sources
 
     src/plugins/LSP/LspClientImpl.cpp
     src/plugins/LSP/LspClientImpl.hpp
-<<<<<<< HEAD
-
-=======
     src/plugins/LSP/LspPlugin.cpp
     src/plugins/LSP/LspPlugin.hpp
     src/plugins/LSP/LspDebugWidget.cpp
     src/plugins/LSP/LspDebugWidget.hpp
 
->>>>>>> b0fc46ee (wip - lsp)
     src/main.cpp
     ${CMAKE_BINARY_DIR}/codepointer.qrc
 )
 
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.svg" DESTINATION "${CMAKE_BINARY_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.ico" DESTINATION "${CMAKE_BINARY_DIR}")
-file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}/share/${CODEPOINTER_APP_NAME}/")
+file(COPY "${CMAKE_SOURCE_DIR}/src/plugins/LSP/lsp-servers.json" DESTINATION "${CMAKE_BINARY_DIR}/share/${CODEPOINTER_APP_NAME}/")
 
 configure_file(codepointer.qrc.in ${CMAKE_BINARY_DIR}/codepointer.qrc)
 configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop)
 configure_file(org.codepointer.codepointer.appdata.xml.in
     ${CMAKE_BINARY_DIR}/org.codepointer.${CODEPOINTER_APP_NAME}.appdata.xml @ONLY)
-add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
-    indenters.json)
+add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc)
 
 # NOTE: this used to read `if (!MINGW)`. CMake has no `!` operator - it treated
 # "!MINGW" as the name of an undefined variable, so the branch never ran and LTO

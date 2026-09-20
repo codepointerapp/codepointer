@@ -2,7 +2,7 @@
     <qresource prefix="/">
         <file>@CODEPOINTER_ICON@.svg</file>
         <file>@CODEPOINTER_ICON@.ico</file>
-        <file>indenters.json</file>
+        <file alias="indenters.json">share/@CODEPOINTER_APP_NAME@/indenters.json</file>
     </qresource>
 </RCC>
 
