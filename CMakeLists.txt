@@ -283,24 +283,23 @@ set(codepointer_sources
     src/plugins/LSP/LspPlugin.hpp
     src/plugins/LSP/LspDebugWidget.cpp
     src/plugins/LSP/LspDebugWidget.hpp
+    indenters.json
 
     src/main.cpp
     ${CMAKE_BINARY_DIR}/codepointer.qrc
+    codepointer.rc
+
 )
 
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.svg" DESTINATION "${CMAKE_BINARY_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.ico" DESTINATION "${CMAKE_BINARY_DIR}")
-file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}/share/${CODEPOINTER_APP_NAME}/")
+file(COPY "${CMAKE_SOURCE_DIR}/src/plugins/LSP/lsp-servers.json" DESTINATION "${CMAKE_BINARY_DIR}/share/${CODEPOINTER_APP_NAME}/")
 
 configure_file(codepointer.qrc.in ${CMAKE_BINARY_DIR}/codepointer.qrc)
 configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop)
 configure_file(org.codepointer.codepointer.appdata.xml.in
     ${CMAKE_BINARY_DIR}/org.codepointer.${CODEPOINTER_APP_NAME}.appdata.xml @ONLY)
-# MACOSX_BUNDLE is what produces a .app. Without it macOS gets a bare executable
-# in bin/, which no installer can wrap - the CI macdeployqt step expects a bundle.
-# MACOSX_BUNDLE and WIN32 are both documented as no-ops on other platforms, so no
-# if(APPLE) is needed around either. codepointer.rc and indenters.json are already
-# in ${codepointer_sources}, so repeating them here would only duplicate the list.
 add_executable(codepointer WIN32 MACOSX_BUNDLE ${codepointer_sources})
 
 # NOTE: this used to read `if (!MINGW)`. CMake has no `!` operator - it treated

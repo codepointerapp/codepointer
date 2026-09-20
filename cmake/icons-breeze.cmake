@@ -10,7 +10,7 @@ function(download_breeze_icons VERSION)
     list(GET download_result 0 status_code)
     list(GET download_result 1 error_message)
     if (NOT status_code EQUAL 0)
-        file(REMOVE "${path}")
+        file(REMOVE "${ZIP_FILE}")
         message(FATAL_ERROR "Failed to download ${URL}: ${error_message}")
     endif()
 

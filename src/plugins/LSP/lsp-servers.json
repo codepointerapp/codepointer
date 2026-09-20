@@ -4,7 +4,7 @@
         "homepage": "https://clangd.llvm.org/",
         "arguments": [
             "--compile-commands-dir=${build_directory}",
-            "--log=error"
+            "--log=info"
         ],
         "binary": "clangd",
         "suffixes": {
