@@ -221,14 +221,14 @@ set(codepointer_sources
 
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.svg" DESTINATION "${CMAKE_BINARY_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.ico" DESTINATION "${CMAKE_BINARY_DIR}")
-file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/indenters.json" DESTINATION "${CMAKE_BINARY_DIR}/share/${CODEPOINTER_APP_NAME}/")
+file(COPY "${CMAKE_SOURCE_DIR}/src/plugins/LSP/lsp-servers.json" DESTINATION "${CMAKE_BINARY_DIR}/share/${CODEPOINTER_APP_NAME}/")
 
 configure_file(codepointer.qrc.in ${CMAKE_BINARY_DIR}/codepointer.qrc)
 configure_file(codepointer.desktop.in ${CMAKE_BINARY_DIR}/${CODEPOINTER_APP_NAME}.desktop)
 configure_file(org.codepointer.codepointer.appdata.xml.in
     ${CMAKE_BINARY_DIR}/org.codepointer.${CODEPOINTER_APP_NAME}.appdata.xml @ONLY)
-add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
-    indenters.json)
+add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc)
 
 # NOTE: this used to read `if (!MINGW)`. CMake has no `!` operator - it treated
 # "!MINGW" as the name of an undefined variable, so the branch never ran and LTO

@@ -30,6 +30,8 @@ struct LspServerDefinition {
     QStringList arguments = {};
     QString binary = {};
     QHash<QString, QString> suffixes = {};
+
+    void loadFromFile(const QString &fileName);
 };
 
 class QDockWidget;
@@ -56,7 +58,6 @@ struct LspServerInfo {
 
 class LspPlugin : public IPlugin {
     struct Config {
-        CONFIG_DEFINE(ServersJson, QString);
         CONFIG_DEFINE(ExtraPaths, QStringList);
         qmdiPluginConfig *config = nullptr;
     };
@@ -64,7 +65,9 @@ class LspPlugin : public IPlugin {
         static constexpr auto ServersJsonKey = "ServersJson";
         static constexpr auto ExtraPathsKey = "ExtraPaths";
         QString getServersJson() const { return config->getVariable<QString>(ServersJsonKey); }
-        QStringList getExtraPaths() const { return config->getVariable<QStringList>(ExtraPathsKey); }
+        QStringList getExtraPaths() const {
+            return config->getVariable<QStringList>(ExtraPathsKey);
+        }
         const qmdiPluginConfig *config = nullptr;
     };
 
@@ -166,6 +169,9 @@ class LspPlugin : public IPlugin {
     // project source directory -> build directory, recorded on ProjectLoaded
     QHash<QString, QString> projectRoots;
     mutable QList<LspServerDefinition> cachedDefinitions;
+
+    mutable QList<LspServerDefinition> systemDefinitions;
+    mutable QList<LspServerDefinition> userDefinitions;
     mutable QMutex serversMutex;
 
     // FIXME: add a enum for severity.
