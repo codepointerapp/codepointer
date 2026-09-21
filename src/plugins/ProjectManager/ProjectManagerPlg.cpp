@@ -824,21 +824,21 @@ void ProjectManagerPlugin::saveConfig(QSettings &settings) {
 
 int ProjectManagerPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &) const {
     if (command == GlobalCommands::LoadedFile) {
-        return true;
+        return CommandPriority::HighPriority;
     }
     if (command == GlobalCommands::SavedFile) {
-        return true;
+        return CommandPriority::HighPriority;
     }
     if (command == GlobalCommands::ClosedFile) {
-        return true;
+        return CommandPriority::HighPriority;
     }
     if (command == GlobalCommands::FindMatchingFile) {
-        return true;
+        return CommandPriority::HighPriority;
     }
     if (command == GlobalCommands::GetProjectForFile) {
-        return true;
+        return CommandPriority::HighPriority;
     }
-    return false;
+    return CommandPriority::CannotHandle;
 }
 
 #ifdef Q_OS_WIN

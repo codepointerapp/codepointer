@@ -311,9 +311,9 @@ void TextEditorPlugin::saveConfig(QSettings &settings) {
 
 int TextEditorPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &) const {
     if (command == GlobalCommands::DisplayText) {
-        return true;
+        return CommandPriority::HighPriority;
     }
-    return false;
+    return CommandPriority::CannotHandle;
 }
 
 QFuture<CommandArgs> TextEditorPlugin::handleCommandAsync(const QString &command,
