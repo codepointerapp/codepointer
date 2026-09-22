@@ -172,6 +172,12 @@ set(codepointer_sources
     src/plugins/ProjectManager/ProjectSearch.cpp
     src/plugins/ProjectManager/ProjectSearch.h
     src/plugins/ProjectManager/ProjectSearchGUI.ui
+
+    src/plugins/ProjectManagerV2/ProjectManagerV2Plugin.cpp
+    src/plugins/ProjectManagerV2/ProjectManagerV2Plugin.hpp
+    src/plugins/ProjectManagerV2/ProjectDefinition.cpp
+    src/plugins/ProjectManagerV2/ProjectDefinition.hpp
+
     src/plugins/CTags/CTagsPlugin.cpp
     src/plugins/CTags/CTagsPlugin.hpp
     src/plugins/CTags/CTagsLoader.cpp

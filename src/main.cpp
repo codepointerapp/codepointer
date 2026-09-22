@@ -20,6 +20,7 @@
 #include "plugins/CTags/CTagsPlugin.hpp"
 #include "plugins/CodeFormat/CodeFormat.hpp"
 #include "plugins/ProjectManager/ProjectManagerPlg.h"
+#include "plugins/ProjectManagerV2/ProjectManagerV2Plugin.hpp"
 #include "plugins/SplitTabsPlugin/SplitTabsPlugin.hpp"
 #include "plugins/Terminal/TerminalPlugin.hpp"
 #include "plugins/TreeSitter/TreeSitterPlugin.hpp"
@@ -143,6 +144,7 @@ int main(int argc, char *argv[]) {
     pluginManager.addPlugin(new ImageViewrPlugin);
     pluginManager.addPlugin(new HexViewrPlugin);
     pluginManager.addPlugin(new GitPlugin);
+    pluginManager.addPlugin(new ProjectManagerV2Plugin);
     split->setLoadingFinished(false);
 
     // Those are defaults, restore will override them

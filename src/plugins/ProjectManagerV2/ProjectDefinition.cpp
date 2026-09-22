@@ -1,21 +1,95 @@
-#include "ProjectBuildConfig.h"
+/**
+ * \file ProjectDefinition.hpp
+ * \brief Project definition
+ * \author Diego Iastrubni diegoiast@gmail.com
+ */
 
-#include <QDebug>
+// SPDX-License-Identifier: MIT
+
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
-#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QProcess>
-#include <QString>
+#include <QRegularExpression>
 #include <QThread>
+
+#include "ProjectDefinition.hpp"
+
+namespace {
 
 using StringHash = QHash<QString, QString>;
 using StringPair = QPair<QString, QString>;
 
-// Returns map: executable target name -> full path to executable binary
+// FIXME: this should be moved to a global place,
+auto static expandString(const QString &input, QHash<QString, QString> dictionary) -> QString {
+    static auto regex = QRegularExpression(R"(\$\{([a-zA-Z0-9_]+)\})");
+    auto output = input;
+    auto depth = 0;
+    auto maxDepth = 10;
+
+    while (depth < maxDepth) {
+        auto it = regex.globalMatch(output);
+        if (!it.hasNext()) {
+            break;
+        }
+        while (it.hasNext()) {
+            auto match = it.next();
+            auto key = match.captured(1);
+            auto replacement = dictionary.value(key, "");
+            output.replace(match.captured(0), replacement);
+        }
+        depth++;
+    }
+    return output;
+}
+
+auto static parsePlatformCommands(const QJsonObject &commandsObj, TaskInfo &taskInfo) -> void {
+    for (auto it = commandsObj.begin(); it != commandsObj.end(); ++it) {
+        auto value = it.value();
+        if (value.isString()) {
+            taskInfo.commands.insert(it.key(), QStringList{value.toString()});
+        } else if (value.isArray()) {
+            QStringList commands;
+            for (const auto &cmd : value.toArray()) {
+                commands.append(cmd.toString());
+            }
+            taskInfo.commands.insert(it.key(), commands);
+        }
+    }
+}
+
+auto static savePlatformCommands(const QHash<QString, QStringList> &commands,
+                                 QJsonObject &commandsObj) -> auto {
+    for (auto it = commands.constBegin(); it != commands.constEnd(); ++it) {
+        auto commandsList = it.value();
+        if (commandsList.size() == 1) {
+            commandsObj[it.key()] = commandsList.first();
+        } else {
+            auto commandsArray = QJsonArray();
+            for (const auto &cmd : commandsList) {
+                commandsArray.append(cmd);
+            }
+            commandsObj[it.key()] = commandsArray;
+        }
+    }
+}
+
+auto static arePlatformCommandsIdentical(const QHash<QString, QStringList> &commands) -> bool {
+    if (commands.isEmpty()) {
+        return false;
+    }
+    auto firstCommand = commands.begin().value();
+    for (auto it = std::next(commands.begin()); it != commands.end(); ++it) {
+        if (it.value() != firstCommand) {
+            return false;
+        }
+    }
+    return true;
+}
+
 auto getExecutableFromTargetFile(const QString &filePath) -> std::optional<StringPair> {
     auto file = QFile(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -170,82 +244,9 @@ auto static cargoListBinUnits(const QString &metaData) -> StringHash {
     return fileMap;
 }
 
-auto static arePlatformCommandsIdentical(const QHash<QString, QStringList> &commands) -> bool {
-    if (commands.isEmpty()) {
-        return false;
-    }
-    auto firstCommand = commands.begin().value();
-    for (auto it = std::next(commands.begin()); it != commands.end(); ++it) {
-        if (it.value() != firstCommand) {
-            return false;
-        }
-    }
-    return true;
-}
+} // namespace
 
-auto static parsePlatformCommands(const QJsonObject &commandsObj, TaskInfo &taskInfo) -> void {
-    for (auto it = commandsObj.begin(); it != commandsObj.end(); ++it) {
-        auto value = it.value();
-        if (value.isString()) {
-            taskInfo.commands.insert(it.key(), QStringList{value.toString()});
-        } else if (value.isArray()) {
-            QStringList commands;
-            for (const auto &cmd : value.toArray()) {
-                commands.append(cmd.toString());
-            }
-            taskInfo.commands.insert(it.key(), commands);
-        }
-    }
-}
-
-auto static savePlatformCommands(const QHash<QString, QStringList> &commands,
-                                 QJsonObject &commandsObj) -> auto {
-    for (auto it = commands.constBegin(); it != commands.constEnd(); ++it) {
-        auto commandsList = it.value();
-        if (commandsList.size() == 1) {
-            commandsObj[it.key()] = commandsList.first();
-        } else {
-            auto commandsArray = QJsonArray();
-            for (const auto &cmd : commandsList) {
-                commandsArray.append(cmd);
-            }
-            commandsObj[it.key()] = commandsArray;
-        }
-    }
-}
-
-bool ExecutableInfo::operator==(const ExecutableInfo &other) const {
-    /* clang-format off */
-    return
-        this->name == other.name &&
-        this->runDirectory == other.runDirectory &&
-        this->executables == other.executables;
-    /* clang-format on */
-}
-
-bool TaskInfo::operator==(const TaskInfo &other) const {
-    /* clang-format off */
-    return
-        this->name == other.name &&
-        this->commands == other.commands &&
-        this->isBuild == other.isBuild &&
-        this->tooltip == other.tooltip &&
-        this->runDirectory == other.runDirectory;
-    /* clang-format on */
-}
-
-QString TaskInfo::getTooltip() const {
-    if (!tooltip.isEmpty()) {
-        return tooltip;
-    }
-
-    auto platform = PLATFORM_CURRENT;
-    auto platFormCommands = commands.value(platform);
-    return commands.isEmpty() ? "" : platFormCommands.first();
-}
-
-auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
-    -> std::shared_ptr<ProjectBuildConfig> {
+std::shared_ptr<ProjectDefinition> ProjectDefinition::tryGuessFromCMake(const QString &fileName) {
     auto fi = QFileInfo(fileName);
     if (fi.fileName().compare("cmakelists.txt", Qt::CaseSensitivity::CaseInsensitive) != 0) {
         return {};
@@ -255,7 +256,7 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
         return {};
     }
 
-    auto value = std::make_shared<ProjectBuildConfig>();
+    auto value = std::make_shared<ProjectDefinition>();
     value->projectType = ProjectType::cmake;
     value->autoGenerated = true;
     value->name = fi.dir().dirName() + " (CMake)";
@@ -268,12 +269,15 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
         auto t = TaskInfo();
         t.name = "CMake (configure/Debug)";
         t.tooltip = "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Debug";
+
         // clang-format off
         t.commands.insert( PLATFORM_LINUX, {
             "mkdir -p ${build_directory}/.cmake/api/v1/query/",
-             "touch ${build_directory}/.cmake/api/v1/query/codemodel-v2",
-            "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1"
+            "touch ${build_directory}/.cmake/api/v1/query/codemodel-v2",
+            "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Debug",
         });
+
+        // FIXME:  how about we port to powershell?
         // Why not running the commands directly on this shell instead of spawning a new one?
         // Great question! This is because commands may fail, and I don't want them to kill the
         // build system, and I cannot use "| rem" easily.
@@ -282,7 +286,7 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
         t.commands.insert( PLATFORM_WINDOWS, {
             "cmd /c \"mkdir \"${build_directory}\\.cmake\\api\\v1\\query\" >nul 2>nul || rem\"",
             "cmd /c \"type nul > \"${build_directory}\\.cmake\\api\\v1\\query\\codemodel-v2\" || rem\"",
-            "cmake -S \"${source_directory}\" -B \"${build_directory}\" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1"
+            "cmake -S \"${source_directory}\" -B \"${build_directory}\" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1",
         });
         // clang-format on
         t.runDirectory = "${source_directory}";
@@ -295,19 +299,17 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
         auto t = TaskInfo();
         t.name = "CMake (configure/Release)";
         t.tooltip = "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Release";
-        t.commands.insert(
-            PLATFORM_LINUX,
-            {"mkdir -p ${build_directory}/.cmake/api/v1/query/",
-             "touch ${build_directory}/.cmake/api/v1/query/codemodel-v2",
-             "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Release"});
-
         // clang-format off
-        t.commands.insert(
-            PLATFORM_WINDOWS, {
-                "cmd /c \"mkdir \"${build_directory}\\.cmake\\api\\v1\\query\" >nul 2>nul || rem\"",
-                "cmd /c \"type nul > \"${build_directory}\\.cmake\\api\\v1\\query\\codemodel-v2\" || rem\"",
-                "cmake -S \"${source_directory}\" -B \"${build_directory}\" -DCMAKE_BUILD_TYPE=Release"
-            });
+        t.commands.insert( PLATFORM_LINUX, {
+            "mkdir -p ${build_directory}/.cmake/api/v1/query/",
+            "touch ${build_directory}/.cmake/api/v1/query/codemodel-v2",
+            "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Release",
+        });
+        t.commands.insert( PLATFORM_WINDOWS, {
+            "cmd /c \"mkdir \"${build_directory}\\.cmake\\api\\v1\\query\" >nul 2>nul || rem\"",
+            "cmd /c \"type nul > \"${build_directory}\\.cmake\\api\\v1\\query\\codemodel-v2\" || rem\"",
+            "cmake -S \"${source_directory}\" -B \"${build_directory}\" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=1"
+        });
         // clang-format on
         t.runDirectory = "${source_directory}";
         t.isBuild = true;
@@ -341,8 +343,7 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
     return value;
 }
 
-auto ProjectBuildConfig::tryGuessFromCargo(const QString &fileName)
-    -> std::shared_ptr<ProjectBuildConfig> {
+std::shared_ptr<ProjectDefinition> ProjectDefinition::tryGuessFromCargo(const QString &fileName) {
     auto fi = QFileInfo(fileName);
     if (fi.fileName().compare("cargo.toml", Qt::CaseSensitivity::CaseInsensitive) != 0) {
         return {};
@@ -351,7 +352,7 @@ auto ProjectBuildConfig::tryGuessFromCargo(const QString &fileName)
         return {};
     }
 
-    auto value = std::make_shared<ProjectBuildConfig>();
+    auto value = std::make_shared<ProjectDefinition>();
     value->projectType = ProjectType::cargo;
     value->autoGenerated = true;
     value->name = fi.dir().dirName() + " (Cargo)";
@@ -363,6 +364,8 @@ auto ProjectBuildConfig::tryGuessFromCargo(const QString &fileName)
     auto cargoBuildRelease = "cargo build --release";
     auto cargoUpdate = "cargo update";
     auto cargoClean = "cargo clean";
+
+    // FIXME: will this work on Windows?
     auto cargoListPackages =
         "(cargo metadata --format-version=1 --no-deps > ${build_directory}/cargo-metadata.json)";
 
@@ -405,8 +408,7 @@ auto ProjectBuildConfig::tryGuessFromCargo(const QString &fileName)
     return value;
 }
 
-auto ProjectBuildConfig::tryGuessFromGo(const QString &fileName)
-    -> std::shared_ptr<ProjectBuildConfig> {
+std::shared_ptr<ProjectDefinition> ProjectDefinition::tryGuessFromGo(const QString &fileName) {
     auto fi = QFileInfo(fileName);
     if (fi.fileName().compare("go.mod", Qt::CaseSensitivity::CaseInsensitive) != 0) {
         return {};
@@ -415,7 +417,7 @@ auto ProjectBuildConfig::tryGuessFromGo(const QString &fileName)
         return {};
     }
 
-    auto value = std::make_shared<ProjectBuildConfig>();
+    auto value = std::make_shared<ProjectDefinition>();
     value->projectType = ProjectType::golang;
     value->autoGenerated = true;
     value->name = fi.dir().dirName() + " (Go)";
@@ -446,9 +448,8 @@ auto ProjectBuildConfig::tryGuessFromGo(const QString &fileName)
     return value;
 }
 
-std::shared_ptr<ProjectBuildConfig>
-ProjectBuildConfig::tryGuessFromMeson(const QString &mesonBuildFile) {
-    auto fi = QFileInfo(mesonBuildFile);
+std::shared_ptr<ProjectDefinition> ProjectDefinition::tryGuessFromMeson(const QString &fileName) {
+    auto fi = QFileInfo(fileName);
     if (fi.fileName().compare("meson.build", Qt::CaseSensitivity::CaseInsensitive) != 0) {
         return {};
     }
@@ -456,7 +457,7 @@ ProjectBuildConfig::tryGuessFromMeson(const QString &mesonBuildFile) {
         return {};
     }
 
-    auto value = std::make_shared<ProjectBuildConfig>();
+    auto value = std::make_shared<ProjectDefinition>();
     value->projectType = ProjectType::meson;
     value->autoGenerated = true;
     value->name = fi.dir().dirName() + " (Meson)";
@@ -498,55 +499,15 @@ ProjectBuildConfig::tryGuessFromMeson(const QString &mesonBuildFile) {
     return value;
 }
 
-std::shared_ptr<ProjectBuildConfig>
-ProjectBuildConfig::buildFromDirectory(const QString &directory) {
-    auto configFileName = directory + QDir::separator() + "codepointer.json";
-    auto config = buildFromJsonFile(configFileName);
-    if (!config) {
-        config = tryGuessFromCMake(directory + QDir::separator() + "CMakeLists.txt");
-    }
-    if (!config) {
-        config = tryGuessFromMeson(directory + QDir::separator() + "meson.build");
-    }
-    if (!config) {
-        config = tryGuessFromCargo(directory + QDir::separator() + "Cargo.toml");
-    }
-    if (!config) {
-        config = tryGuessFromGo(directory + QDir::separator() + "go.mod");
-    }
-    if (!config) {
-        config = std::make_shared<ProjectBuildConfig>();
-        config->sourceDir = directory;
-    }
-    return config;
-}
-
-std::shared_ptr<ProjectBuildConfig> ProjectBuildConfig::buildFromFile(const QString &fileName) {
-    auto config = buildFromJsonFile(fileName);
-    if (!config) {
-        config = tryGuessFromCMake(fileName);
-    }
-    if (!config) {
-        config = tryGuessFromMeson(fileName);
-    }
-    if (!config) {
-        config = tryGuessFromCargo(fileName);
-    }
-    if (!config) {
-        config = tryGuessFromGo(fileName);
-    }
-    return config;
-}
-
-std::shared_ptr<ProjectBuildConfig>
-ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
+std::shared_ptr<ProjectDefinition>
+ProjectDefinition::tryLoadFromCodePointer(const QString &jsonFileName) {
     auto file = QFile();
     file.setFileName(jsonFileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         return {};
     }
 
-    auto value = std::shared_ptr<ProjectBuildConfig>();
+    auto value = std::shared_ptr<ProjectDefinition>();
     auto fi = QFileInfo(jsonFileName);
     auto json = QJsonDocument::fromJson(file.readAll());
     file.close();
@@ -641,7 +602,7 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
         return info;
     };
     if (!json.isNull()) {
-        value = std::make_shared<ProjectBuildConfig>();
+        value = std::make_shared<ProjectDefinition>();
         value->autoGenerated = false;
         value->sourceDir = fi.absolutePath();
         value->fileName = fi.absoluteFilePath();
@@ -649,10 +610,6 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
         value->buildDir = json["build_directory"].toString();
         value->executables = parseExecutables(json["executables"]);
         value->tasksInfo = parseTasksInfo(json["tasks"]);
-
-        value->activeExecutableName = json["activeExecutableName"].toString();
-        value->activeTaskName = json["activeTaskName"].toString();
-        value->displayFilter = json["displayFilter"].toString();
         value->hideFilter = json["hideFilter"].toString();
 
         if (value->name.isEmpty()) {
@@ -665,48 +622,31 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
     return value;
 }
 
-bool ProjectBuildConfig::canLoadFile(const QString &filename) {
-    auto fi = QFileInfo(filename);
-    if (fi.fileName().compare("CMakeLists.txt", Qt::CaseInsensitive) == 0) {
-        return true;
+QList<std::shared_ptr<ProjectDefinition>>
+ProjectDefinition::findProjects(const QString &directory) {
+    QList<std::shared_ptr<ProjectDefinition>> projects;
+
+    if (auto p = tryLoadFromCodePointer(directory + QDir::separator() + "codepointer.json")) {
+        projects.push_back(p);
     }
-    if (fi.fileName().compare("Cargo.toml", Qt::CaseInsensitive) == 0) {
-        return true;
+    if (auto p = tryGuessFromCMake(directory + QDir::separator() + "CMakeLists.txt")) {
+        projects.push_back(p);
     }
-    if (fi.fileName().compare("go.mod", Qt::CaseInsensitive) == 0) {
-        return true;
+    if (auto p = tryGuessFromMeson(directory + QDir::separator() + "meson.build")) {
+        projects.push_back(p);
     }
-    if (fi.fileName().compare("meson.build", Qt::CaseInsensitive) == 0) {
-        return true;
+    if (auto p = tryGuessFromCargo(directory + QDir::separator() + "Cargo.toml")) {
+        projects.push_back(p);
     }
-    if (fi.fileName().compare("codepointer.json", Qt::CaseInsensitive) == 0) {
-        return true;
+    if (auto p = tryGuessFromGo(directory + QDir::separator() + "go.mod")) {
+        projects.push_back(p);
     }
-    return false;
+    return projects;
 }
 
-auto ProjectBuildConfig::updateBinaries() -> void {
-    switch (projectType) {
-    case ProjectType::cmake:
-        updateBinariesCMake();
-        break;
-    case ProjectType::cargo:
-        updateBinariesCargo();
-        break;
-    case ProjectType::golang:
-        updateBinariesGo();
-        break;
-    case ProjectType::meson:
-        updateBinariesMeson();
-        break;
-    case ProjectType::unknown:
-        break;
-    }
-}
-
-auto ProjectBuildConfig::updateBinariesCMake() -> void {
+void ProjectDefinition::updateBinariesCMake() {
     this->executables.clear();
-    auto effectiveBuildDir = expand(this->buildDir);
+    auto effectiveBuildDir = expandString(this->buildDir, getConfigDictionary());
     auto binaries = getExecutablesFromCMakeFileAPI(effectiveBuildDir);
     for (const auto &[key, value] : binaries.asKeyValueRange()) {
         auto e = ExecutableInfo();
@@ -718,7 +658,7 @@ auto ProjectBuildConfig::updateBinariesCMake() -> void {
     }
 }
 
-auto ProjectBuildConfig::updateBinariesCargo() -> void {
+void ProjectDefinition::updateBinariesCargo() {
     auto e = ExecutableInfo();
     this->executables.clear();
 
@@ -730,7 +670,7 @@ auto ProjectBuildConfig::updateBinariesCargo() -> void {
     this->executables.push_back(e);
 #endif
     auto metaData = QString::fromLatin1("${build_directory}/cargo-metadata.json");
-    metaData = this->expand(metaData);
+    metaData = expandString(metaData, getConfigDictionary());
     auto binaries = cargoListBinUnits(metaData);
     for (const auto &[key, value] : binaries.asKeyValueRange()) {
         e.name = key;
@@ -741,7 +681,7 @@ auto ProjectBuildConfig::updateBinariesCargo() -> void {
     }
 }
 
-auto ProjectBuildConfig::updateBinariesGo() -> void {
+void ProjectDefinition::updateBinariesGo() {
     auto e = ExecutableInfo();
     e.name = "go run";
     e.runDirectory = "${source_directory}";
@@ -751,7 +691,7 @@ auto ProjectBuildConfig::updateBinariesGo() -> void {
     this->executables.push_back(e);
 }
 
-auto ProjectBuildConfig::updateBinariesMeson() -> void {
+void ProjectDefinition::updateBinariesMeson() {
     auto findMesonExecutables = [](const QString &directory,
                                    const QString &buildDir) -> QHash<QString, QString> {
         auto fullBuildPath = buildDir;
@@ -790,8 +730,9 @@ auto ProjectBuildConfig::updateBinariesMeson() -> void {
         return result;
     };
 
-    auto effectiveSourceDir = expand(this->sourceDir);
-    auto effectiveBuildDir = expand(this->buildDir);
+    auto d = getConfigDictionary();
+    auto effectiveSourceDir = expandString(this->sourceDir, d);
+    auto effectiveBuildDir = expandString(this->buildDir, d);
     auto mesonExecutables = findMesonExecutables(effectiveSourceDir, effectiveBuildDir);
     this->executables.clear();
     for (auto it = mesonExecutables.constBegin(); it != mesonExecutables.constEnd(); ++it) {
@@ -806,7 +747,11 @@ auto ProjectBuildConfig::updateBinariesMeson() -> void {
     }
 }
 
-auto ProjectBuildConfig::saveToFile(const QString &jsonFileName) -> void {
+void ProjectDefinition::updateBinaries() {
+    // TODO
+}
+
+void ProjectDefinition::saveToFile(const QString &jsonFileName) {
     auto file = QFile(jsonFileName);
     if (!file.open(QIODevice::WriteOnly)) {
         qWarning() << "saveToFile: Failed to open file for writing:" << file.errorString();
@@ -866,11 +811,6 @@ auto ProjectBuildConfig::saveToFile(const QString &jsonFileName) -> void {
     }
     jsonObj["tasks"] = tasksArray;
 
-    jsonObj["activeExecutableName"] = activeExecutableName;
-    jsonObj["activeTaskName"] = activeTaskName;
-    jsonObj["displayFilter"] = displayFilter;
-    jsonObj["hideFilter"] = hideFilter;
-
     auto jsonDoc = QJsonDocument(jsonObj);
     file.write(jsonDoc.toJson());
     file.close();
@@ -878,27 +818,7 @@ auto ProjectBuildConfig::saveToFile(const QString &jsonFileName) -> void {
     this->fileName = jsonFileName;
 }
 
-auto ProjectBuildConfig::findIndexOfTask(const QString &taskName) -> int {
-    for (auto n = 0; n < tasksInfo.length(); n++) {
-        auto &t = tasksInfo[n];
-        if (t.name == taskName) {
-            return n;
-        }
-    }
-    return -1;
-}
-
-auto ProjectBuildConfig::findIndexOfExecutable(const QString &executableName) -> int {
-    for (auto n = 0; n < executables.length(); n++) {
-        auto &e = executables[n];
-        if (e.name == executableName) {
-            return n;
-        }
-    }
-    return -1;
-}
-
-auto ProjectBuildConfig::getConfigDictionary() const -> const QHash<QString, QString> {
+const QHash<QString, QString> ProjectDefinition::getConfigDictionary() const {
     auto dictionary = QHash<QString, QString>();
     dictionary["source_directory"] = QDir::toNativeSeparators(sourceDir);
     dictionary["build_directory"] = QDir::toNativeSeparators(buildDir);
@@ -906,39 +826,7 @@ auto ProjectBuildConfig::getConfigDictionary() const -> const QHash<QString, QSt
     return dictionary;
 }
 
-auto ProjectBuildConfig::expand(const QString &input) -> QString {
-    static auto regex = QRegularExpression(R"(\$\{([a-zA-Z0-9_]+)\})");
-    auto output = input;
-    auto depth = 0;
-    auto maxDepth = 10;
-    auto hashTable = getConfigDictionary();
-
-    while (depth < maxDepth) {
-        auto it = regex.globalMatch(output);
-        if (!it.hasNext()) {
-            break;
-        }
-        while (it.hasNext()) {
-            auto match = it.next();
-            auto key = match.captured(1);
-            auto replacement = hashTable.value(key, "");
-            output.replace(match.captured(0), replacement);
-        }
-        depth++;
-    }
-    return output;
-}
-
-bool ProjectBuildConfig::operator==(const ProjectBuildConfig &other) const {
-    /* clang-format off */
-    return sourceDir == other.sourceDir &&
-           buildDir == other.buildDir &&
-           executables == other.executables &&
-           tasksInfo == other.tasksInfo &&
-           activeExecutableName == other.activeExecutableName &&
-           activeTaskName == other.activeTaskName &&
-           displayFilter == other.displayFilter &&
-           hideFilter == other.hideFilter &&
-           fileName == other.fileName;
-    /* clang-format on */
+bool ProjectDefinition::operator==(const ProjectDefinition &other) const {
+    return this->name == other.name && this->buildDir == other.buildDir &&
+           this->executables == other.executables && this->tasksInfo == other.tasksInfo;
 }
