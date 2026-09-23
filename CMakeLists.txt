@@ -177,6 +177,8 @@ set(codepointer_sources
     src/plugins/ProjectManagerV2/ProjectManagerV2Plugin.hpp
     src/plugins/ProjectManagerV2/ProjectDefinition.cpp
     src/plugins/ProjectManagerV2/ProjectDefinition.hpp
+    src/plugins/ProjectManagerV2/ProjectsDock.hpp
+    src/plugins/ProjectManagerV2/ProjectsDock.cpp
 
     src/plugins/CTags/CTagsPlugin.cpp
     src/plugins/CTags/CTagsPlugin.hpp

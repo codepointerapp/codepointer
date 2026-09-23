@@ -13,10 +13,14 @@
 
 #include "iplugin.h"
 
+class ProjectsDock;
+class ProjectDefinitionModel;
+class QDockWidget;
+
 class ProjectManagerV2Plugin : public IPlugin {
 
     struct Config {
-        // TODO - migration code
+        // TODO - migration code - we need to use the terminal plugin soon.
         CONFIG_DEFINE(BlackConsole, bool);
         CONFIG_DEFINE(ConsoleFont, QString)
 
@@ -25,25 +29,16 @@ class ProjectManagerV2Plugin : public IPlugin {
         CONFIG_DEFINE(ExtraPath, QStringList);
 
         // Opened projects
-        CONFIG_DEFINE(OpenPrject, QStringList);
+        CONFIG_DEFINE(OpenProjects, QStringList);
         CONFIG_DEFINE(SelectedProject, QString);
-
-        // State of the search panel
-        CONFIG_DEFINE(SearchPath, QString);
-        CONFIG_DEFINE(SearchPattern, QString);
-        CONFIG_DEFINE(SearchInclude, QString);
-        CONFIG_DEFINE(SearchExclude, QString);
-        CONFIG_DEFINE(SearchWholeWords, bool);
-        CONFIG_DEFINE(SearchSensitive, bool);
-        CONFIG_DEFINE(SearchRegex, bool);
-        CONFIG_DEFINE(SearchCollapseFileNames, bool);
-
         qmdiPluginConfig *config;
     };
     Config &getConfig() {
         static Config configObject{&this->config};
         return configObject;
     }
+
+    ProjectsDock *dockGUI;
 
     Q_OBJECT
   public:
@@ -61,4 +56,8 @@ class ProjectManagerV2Plugin : public IPlugin {
 
     virtual qmdiActionGroup *getContextMenuActions(const QString &menuId,
                                                    const QString &filePath) override;
+
+  protected:
+    void addProjectFromDir(const QString &projectDir);
+    ProjectDefinitionModel *model;
 };
