@@ -1,6 +1,10 @@
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <iostream>
+#include <mutex>
+#include <string>
+#include <vector>
 
 #include <lsp/json/json.h>
 #include <lsp/uri.h>
@@ -8,6 +12,33 @@
 #include "LspClientImpl.hpp"
 
 namespace {
+
+/// LSP file URIs must use forward slashes. Uri::fileUriFromPath keeps the
+/// native separators, which on Windows percent-encodes backslashes to %5C and
+/// yields a URI the server can't resolve. Build the URI from a forward-slash
+/// path instead; identical to the framework function on non-Windows.
+auto fileUriFromPath(const std::string &path) -> lsp::Uri {
+    auto nativePath = std::filesystem::absolute(path).u8string();
+#ifdef _WIN32
+    std::replace(nativePath.begin(), nativePath.end(), u8'\\', u8'/');
+    if (!nativePath.starts_with(u8'/')) {
+        nativePath.insert(nativePath.begin(), u8'/');
+    }
+#endif
+    auto uri = lsp::Uri();
+    uri.setScheme(lsp::Uri::FileScheme);
+    uri.setAuthority({});
+    uri.setPath(
+        std::string_view(reinterpret_cast<const char *>(nativePath.data()), nativePath.size()));
+    return uri;
+}
+
+auto filePathFromUri(const lsp::Uri &uri) -> std::string {
+    if (uri.isFileUri()) {
+        return uri.fsPath();
+    }
+    return std::string(uri.path());
+}
 
 auto markedStringToText(const lsp::MarkedString &marked) -> std::string {
     if (std::holds_alternative<lsp::String>(marked)) {
@@ -132,10 +163,10 @@ void LspClientImpl::startServer(const std::string &executable,
 
     m_messageHandler->on<lsp::notifications::TextDocumentPublishDiagnostics>(
         [this](lsp::notifications::TextDocumentPublishDiagnostics::Params &&params) {
-            trace("<-- publishDiagnostics " + std::string(params.uri.path()) + " (" +
+            trace("<-- publishDiagnostics " + filePathFromUri(params.uri) + " (" +
                   std::to_string(params.diagnostics.size()) + ")");
             if (m_diagnosticsCallback) {
-                m_diagnosticsCallback(std::string(params.uri.path()), params.diagnostics);
+                m_diagnosticsCallback(filePathFromUri(params.uri), params.diagnostics);
             }
         });
 
@@ -210,7 +241,7 @@ void LspClientImpl::stopServer() {
 
 void LspClientImpl::initializeLspServer() {
     auto initializeParams = lsp::requests::Initialize::Params{};
-    initializeParams.rootUri = lsp::Uri::fileUriFromPath(m_documentRoot);
+    initializeParams.rootUri = fileUriFromPath(m_documentRoot);
     initializeParams.capabilities = lsp::ClientCapabilities{
         .textDocument =
             lsp::TextDocumentClientCapabilities{
@@ -243,11 +274,16 @@ void LspClientImpl::initializeLspServer() {
                 // Serialising the whole struct beats reading 36 heterogeneous
                 // Opt<OneOf<...>> fields by hand, and keeps working when the
                 // protocol gains capabilities this code has never heard of.
+                // The framework's Writer buffers internally, so the text is only
+                // available via text() after the object writer closes.
                 std::string serialized;
                 {
-                    lsp::json::Writer writer(serialized);
-                    auto objectWriter = writer.beginObject();
-                    lsp::writeJson(result.capabilities, objectWriter);
+                    lsp::json::Writer writer;
+                    {
+                        auto objectWriter = writer.beginObject();
+                        lsp::writeJson(result.capabilities, objectWriter);
+                    }
+                    serialized = writer.text();
                 }
                 auto asJson = lsp::json::parse(serialized);
                 if (asJson.isObject()) {
@@ -300,7 +336,7 @@ void LspClientImpl::syncDocument(const std::string &fileName, const std::string 
 
     if (isNew) {
         auto params = lsp::notifications::TextDocumentDidOpen::Params{};
-        params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
+        params.textDocument.uri = fileUriFromPath(fileName);
         params.textDocument.languageId = std::string(languageId);
         params.textDocument.version = version;
         params.textDocument.text = text;
@@ -313,7 +349,7 @@ void LspClientImpl::syncDocument(const std::string &fileName, const std::string 
     // Full-document sync. Incremental sync would need range tracking the editor
     // does not expose yet.
     auto params = lsp::notifications::TextDocumentDidChange::Params{};
-    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
+    params.textDocument.uri = fileUriFromPath(fileName);
     params.textDocument.version = version;
     params.contentChanges = {lsp::TextDocumentContentChangeWholeDocument{.text = text}};
     m_messageHandler->sendNotification<lsp::notifications::TextDocumentDidChange>(
@@ -332,9 +368,8 @@ void LspClientImpl::closeDocument(const std::string &fileName) {
         return;
     }
     auto params = lsp::notifications::TextDocumentDidClose::Params{};
-    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
-    m_messageHandler->sendNotification<lsp::notifications::TextDocumentDidClose>(
-        std::move(params));
+    params.textDocument.uri = fileUriFromPath(fileName);
+    m_messageHandler->sendNotification<lsp::notifications::TextDocumentDidClose>(std::move(params));
     trace("--> didClose " + fileName);
 }
 
@@ -346,7 +381,7 @@ void LspClientImpl::requestCompletion(const std::string &fileName, uint line, ui
     }
 
     auto params = lsp::requests::TextDocumentCompletion::Params{};
-    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
+    params.textDocument.uri = fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> completion " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
@@ -376,7 +411,7 @@ void LspClientImpl::requestDefinition(const std::string &fileName, uint line, ui
     }
 
     auto params = lsp::requests::TextDocumentDefinition::Params{};
-    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
+    params.textDocument.uri = fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> definition " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
@@ -385,7 +420,7 @@ void LspClientImpl::requestDefinition(const std::string &fileName, uint line, ui
         [this, callback](lsp::requests::TextDocumentDefinition::Result &&result) {
             auto out = std::vector<Location>();
             auto addLocation = [&out](const lsp::Location &location) {
-                out.push_back(Location{std::string(location.uri.path()),
+                out.push_back(Location{filePathFromUri(location.uri),
                                        static_cast<int>(location.range.start.line),
                                        static_cast<int>(location.range.start.character)});
             };
@@ -405,7 +440,7 @@ void LspClientImpl::requestDefinition(const std::string &fileName, uint line, ui
                     // LocationLink form: the target range is what we want to jump to.
                     for (auto const &link : result.get<lsp::Array<lsp::DefinitionLink>>()) {
                         out.push_back(
-                            Location{std::string(link.targetUri.path()),
+                            Location{filePathFromUri(link.targetUri),
                                      static_cast<int>(link.targetSelectionRange.start.line),
                                      static_cast<int>(link.targetSelectionRange.start.character)});
                     }
@@ -435,7 +470,7 @@ std::vector<LspClientImpl::TextEdit> LspClientImpl::flatten(const lsp::Workspace
 
     if (edit.changes.has_value()) {
         for (auto const &[uri, edits] : *edit.changes) {
-            auto path = std::string(uri.path());
+            auto path = filePathFromUri(uri);
             for (auto const &textEdit : edits) {
                 append(path, textEdit);
             }
@@ -448,7 +483,7 @@ std::vector<LspClientImpl::TextEdit> LspClientImpl::flatten(const lsp::Workspace
                 continue; // create/rename/delete file - not supported yet
             }
             auto const &documentEdit = std::get<lsp::TextDocumentEdit>(change);
-            auto path = std::string(documentEdit.textDocument.uri.path());
+            auto path = filePathFromUri(documentEdit.textDocument.uri);
             for (auto const &one : documentEdit.edits) {
                 if (std::holds_alternative<lsp::TextEdit>(one)) {
                     append(path, std::get<lsp::TextEdit>(one));
@@ -476,7 +511,7 @@ void LspClientImpl::requestCodeActions(const std::string &fileName, uint startLi
     }
 
     auto params = lsp::requests::TextDocumentCodeAction::Params{};
-    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
+    params.textDocument.uri = fileUriFromPath(fileName);
     params.range = {.start = {.line = startLine, .character = startCharacter},
                     .end = {.line = endLine, .character = endCharacter}};
     if (!kinds.empty()) {
@@ -532,7 +567,7 @@ void LspClientImpl::requestRename(const std::string &fileName, uint line, uint c
     }
 
     auto params = lsp::requests::TextDocumentRename::Params{};
-    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
+    params.textDocument.uri = fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
     params.newName = newName;
 
@@ -558,7 +593,7 @@ void LspClientImpl::requestHover(const std::string &fileName, uint line, uint co
     }
 
     auto params = lsp::requests::TextDocumentHover::Params{};
-    params.textDocument.uri = lsp::Uri::fileUriFromPath(fileName);
+    params.textDocument.uri = fileUriFromPath(fileName);
     params.position = {.line = line, .character = column};
 
     trace("--> hover " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
