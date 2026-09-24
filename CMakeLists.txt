@@ -130,7 +130,6 @@ if (CODEPOINTER_WORK_OFFLINE)
     add_subdirectory("lib/QSimpleUpdater")
     add_subdirectory("lib/QHexView")
     add_subdirectory("lib/lsp-framework/")
-    # add_subdirectory("lib/lsp-cpp")
 else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
@@ -143,10 +142,10 @@ else()
     CPMAddPackage("gh:dridk/QJsonModel#ee005a26089fe5ab32a73abb9bca89ff758af302")
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#c5c136c0f79ca6423b0914a2676ae3d0e3811c5b")
     CPMAddPackage("gh:Dax89/QHexView#8893881350ea1d0bb0deafb7ae4a700e8de6683f")
+    CPMAddPackage("gh:leon-bckl/lsp-framework#db64fac3eea5b36888b801cc0c8b081a377f1914")
     if (CODEPOINTER_BUNDLE_ICON_THEME)
         download_breeze_icons(6.4.0)
     endif()
-    CPMAddPackage("gh:leon-bckl/lsp-framework#26b9f47f755cb8db141f3418967b7021f1d05d25")
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
@@ -497,6 +496,12 @@ else()
     install(TARGETS codepointer
             RUNTIME DESTINATION bin)
 endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(codepointer PRIVATE -Wno-unknown-attributes -Wno-c++98-compat-local-type-template-args)
+    target_compile_options(lsp PRIVATE -Wno-unknown-attributes -Wno-c++98-compat-local-type-template-args)
+endif()
+
 
 # The app looks for its bundled icons at applicationDirPath() + "/../share/icons"
 # (src/main.cpp), which in a bundle resolves inside Contents/. Installed to the
