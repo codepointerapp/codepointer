@@ -77,7 +77,15 @@ else()
     if (CODEPOINTER_BUNDLE_ICON_THEME)
         #download_breeze_icons(6.4.0)
     endif()
-    CPMAddPackage("gh:leon-bckl/lsp-framework#26b9f47f755cb8db141f3418967b7021f1d05d25")
+    cmake_policy(SET CMP0097 NEW)
+    include(FetchContent)
+    FetchContent_Declare(lsp-framework
+        GIT_REPOSITORY https://github.com/leon-bckl/lsp-framework.git
+        GIT_TAG 2f7224dfa99f0afe23220a80dd327d3cfe2944b4
+        GIT_SUBMODULES ""
+        PATCH_COMMAND git apply --verbose "${CMAKE_SOURCE_DIR}/patches/lsp-framework-pipe-buffer.patch"
+    )
+    FetchContent_MakeAvailable(lsp-framework)
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
@@ -293,6 +301,11 @@ if(MSVC)
 else()
   set_target_properties(codepointer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
   target_compile_options(codepointer PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(codepointer PRIVATE -Wno-unknown-attributes -Wno-c++98-compat-local-type-template-args)
+    target_compile_options(lsp PRIVATE -Wno-unknown-attributes -Wno-c++98-compat-local-type-template-args)
 endif()
 
 install(TARGETS codepointer
