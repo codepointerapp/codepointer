@@ -26,6 +26,16 @@
 #include "pluginmanager.h"
 #include "widgets/qmdieditor.h"
 
+#ifdef Q_OS_WIN
+// clang-format off
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <shlobj.h>
+#include <knownfolders.h>
+// clang-format on
+#endif
+
 namespace {
 
 /// \@breif function to load a file, and reload it on change
@@ -206,6 +216,19 @@ LspPlugin::LspPlugin() {
     documentSyncTimer.setInterval(DocumentSyncDebounceMs);
     connect(&documentSyncTimer, &QTimer::timeout, this, &LspPlugin::flushDirtyDocuments);
 
+    // Default to the LLVM bin dir the Windows installer puts clangd in; empty
+    // elsewhere, where servers live on the PATH.
+    auto programFilesLLVM = QString();
+#ifdef Q_OS_WIN
+    PWSTR programFilesPath = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramFiles, KF_FLAG_DEFAULT, nullptr,
+                                       &programFilesPath))) {
+        programFilesLLVM =
+            QDir::toNativeSeparators(QString::fromWCharArray(programFilesPath) + "/LLVM/bin/");
+        CoTaskMemFree(programFilesPath);
+    }
+#endif
+
     config.pluginName = tr("LSP");
     config.configItems.push_back(
         qmdiConfigItem::Builder()
@@ -213,6 +236,7 @@ LspPlugin::LspPlugin() {
             .setDescription(tr("If a language server is not on the standard PATH, add it here"))
             .setKey(Config::ExtraPathsKey)
             .setType(qmdiConfigItem::PathList)
+            .setDefaultValue(programFilesLLVM)
             .build());
 }
 
@@ -256,10 +280,17 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
         return this->userDefinitions.size() != 0;
     });
 
+#ifdef Q_OS_WIN
+    auto systemDataDir = QDir(QCoreApplication::applicationDirPath() + "/share/" +
+                              QCoreApplication::applicationName())
+                             .absolutePath();
+#else
     auto systemDataDir = QDir(QCoreApplication::applicationDirPath() + "/../share/" +
                               QCoreApplication::applicationName())
                              .absolutePath();
-    auto systemataFile = systemDataDir + QDir::separator() + "lsp-servers.json";
+#endif
+    auto systemataFile =
+        QDir::toNativeSeparators(systemDataDir) + QDir::separator() + "lsp-servers.json";
     autoReloadFile(this, systemataFile, [this](const QString &s) {
         this->systemDefinitions = loadDefinitionsFromFile(s);
         return this->systemDefinitions.size() != 0;
@@ -658,8 +689,8 @@ QList<QPair<QString, QString>> LspPlugin::capabilitiesFor(const QString &root,
     if (client == project.value().cend()) {
         return out;
     }
-    for (auto const &[name, value] : client.value()->capabilities()) {
-        out.append({QString::fromStdString(name), QString::fromStdString(value)});
+    for (auto const &[cname, value] : client.value()->capabilities()) {
+        out.append({QString::fromStdString(cname), QString::fromStdString(value)});
     }
     return out;
 }
