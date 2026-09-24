@@ -17,6 +17,8 @@
 /// the reader thread, never on the GUI thread - marshal before touching widgets.
 class LspClientImpl {
   public:
+    typedef unsigned int uint;
+
     using CompletionCallback = std::function<void(std::vector<lsp::CompletionItem>)>;
     using HoverCallback = std::function<void(std::string)>;
 
