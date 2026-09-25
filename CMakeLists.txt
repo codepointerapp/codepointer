@@ -61,7 +61,6 @@ if (CODEPOINTER_WORK_OFFLINE)
     add_subdirectory("lib/QSimpleUpdater")
     add_subdirectory("lib/QHexView")
     add_subdirectory("lib/lsp-framework/")
-    # add_subdirectory("lib/lsp-cpp")
 else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
@@ -75,17 +74,36 @@ else()
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#c5c136c0f79ca6423b0914a2676ae3d0e3811c5b")
     CPMAddPackage("gh:Dax89/QHexView#8893881350ea1d0bb0deafb7ae4a700e8de6683f")
     if (CODEPOINTER_BUNDLE_ICON_THEME)
-        #download_breeze_icons(6.4.0)
+        download_breeze_icons(6.4.0)
     endif()
+
+    # CPMAddPackage("gh:leon-bckl/lsp-framework#db64fac3eea5b36888b801cc0c8b081a377f1914")
     cmake_policy(SET CMP0097 NEW)
     include(FetchContent)
     FetchContent_Declare(lsp-framework
         GIT_REPOSITORY https://github.com/leon-bckl/lsp-framework.git
-        GIT_TAG 2f7224dfa99f0afe23220a80dd327d3cfe2944b4
-        GIT_SUBMODULES ""
+        GIT_TAG db64fac3eea5b36888b801cc0c8b081a377f1914
         PATCH_COMMAND git apply --verbose "${CMAKE_SOURCE_DIR}/patches/lsp-framework-pipe-buffer.patch"
     )
     FetchContent_MakeAvailable(lsp-framework)
+
+    execute_process(
+        COMMAND git apply --reverse --check "${CMAKE_SOURCE_DIR}/patches/lsp-framework-pipe-buffer.patch"
+        WORKING_DIRECTORY "${lsp-framework_SOURCE_DIR}"
+        RESULT_VARIABLE codepointer_patch_is_applied
+        OUTPUT_QUIET ERROR_QUIET
+    )
+    if(NOT codepointer_patch_is_applied EQUAL 0)
+        message(STATUS "Re-applying lsp-framework pipe buffer patch")
+        execute_process(
+            COMMAND git apply --verbose "${CMAKE_SOURCE_DIR}/patches/lsp-framework-pipe-buffer.patch"
+            WORKING_DIRECTORY "${lsp-framework_SOURCE_DIR}"
+            RESULT_VARIABLE codepointer_patch_result
+        )
+        if(NOT codepointer_patch_result EQUAL 0)
+            message(FATAL_ERROR "Failed to apply patches/lsp-framework-pipe-buffer.patch to ${lsp-framework_SOURCE_DIR}")
+        endif()
+    endif()
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
