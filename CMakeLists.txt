@@ -86,24 +86,6 @@ else()
         PATCH_COMMAND git apply --verbose "${CMAKE_SOURCE_DIR}/patches/lsp-framework-pipe-buffer.patch"
     )
     FetchContent_MakeAvailable(lsp-framework)
-
-    execute_process(
-        COMMAND git apply --reverse --check "${CMAKE_SOURCE_DIR}/patches/lsp-framework-pipe-buffer.patch"
-        WORKING_DIRECTORY "${lsp-framework_SOURCE_DIR}"
-        RESULT_VARIABLE codepointer_patch_is_applied
-        OUTPUT_QUIET ERROR_QUIET
-    )
-    if(NOT codepointer_patch_is_applied EQUAL 0)
-        message(STATUS "Re-applying lsp-framework pipe buffer patch")
-        execute_process(
-            COMMAND git apply --verbose "${CMAKE_SOURCE_DIR}/patches/lsp-framework-pipe-buffer.patch"
-            WORKING_DIRECTORY "${lsp-framework_SOURCE_DIR}"
-            RESULT_VARIABLE codepointer_patch_result
-        )
-        if(NOT codepointer_patch_result EQUAL 0)
-            message(FATAL_ERROR "Failed to apply patches/lsp-framework-pipe-buffer.patch to ${lsp-framework_SOURCE_DIR}")
-        endif()
-    endif()
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Xml Concurrent)
