@@ -101,8 +101,11 @@ rem in the build output.
 )";
 constexpr auto SCRIPT_SUFFIX_WIN32 = R"(
 @rem execute task
-cd %run_directory%
+cd /d %run_directory%
 %task%
+@rem Stop on the first error, like bash's "set -e": cmd.exe keeps going after a
+@rem failing command, so without this a broken build still reports success.
+if errorlevel 1 exit /b 1
 )";
 
 namespace KitDetector {
@@ -248,7 +251,9 @@ auto static findRustSetup(std::vector<KitDetector::ExtraPath> &detected, bool un
         extraPath.name = "Rust - Cargo";
         extraPath.compiler_path = cargoHome.string();
         extraPath.toolchain = Toolchain::Rust;
-        extraPath.comment = "# found rust installation at '" + cargoHome.string() + "'";
+        extraPath.comment = unix_target
+                                ? "# found rust installation at '" + cargoHome.string() + "'"
+                                : "rem found rust installation at '" + cargoHome.string() + "'";
         if (unix_target) {
             extraPath.command = "export PATH=\"" + extraPath.compiler_path + "/bin:${PATH}\"";
         } else {
@@ -344,7 +349,11 @@ static auto findCompilerToolsWindows(std::vector<KitDetector::ExtraPath> &detect
         extraPath.name = "CMake (x86)";
         extraPath.compiler_path =
             (std::filesystem::path(programFiles86) / "CMake" / "bin").string();
+<<<<<<< HEAD
         extraPath.comment = "@rem Found CMake (x86)";
+=======
+        extraPath.comment = "rem Found CMake (x86)";
+>>>>>>> 6d5f6930 (Kits: use same code to configure on cmake in all platforms.)
         extraPath.command = "set \"PATH=" + extraPath.compiler_path + ";%PATH%\"";
         detected.push_back(extraPath);
     }
@@ -415,7 +424,7 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
             extraPath.compiler_path = full_path.string();
             extraPath.toolchain = toolchain;
             extraPath.comment = unix_target ? "# detected " + full_path.string()
-                                            : "@rem detected " + full_path.string();
+                                            : "rem detected " + full_path.string();
             extraPath.command += unix_target ? "export CC=" + cc + "\nexport CXX=" + cxx
                                              : "SET \"CC=" + cc + "\"\nSET \"CXX=" + cxx + "\"";
             detected.push_back(extraPath);
@@ -440,8 +449,8 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
         extraPath.name = cc;
         extraPath.compiler_path = full_path.string();
         extraPath.toolchain = toolchain;
-        extraPath.comment = unix_target ? "# detected " + full_path.string()
-                                        : "@rem detected " + full_path.string();
+        extraPath.comment =
+            unix_target ? "# detected " + full_path.string() : "rem detected " + full_path.string();
         extraPath.command += unix_target ? "export CC=" + cc + "\nexport CXX=" + cxx
                                          : "SET \"CC=" + cc + "\"\nSET \"CXX=" + cxx + "\"";
         detected.push_back(extraPath);
@@ -579,8 +588,6 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
             extraPath.command = "SET \"QTDIR=%1\"\n";
             extraPath.command += "SET \"QT_DIR=%1\"\n";
             extraPath.command += "SET \"QT6_DIR=%1\"\n\n";
-            // Note that on windows, the DLLs are in the bin directory, so we need to add
-            // that directory to the path, unlike unix - which needs LD_LIBRARY_PATH
             extraPath.command += "@REM lets add qt to the path\n";
             extraPath.command += "SET \"PATH=%QT6_DIR%\\bin;%PATH%\"\n";
         }
