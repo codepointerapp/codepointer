@@ -21,7 +21,7 @@ env:
 jobs:
   version:
     name: Compute version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.set-version.outputs.version }}
     steps:
@@ -48,7 +48,7 @@ jobs:
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
       - name: Cache Flatpak runtime/SDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.local/share/flatpak
           key: flatpak-kde-${{ env.RUNTIME_VERSION }}
@@ -87,21 +87,21 @@ jobs:
             os: windows-2022
             cc: "cl"
             cxx: "cl"
-          - name: "Windows Clang"
+          - name: "Windows Clang (22)"
             build_dir: "windows-clang"
             os: windows-2022
             cc: "clang"
             cxx: "clang++"
-          - name: "Ubuntu GCC"
+          - name: "Ubuntu 24.04 GCC"
             build_dir: "linux-gcc"
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             cc: "gcc"
             cxx: "g++"
-          - name: "Ubuntu Clang"
+          - name: "Ubuntu 24.04 Clang (22)"
             build_dir: "linux-clang"
-            os: ubuntu-22.04
-            cc: "clang"
-            cxx: "clang++"
+            os: ubuntu-24.04
+            cc: "clang-22"
+            cxx: "clang++-22"
           - name: "macOS"
             build_dir: "macos"
             os: macos-latest
@@ -129,14 +129,20 @@ jobs:
           setup-python: false
       - name: Install cmake-format
         run: pip3 install cmake-format
-      - name: Set up Clang 19.1.7
+      - name: Set up Clang 19.1.7 (windows)
         if: matrix.config.os == 'windows-2022' && matrix.config.cc == 'clang'
         uses: egor-tensin/setup-clang@v1
         with:
           version: 19.1.7
           platform: x64
+      - name: Install Clang 22 (linux)
+        if: matrix.config.cc == 'clang-22' && matrix.config.os == 'ubuntu-24.04'
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22
       - name: Install missing packages (linux)
-        if: matrix.config.os == 'ubuntu-22.04'
+        if: matrix.config.os == 'ubuntu-24.04'
         run: sudo apt install -y libcups2-dev
       - name: Setup MSVC (Windows)
         if: matrix.config.cxx == 'cl'
@@ -158,7 +164,7 @@ jobs:
           --prefix dist/${{ matrix.config.build_dir }}/usr
 
       - name: Create TGZ archive (Linux)
-        if: matrix.config.os == 'ubuntu-22.04' && matrix.config.cc == 'gcc'
+        if: matrix.config.os == 'ubuntu-24.04' && matrix.config.cc == 'gcc'
         shell: bash
         run: |
           mkdir -p dist/${{ env.APP_NAME }}
@@ -169,7 +175,7 @@ jobs:
             -C dist/${{ env.APP_NAME }} .
 
       - name: Create AppImage (Linux)
-        if: matrix.config.os == 'ubuntu-22.04' && matrix.config.cc == 'gcc'
+        if: matrix.config.os == 'ubuntu-24.04' && matrix.config.cc == 'gcc'
         run: |
           sudo apt install -y fuse libxkbcommon-x11-0 libxcb-cursor-dev libxkbcommon-dev
           mkdir -p dist/${{ matrix.config.build_dir }}/usr/plugins/{iconengines,platforms}
@@ -186,14 +192,14 @@ jobs:
             --output appimage
 
       - name: Upload AppImage (Linux)
-        if: matrix.config.os == 'ubuntu-22.04' && matrix.config.cc == 'gcc'
+        if: matrix.config.os == 'ubuntu-24.04' && matrix.config.cc == 'gcc'
         uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.AppImage
           path: build/${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.AppImage
 
       - name: Upload TGZ archive (Linux)
-        if: matrix.config.os == 'ubuntu-22.04' && matrix.config.cc == 'gcc'
+        if: matrix.config.os == 'ubuntu-24.04' && matrix.config.cc == 'gcc'
         uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ env.APP_NAME }}-${{ matrix.config.build_dir }}-qt${{ matrix.qt_version }}-${{ needs.version.outputs.version }}.tar.gz
