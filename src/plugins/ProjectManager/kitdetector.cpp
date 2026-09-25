@@ -101,8 +101,11 @@ rem in the build output.
 )";
 constexpr auto SCRIPT_SUFFIX_WIN32 = R"(
 @rem execute task
-cd %run_directory%
+cd /d %run_directory%
 %task%
+@rem Stop on the first error, like bash's "set -e": cmd.exe keeps going after a
+@rem failing command, so without this a broken build still reports success.
+if errorlevel 1 exit /b 1
 )";
 
 namespace KitDetector {
@@ -248,11 +251,13 @@ auto static findRustSetup(std::vector<KitDetector::ExtraPath> &detected, bool un
         extraPath.name = "Rust - Cargo";
         extraPath.compiler_path = cargoHome.string();
         extraPath.toolchain = Toolchain::Rust;
-        extraPath.comment = "# found rust installation at '" + cargoHome.string() + "'";
+        extraPath.comment = unix_target
+                                ? "# found rust installation at '" + cargoHome.string() + "'"
+                                : "rem found rust installation at '" + cargoHome.string() + "'";
         if (unix_target) {
             extraPath.command = "export PATH=\"" + extraPath.compiler_path + "/bin:${PATH}\"";
         } else {
-            extraPath.command = "set PATH=" + extraPath.compiler_path + "\\bin;%PATH%";
+            extraPath.command = "set \"PATH=" + extraPath.compiler_path + "\\bin;%PATH%\"";
         }
         detected.push_back(extraPath);
     }
@@ -276,8 +281,11 @@ static auto checkVisualStudioVersion(PWSTR basePath, const std::wstring &version
     if (std::filesystem::exists(versionPath)) {
         extraPath.name = "MSVC " + wstringToString(version);
         extraPath.compiler_path = wstringToString(versionPath);
-        extraPath.comment = "@rem VS " + wstringToString(version);
-        extraPath.command = "call %1\\VC\\Auxiliary\\Build\\vcvarsall.bat";
+        extraPath.comment = "rem VS " + wstringToString(version);
+        // "call" runs vcvarsall.bat in this same cmd.exe, so the resulting
+        // environment persists for the whole kit without spawning a subprocess.
+        extraPath.command =
+            "call \"%1\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 -vcvars_ver=14.44";
         extraPath.toolchain = KitDetector::Toolchain::MSVC;
         KitDetector::replaceAll(extraPath.command, "%1", versionPath.string());
         return true;
@@ -327,8 +335,8 @@ static auto findCompilerToolsWindows(std::vector<KitDetector::ExtraPath> &detect
         auto extraPath = KitDetector::ExtraPath();
         extraPath.name = "CMake";
         extraPath.compiler_path = (std::filesystem::path(programFiles) / "CMake" / "bin").string();
-        extraPath.comment = "@rem Found CMake";
-        extraPath.command = "set PATH=" + extraPath.compiler_path + ";%PATH%";
+        extraPath.comment = "rem Found CMake";
+        extraPath.command = "set \"PATH=" + extraPath.compiler_path + ";%PATH%\"";
         detected.push_back(extraPath);
     }
 
@@ -339,8 +347,8 @@ static auto findCompilerToolsWindows(std::vector<KitDetector::ExtraPath> &detect
         extraPath.name = "CMake (x86)";
         extraPath.compiler_path =
             (std::filesystem::path(programFiles86) / "CMake" / "bin").string();
-        extraPath.comment = "@rem Found CMake (x86)";
-        extraPath.command = "set PATH=" + extraPath.compiler_path + ";%PATH%";
+        extraPath.comment = "rem Found CMake (x86)";
+        extraPath.command = "set \"PATH=" + extraPath.compiler_path + ";%PATH%\"";
         detected.push_back(extraPath);
     }
 }
@@ -410,9 +418,9 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
             extraPath.compiler_path = full_path.string();
             extraPath.toolchain = toolchain;
             extraPath.comment = unix_target ? "# detected " + full_path.string()
-                                            : "@rem detected " + full_path.string();
+                                            : "rem detected " + full_path.string();
             extraPath.command += unix_target ? "export CC=" + cc + "\nexport CXX=" + cxx
-                                             : "SET CC=" + cc + "\nSET CXX=" + cxx;
+                                             : "set \"CC=" + cc + "\"\nset \"CXX=" + cxx + "\"";
             detected.push_back(extraPath);
         });
     }
@@ -436,9 +444,9 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
         extraPath.compiler_path = full_path.string();
         extraPath.toolchain = toolchain;
         extraPath.comment = unix_target ? "# detected " + full_path.string()
-                                        : "@rem detected " + full_path.string();
+                                        : "rem detected " + full_path.string();
         extraPath.command += unix_target ? "export CC=" + cc + "\nexport CXX=" + cxx
-                                         : "SET CC=" + cc + "\nSET CXX=" + cxx;
+                                          : "set \"CC=" + cc + "\"\nset \"CXX=" + cxx + "\"";
         detected.push_back(extraPath);
     });
 }
@@ -570,14 +578,14 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
             extraPath.command += "  export LD_LIBRARY_PATH=\"$QT6_DIR/lib:$LD_LIBRARY_PATH\"\n";
             extraPath.command += "fi\n";
         } else {
-            extraPath.comment = "@REM qt installation";
-            extraPath.command = "SET QTDIR=%1\n";
-            extraPath.command += "SET QT_DIR=%1\n";
-            extraPath.command += "SET QT6_DIR=%1\n\n";
+            extraPath.comment = "rem qt installation";
+            extraPath.command = "set \"QTDIR=%1\"\n";
+            extraPath.command += "set \"QT_DIR=%1\"\n";
+            extraPath.command += "set \"QT6_DIR=%1\"\n\n";
             // Note that on windows, the DLLs are in the bin directory, so we need to add
             // that directory to the path, unlike unix - which needs LD_LIBRARY_PATH
-            extraPath.command += "@REM lets add qt to the path\n";
-            extraPath.command += "SET PATH=%QT6_DIR%\\bin;%PATH%\n";
+            extraPath.command += "rem lets add qt to the path\n";
+            extraPath.command += "set \"PATH=%QT6_DIR%\\bin;%PATH%\"\n";
         }
         replaceAll(extraPath.command, "%1", dir);
         replaceAll(extraPath.comment, "%1", dir);
@@ -618,13 +626,13 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
                 extraPath.command += "export MINGW_DIR=%1\n";
                 extraPath.command += "export PATH=\"${PATH};${MINGW_DIR}/bin\n";
             } else {
-                extraPath.comment = "@rem MingW installation from Qt (*)";
-                extraPath.command += "set MINGW_DIR=%1\n";
-                extraPath.command += "set PATH=%PATH%;%MINGW_DIR%\\bin\n";
-                extraPath.command += "set CC=x86_64-w64-mingw32-gcc.exe\n";
-                extraPath.command += "set CXX=x86_64-w64-mingw32-g++.exe\n";
-                extraPath.command += "set CMAKE_GENERATOR=MinGW Makefiles\n";
-                extraPath.command += "set CMAKE_MAKE_PROGRAM=mingw32-make.exe\n";
+                extraPath.comment = "rem MingW installation from Qt (*)";
+                extraPath.command += "set \"MINGW_DIR=%1\"\n";
+                extraPath.command += "set \"PATH=%PATH%;%MINGW_DIR%\\bin\"\n";
+                extraPath.command += "set \"CC=x86_64-w64-mingw32-gcc.exe\"\n";
+                extraPath.command += "set \"CXX=x86_64-w64-mingw32-g++.exe\"\n";
+                extraPath.command += "set \"CMAKE_GENERATOR=MinGW Makefiles\"\n";
+                extraPath.command += "set \"CMAKE_MAKE_PROGRAM=mingw32-make.exe\"\n";
             }
             replaceAll(extraPath.command, "%1", subEntry.path().string());
             detectedCompilers.push_back(extraPath);
