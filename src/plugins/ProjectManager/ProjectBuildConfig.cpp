@@ -263,32 +263,32 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
     value->hideFilter = ".git;.vscode;.vs;cbuild;dist;out;build";
     value->buildDir = QString("${source_directory}%1cbuild").arg(QDir::separator());
 
+    // The query file is what makes CMake answer the file API, and we are the ones
+    // who have to create it - CMake only produces the reply/ side. "cmake -E" does
+    // both steps the same way everywhere, so one command list serves every platform.
+    // Note also the clang format thingie, the lines are too long and then are separated
+    // which makes reading the command very hard.
+    auto cmakeMakeQueryDir = R"(cmake -E make_directory "${build_directory}/.cmake/api/v1/query")";
+    auto cmakeTouchCodeModel =
+        R"(cmake -E touch "${build_directory}/.cmake/api/v1/query/codemodel-v2")";
+    auto cmakeConfigure =
+        QString(R"(cmake -S "${source_directory}" -B "${build_directory}" )"
+                R"(-G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=%1)");
+
+    // a chain of 3 command that builds the project.
+    auto cmakeConfigureDebug =
+        QStringList{cmakeMakeQueryDir, cmakeTouchCodeModel, cmakeConfigure.arg("Debug")};
+    auto cmakeConfigureRelease =
+        QStringList{cmakeMakeQueryDir, cmakeTouchCodeModel, cmakeConfigure.arg("Release")};
+
     // Debug configuration
     {
         auto t = TaskInfo();
         t.name = "CMake (configure/Debug)";
-        t.tooltip = "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Debug";
-        t.commands.insert(
-            PLATFORM_LINUX,
-            {"mkdir -p ${build_directory}/.cmake/api/v1/query/",
-             "touch ${build_directory}/.cmake/api/v1/query/codemodel-v2",
-             "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Debug"});
-
-        // Why not running the commands directly on this shell instead of spawning a new one?
-        // Great question! This is because commands may fail, and I don't want them to kill the
-        // build system, and I cannot use "| rem" easily.
-        // Note also the clang format thingie, the lines are too long and then are separated
-        // which makes reading the command very hard.
-
-        // clang-format off
-        t.commands.insert(
-            PLATFORM_WINDOWS, {
-                "cmd /c \"mkdir \"${build_directory}\\.cmake\\api\\v1\\query\" >nul 2>nul || rem\"",
-                "cmd /c \"type nul > \"${build_directory}\\.cmake\\api\\v1\\query\\codemodel-v2\" || rem\"",
-                "cmake -S \"${source_directory}\" -B \"${build_directory}\" -DCMAKE_BUILD_TYPE=Debug"
-            });
-        // clang-format on
-
+        t.tooltip =
+            "cmake -S \"${source_directory}\" -B \"${build_directory}\" -DCMAKE_BUILD_TYPE=Debug";
+        t.commands.insert(PLATFORM_LINUX, cmakeConfigureDebug);
+        t.commands.insert(PLATFORM_WINDOWS, cmakeConfigureDebug);
         t.runDirectory = "${source_directory}";
         t.isBuild = true;
         value->tasksInfo.push_back(t);
@@ -298,21 +298,10 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
     {
         auto t = TaskInfo();
         t.name = "CMake (configure/Release)";
-        t.tooltip = "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Release";
-        t.commands.insert(
-            PLATFORM_LINUX,
-            {"mkdir -p ${build_directory}/.cmake/api/v1/query/",
-             "touch ${build_directory}/.cmake/api/v1/query/codemodel-v2",
-             "cmake -S ${source_directory} -B ${build_directory} -DCMAKE_BUILD_TYPE=Release"});
-
-        // clang-format off
-        t.commands.insert(
-            PLATFORM_WINDOWS, {
-                "cmd /c \"mkdir \"${build_directory}\\.cmake\\api\\v1\\query\" >nul 2>nul || rem\"",
-                "cmd /c \"type nul > \"${build_directory}\\.cmake\\api\\v1\\query\\codemodel-v2\" || rem\"",
-                "cmake -S \"${source_directory}\" -B \"${build_directory}\" -DCMAKE_BUILD_TYPE=Release"
-            });
-        // clang-format on
+        t.tooltip =
+            "cmake -S \"${source_directory}\" -B \"${build_directory}\" -DCMAKE_BUILD_TYPE=Release";
+        t.commands.insert(PLATFORM_LINUX, cmakeConfigureRelease);
+        t.commands.insert(PLATFORM_WINDOWS, cmakeConfigureRelease);
         t.runDirectory = "${source_directory}";
         t.isBuild = true;
         value->tasksInfo.push_back(t);
@@ -368,7 +357,8 @@ auto ProjectBuildConfig::tryGuessFromCargo(const QString &fileName)
     auto cargoUpdate = "cargo update";
     auto cargoClean = "cargo clean";
     auto cargoListPackages =
-        "(cargo metadata --format-version=1 --no-deps > ${build_directory}/cargo-metadata.json)";
+        "cmake -E make_directory \"${build_directory}\" && "
+        "cargo metadata --format-version=1 --no-deps > \"${build_directory}/cargo-metadata.json\"";
 
     {
         auto t = TaskInfo();
