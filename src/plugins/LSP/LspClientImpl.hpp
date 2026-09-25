@@ -139,6 +139,11 @@ class LspClientImpl {
     std::unique_ptr<lsp::MessageHandler> m_messageHandler;
 
     std::thread m_readerThread;
+    // Nothing in lsp-framework reads the server's stderr, so a chatty clangd fills
+    // that pipe, blocks on the write, and stops reading stdin. Our next didChange
+    // then blocks in WriteFile on the UI thread and the whole IDE deadlocks. This
+    // thread is the drain that keeps that from happening.
+    std::thread m_stderrThread;
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_ready{false};
 
