@@ -268,9 +268,11 @@ auto ProjectBuildConfig::tryGuessFromCMake(const QString &fileName)
     // both steps the same way everywhere, so one command list serves every platform.
     // Note also the clang format thingie, the lines are too long and then are separated
     // which makes reading the command very hard.
-    auto cmakeMakeQueryDir = R"(cmake -E make_directory "${build_directory}/.cmake/api/v1/query")";
+    auto cmakeMakeQueryDir = QString("cmake -E make_directory \"${build_directory}%1\"")
+                                 .arg(QDir::toNativeSeparators("/.cmake/api/v1/query"));
     auto cmakeTouchCodeModel =
-        R"(cmake -E touch "${build_directory}/.cmake/api/v1/query/codemodel-v2")";
+        QString("cmake -E touch \"${build_directory}%1\"")
+            .arg(QDir::toNativeSeparators("/.cmake/api/v1/query/codemodel-v2"));
     auto cmakeConfigure =
         QString(R"(cmake -S "${source_directory}" -B "${build_directory}" )"
                 R"(-G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=%1)");

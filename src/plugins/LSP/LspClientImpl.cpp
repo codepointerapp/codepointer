@@ -216,6 +216,27 @@ void LspClientImpl::startServer(const std::string &executable,
         }
         m_running = false;
     });
+
+    // Nothing else drains the server's stderr, so it has to happen here or a chatty
+    // clangd fills that pipe, blocks on the write, and stops reading stdin - after
+    // which the next didChange blocks in WriteFile on the UI thread and the IDE
+    // deadlocks. Verified with a hung-process dump: UI thread in Process::Impl::write
+    // and clangd simultaneously in its own WriteFile, neither able to proceed.
+    m_stderrThread = std::thread([this]() {
+        while (m_running.load()) {
+            try {
+                if (m_process) {
+                    auto const out = m_process->readAvailableStdErr();
+                    if (!out.empty()) {
+                        trace("[stderr] " + out);
+                    }
+                }
+            } catch (const std::exception &) {
+                break; // pipe is gone, the server is on its way out
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    });
 }
 
 void LspClientImpl::stopServer() {
@@ -232,6 +253,10 @@ void LspClientImpl::stopServer() {
     m_running = false;
     if (m_readerThread.joinable()) {
         m_readerThread.join();
+    }
+    // Must join before m_process.reset() below - the drain thread dereferences it.
+    if (m_stderrThread.joinable()) {
+        m_stderrThread.join();
     }
     m_messageHandler.reset();
     m_connection.reset();
