@@ -33,6 +33,13 @@ auto fileUriFromPath(const std::string &path) -> lsp::Uri {
     return uri;
 }
 
+auto filePathFromUri(const lsp::Uri &uri) -> std::string {
+    if (uri.isFileUri()) {
+        return uri.fsPath();
+    }
+    return std::string(uri.path());
+}
+
 auto markedStringToText(const lsp::MarkedString &marked) -> std::string {
     if (std::holds_alternative<lsp::String>(marked)) {
         return std::get<lsp::String>(marked);
@@ -156,10 +163,10 @@ void LspClientImpl::startServer(const std::string &executable,
 
     m_messageHandler->on<lsp::notifications::TextDocumentPublishDiagnostics>(
         [this](lsp::notifications::TextDocumentPublishDiagnostics::Params &&params) {
-            trace("<-- publishDiagnostics " + std::string(params.uri.path()) + " (" +
+            trace("<-- publishDiagnostics " + filePathFromUri(params.uri) + " (" +
                   std::to_string(params.diagnostics.size()) + ")");
             if (m_diagnosticsCallback) {
-                m_diagnosticsCallback(std::string(params.uri.path()), params.diagnostics);
+                m_diagnosticsCallback(filePathFromUri(params.uri), params.diagnostics);
             }
         });
 
@@ -413,7 +420,7 @@ void LspClientImpl::requestDefinition(const std::string &fileName, uint line, ui
         [this, callback](lsp::requests::TextDocumentDefinition::Result &&result) {
             auto out = std::vector<Location>();
             auto addLocation = [&out](const lsp::Location &location) {
-                out.push_back(Location{std::string(location.uri.path()),
+                out.push_back(Location{filePathFromUri(location.uri),
                                        static_cast<int>(location.range.start.line),
                                        static_cast<int>(location.range.start.character)});
             };
@@ -433,7 +440,7 @@ void LspClientImpl::requestDefinition(const std::string &fileName, uint line, ui
                     // LocationLink form: the target range is what we want to jump to.
                     for (auto const &link : result.get<lsp::Array<lsp::DefinitionLink>>()) {
                         out.push_back(
-                            Location{std::string(link.targetUri.path()),
+                            Location{filePathFromUri(link.targetUri),
                                      static_cast<int>(link.targetSelectionRange.start.line),
                                      static_cast<int>(link.targetSelectionRange.start.character)});
                     }
@@ -463,7 +470,7 @@ std::vector<LspClientImpl::TextEdit> LspClientImpl::flatten(const lsp::Workspace
 
     if (edit.changes.has_value()) {
         for (auto const &[uri, edits] : *edit.changes) {
-            auto path = std::string(uri.path());
+            auto path = filePathFromUri(uri);
             for (auto const &textEdit : edits) {
                 append(path, textEdit);
             }
@@ -476,7 +483,7 @@ std::vector<LspClientImpl::TextEdit> LspClientImpl::flatten(const lsp::Workspace
                 continue; // create/rename/delete file - not supported yet
             }
             auto const &documentEdit = std::get<lsp::TextDocumentEdit>(change);
-            auto path = std::string(documentEdit.textDocument.uri.path());
+            auto path = filePathFromUri(documentEdit.textDocument.uri);
             for (auto const &one : documentEdit.edits) {
                 if (std::holds_alternative<lsp::TextEdit>(one)) {
                     append(path, std::get<lsp::TextEdit>(one));

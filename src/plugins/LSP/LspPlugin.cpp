@@ -262,7 +262,8 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
     connect(this, &LspPlugin::diagnosticsReady, this, &LspPlugin::applyDiagnostics);
     connect(manager, &PluginManager::newClientAdded, this, [this](qmdiClient *client) {
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
-            applyDiagnostics(QFileInfo(editor->mdiClientFileName()).absoluteFilePath());
+            applyDiagnostics(
+                QDir::toNativeSeparators(QFileInfo(editor->mdiClientFileName()).absoluteFilePath()));
         }
 
         // Deferred: the editor's content is loaded after the client is added, so
@@ -361,10 +362,11 @@ int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits) {
     for (auto it = byFile.begin(); it != byFile.end(); ++it) {
         // Edits may land in files that are not open; open them so the change is
         // visible and undoable rather than rewriting them behind the user's back.
-        manager->openFile(QDir::toNativeSeparators(it.key()));
-        auto editor = dynamic_cast<qmdiEditor *>(manager->clientForFileName(it.key()));
+        auto fileName = QDir::toNativeSeparators(QFileInfo(it.key()).absoluteFilePath());
+        manager->openFile(fileName);
+        auto editor = dynamic_cast<qmdiEditor *>(manager->clientForFileName(fileName));
         if (!editor) {
-            qWarning() << "LspPlugin: cannot apply edits, could not open" << it.key();
+            qWarning() << "LspPlugin: cannot apply edits, could not open" << fileName;
             continue;
         }
 
@@ -867,7 +869,8 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
         });
         client->setDiagnosticsCallback(
             [this](const std::string &file, const std::vector<lsp::Diagnostic> &items) {
-                auto fileName = QFileInfo(QString::fromStdString(file)).absoluteFilePath();
+                auto fileName = QDir::toNativeSeparators(
+                    QFileInfo(QString::fromStdString(file)).absoluteFilePath());
                 auto converted = QList<Diagnostic>();
                 converted.reserve(static_cast<int>(items.size()));
                 for (auto const &item : items) {
