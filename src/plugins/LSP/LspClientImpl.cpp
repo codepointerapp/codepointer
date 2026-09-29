@@ -587,7 +587,7 @@ void LspClientImpl::requestCodeActions(const std::string &fileName, uint startLi
 void LspClientImpl::requestRename(const std::string &fileName, uint line, uint column,
                                   const std::string &newName, RenameCallback callback) {
     if (!m_ready.load()) {
-        callback({});
+        callback({}, {});
         return;
     }
 
@@ -601,12 +601,18 @@ void LspClientImpl::requestRename(const std::string &fileName, uint line, uint c
         std::move(params),
         [this, callback](lsp::requests::TextDocumentRename::Result &&result) {
             auto edits = result.isNull() ? std::vector<TextEdit>() : flatten(*result);
-            trace("<-- rename result (" + std::to_string(edits.size()) + " edits)");
-            callback(std::move(edits));
+            std::string detail;
+            for (auto const &e : edits) {
+                detail += "\n    " + e.file + ":" + std::to_string(e.startLine) + ":" +
+                          std::to_string(e.startCharacter) + "-" + std::to_string(e.endLine) + ":" +
+                          std::to_string(e.endCharacter) + " => [" + e.newText + "]";
+            }
+            trace("<-- rename result (" + std::to_string(edits.size()) + " edits)" + detail);
+            callback(std::move(edits), {});
         },
         [callback](const lsp::ResponseError &error) {
             std::cerr << "LspClientImpl: rename failed: " << error.what() << std::endl;
-            callback({});
+            callback({}, error.what());
         });
 }
 

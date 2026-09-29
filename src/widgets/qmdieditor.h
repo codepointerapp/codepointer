@@ -26,6 +26,7 @@
 class QFileSystemWatcher;
 class QPushButton;
 class QComboBox;
+class QLineEdit;
 
 class TextPreview;
 class TextOperationsWidget;
@@ -254,6 +255,27 @@ class qmdiEditor : public QWidget, public qmdiClient {
     /// True when the caret is directly inside the argument list of a call.
     bool isInsideCall() const;
 
+    /// Opens an inline edit box over the symbol at `position` (the point the
+    /// context menu was opened at, since a right-click does not move the caret),
+    /// pre-filled with its current name. Accepting it sends
+    /// GlobalCommands::RenameSymbol and shows any message the plugin returns in
+    /// the banner; Escape or losing focus discards it.
+    void requestRename(const QPoint &position);
+    /// Sends the rename with the name the inline box collected. `line` and
+    /// `column` are the 0-based position of the symbol being renamed.
+    void applyInlineRename(const QString &newName, int line, int column, const QString &content);
+    /// Takes the name currently in the inline box, takes the box down, and sends
+    /// the rename. Driven from the key filter rather than returnPressed() so the
+    /// key that commits can also be consumed, and so it cannot reach the editor
+    /// underneath as a newline.
+    void commitInlineRename();
+    /// Re-anchors the inline box clear of the symbol it was opened on - above it
+    /// when there is room, below it otherwise - and hides it if the symbol is no
+    /// longer in the document.
+    void repositionInlineRename();
+    /// Takes down the inline box without sending anything.
+    void hideInlineRename();
+
   private:
     QString getShortFileName();
     void showContextMenu(const QPoint &localPosition, const QPoint &globalPosition);
@@ -271,6 +293,14 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QFileSystemWatcher *fileSystemWatcher;
     QWidget *banner;
     Ui::BannerMessage *ui_banner;
+    /// Frameless line edit drawn on the viewport over the symbol being renamed,
+    /// so the name is typed where the symbol is instead of in a dialog. Null
+    /// until the first rename, then kept and reused.
+    QLineEdit *renameEdit = nullptr;
+    /// The 0-based position of the symbol `renameEdit` was opened on, so a late
+    /// commit still names the right place even if the text has not moved.
+    int renameLine = -1;
+    int renameColumn = -1;
     int m_timerHideout;
     bool fileModifications = true;
     QTimer *loadingTimer = nullptr;
