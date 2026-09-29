@@ -376,6 +376,37 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
         staticLabel->setText(QString("%1:%2").arg(line).arg(column));
     });
 
+    // LSP signature help: qutepart hides the call tip on any caret move or text
+    // edit, so retrigger while the caret stays inside a call's argument list and
+    // re-show the tip once the server answers.
+    signatureHelpTimer = new QTimer(this);
+    signatureHelpTimer->setSingleShot(true);
+    signatureHelpTimer->setInterval(400);
+    connect(signatureHelpTimer, &QTimer::timeout, this, &qmdiEditor::requestSignatureHelp);
+    connect(&signatureHelpWatcher, &QFutureWatcher<CommandArgs>::finished, this, [this]() {
+        if (signatureHelpWatcher.isCanceled()) {
+            return;
+        }
+        auto tooltip = signatureHelpWatcher.result()[GlobalArguments::Tooltip].toString();
+        // The tip is hidden here and on cursor moves by qutepart; re-check the
+        // caret to make sure a late reply does not pop a tip outside a call.
+        if (tooltip.isEmpty() || !isInsideCall()) {
+            signatureHelpActive = false;
+            textEditor->hideCallTip();
+            return;
+        }
+        signatureHelpActive = true;
+        if (textEditor->isCallTipVisible()) {
+            textEditor->updateCallTip(tooltip);
+        } else {
+            textEditor->showCallTip(tooltip);
+        }
+    });
+    connect(textEditor, &QPlainTextEdit::textChanged, this,
+            [this]() { maybeScheduleSignatureHelp(true); });
+    connect(textEditor, &QPlainTextEdit::cursorPositionChanged, this,
+            [this]() { maybeScheduleSignatureHelp(false); });
+
     connect(fileSystemWatcher, &QFileSystemWatcher::fileChanged, this, &qmdiEditor::on_fileChanged);
     fileModifications = true;
 
@@ -1399,6 +1430,114 @@ QFuture<CommandArgs> qmdiEditor::getSuggestionsForCurrentWord(const QPoint &loca
 
 QFuture<CommandArgs> qmdiEditor::getTooltipsForPosition(const QPoint &localPosition) {
     return getCommandForLocation(localPosition, GlobalCommands::KeywordTooltip);
+}
+
+void qmdiEditor::maybeScheduleSignatureHelp(bool textEdited) {
+    if (!isInsideCall()) {
+        signatureHelpTimer->stop();
+        signatureHelpActive = false;
+        return;
+    }
+    // A plain caret move is not reason enough to ask the server again for text
+    // it has already answered for: only retrigger while a tip is expected. Text
+    // edits inside a call always re-ask, because the active parameter moved.
+    if (!signatureHelpActive && !textEdited) {
+        return;
+    }
+    signatureHelpActive = true;
+    signatureHelpTimer->start();
+}
+
+bool qmdiEditor::isInsideCall() const {
+    auto document = textEditor->document();
+    if (!document) {
+        return false;
+    }
+    auto caret = textEditor->textCursor().position();
+
+    // Walk backwards, tracking parenthesis depth, until the '(' that encloses
+    // the caret or a statement boundary. Stop after a generous amount of text so
+    // a pathological one-line statement cannot turn every keystroke into a
+    // full-document sweep.
+    auto depth = 0;
+    auto openParen = -1;
+    auto const textStart = qMax(0, caret - 2048);
+    for (int i = caret - 1; i >= textStart; --i) {
+        auto ch = document->characterAt(i);
+        if (ch == QLatin1Char(')')) {
+            ++depth;
+        } else if (ch == QLatin1Char('(')) {
+            if (depth == 0) {
+                openParen = i;
+                break;
+            }
+            --depth;
+        } else if (ch == QLatin1Char(';') || ch == QLatin1Char('{') || ch == QLatin1Char('}')) {
+            break;
+        }
+    }
+    if (openParen < 0) {
+        return false;
+    }
+
+    // The '(' must belong to a call: preceded by a function name (possibly after
+    // whitespace) or by a closing paren of a nested call. Statement keywords are
+    // excluded so "if (...)" and friends do not ask the server for a signature.
+    auto k = openParen - 1;
+    while (k >= 0 && document->characterAt(k).isSpace()) {
+        --k;
+    }
+    if (k < 0) {
+        return false;
+    }
+    // A closing paren (chained call) or a template argument list ("foo<T>(")
+    // may stand directly before the '('.
+    if (document->characterAt(k) == QLatin1Char(')') ||
+        document->characterAt(k) == QLatin1Char('>')) {
+        return true;
+    }
+    if (!document->characterAt(k).isLetter() && document->characterAt(k) != QLatin1Char('_')) {
+        return false;
+    }
+    auto wordStart = k;
+    while (wordStart > 0 && (document->characterAt(wordStart - 1).isLetter() ||
+                             document->characterAt(wordStart - 1) == QLatin1Char('_'))) {
+        --wordStart;
+    }
+    QString word;
+    word.reserve(k - wordStart + 1);
+    for (auto i = wordStart; i <= k; ++i) {
+        word.append(document->characterAt(i));
+    }
+    // FIXME: get the list from the highlighter. See
+    // https://github.com/diegoiast/qutepart-cpp/issues/78
+    static const QSet<QString> controlKeywords = {
+        QStringLiteral("if"),     QStringLiteral("for"),     QStringLiteral("while"),
+        QStringLiteral("switch"), QStringLiteral("catch"),   QStringLiteral("do"),
+        QStringLiteral("return"), QStringLiteral("foreach"),
+    };
+    return !controlKeywords.contains(word);
+}
+
+void qmdiEditor::requestSignatureHelp() {
+    if (!mdiServer || !mdiServer->mdiHost) {
+        return;
+    }
+    auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    if (!pluginManager) {
+        return;
+    }
+    auto cursor = textEditor->textCursor();
+    auto line = cursor.blockNumber();
+    auto column = cursor.position() - cursor.block().position();
+    // clang-format off
+    signatureHelpWatcher.setFuture(pluginManager->handleCommandAsync(GlobalCommands::SignatureHelp, {
+        {GlobalArguments::FileName, mdiClientFileName()},
+        {GlobalArguments::LineNumber, line},
+        {GlobalArguments::ColumnNumber, column},
+        {GlobalArguments::Content, textEditor->toPlainText()},
+    }));
+    // clang-format on
 }
 
 void qmdiEditor::displayBannerMessage(QString message, int time) {
