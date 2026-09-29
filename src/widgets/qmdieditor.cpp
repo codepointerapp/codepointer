@@ -57,6 +57,7 @@
 #include "GlobalCommands.hpp"
 #include "plugins/texteditor/thememanager.h"
 #include "widgets/BoldItemDelegate.hpp"
+#include "widgets/lsp_rename_geometry.h"
 #include "widgets/qmdieditor.h"
 #include "widgets/textoperationswidget.h"
 #include "widgets/textpreview.h"
@@ -145,27 +146,6 @@ auto static getLineEnding(QIODevice &stream, const QString &defaultLineEnding) -
     }
     stream.seek(pos);
     return ending;
-}
-
-/// The identifier (letters, digits, underscores) spanning the 0-based
-/// (line, column) in `text`, or empty when the column is not over one. Used to
-/// pre-fill the rename dialog with the symbol's current name.
-static QString identifierAt(const QString &text, int line, int column) {
-    auto lines = text.split(QChar::LineFeed);
-    if (line < 0 || line >= lines.size() || column < 0 || column > lines.at(line).size()) {
-        return {};
-    }
-    auto const &s = lines.at(line);
-    auto isIdent = [](QChar c) { return c.isLetterOrNumber() || c == QChar('_'); };
-    auto start = column;
-    while (start > 0 && isIdent(s.at(start - 1))) {
-        --start;
-    }
-    auto end = column;
-    while (end < s.size() && isIdent(s.at(end))) {
-        ++end;
-    }
-    return s.mid(start, end - start);
 }
 
 static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
@@ -1175,34 +1155,18 @@ bool qmdiEditor::applyTextEdits(const QList<TextEdit> &edits) {
     if (edits.isEmpty()) {
         return false;
     }
-    auto document = textEditor->document();
 
-    auto positionOf = [document](int line, int character) -> int {
-        auto block = document->findBlockByNumber(line);
-        if (!block.isValid()) {
-            return -1;
-        }
-        // Clamp: a server range may sit one past the end of a line.
-        return block.position() + qMin(character, block.length() - 1);
-    };
-
-    auto cursor = QTextCursor(document);
-    cursor.beginEditBlock();
-    {
-        PlainTextEditStateGuard guard(textEditor);
-        for (auto const &edit : edits) {
-            auto from = positionOf(edit.startLine, edit.startCharacter);
-            auto to = positionOf(edit.endLine, edit.endCharacter);
-            if (from < 0 || to < 0 || to < from) {
-                qWarning() << "qmdiEditor: skipping out-of-range edit at line" << edit.startLine;
-                continue;
-            }
-            cursor.setPosition(from);
-            cursor.setPosition(to, QTextCursor::KeepAnchor);
-            cursor.insertText(edit.newText);
-        }
+    // The mapping and the application live in lspRename so they can be tested
+    // without a widget; the state guard is the only part that needs the editor.
+    auto converted = QList<lspRename::Edit>();
+    converted.reserve(edits.size());
+    for (auto const &edit : edits) {
+        converted.append(lspRename::Edit{edit.startLine, edit.startCharacter, edit.endLine,
+                                         edit.endCharacter, edit.newText});
     }
-    cursor.endEditBlock();
+
+    PlainTextEditStateGuard guard(textEditor);
+    lspRename::applyEdits(textEditor->document(), converted);
     return true;
 }
 
@@ -1608,7 +1572,7 @@ void qmdiEditor::requestRename(const QPoint &position) {
     auto cursor = textEditor->cursorForPosition(position);
     auto line = cursor.blockNumber();
     auto column = cursor.position() - cursor.block().position();
-    auto currentName = identifierAt(textEditor->toPlainText(), line, column);
+    auto currentName = lspRename::identifierAt(textEditor->toPlainText(), line, column);
     if (currentName.isEmpty()) {
         displayBannerMessage(tr("There is no symbol to rename here."), 60);
         return;
@@ -1765,7 +1729,7 @@ void qmdiEditor::applyInlineRename(const QString &newName, int line, int column,
     if (newName.isEmpty()) {
         return;
     }
-    if (newName == identifierAt(content, line, column)) {
+    if (newName == lspRename::identifierAt(content, line, column)) {
         // Nothing to ask the server to do.
         return;
     }
