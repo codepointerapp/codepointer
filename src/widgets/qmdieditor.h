@@ -9,6 +9,7 @@
 #pragma once
 
 #include <QFuture>
+#include <QFutureWatcher>
 #include <QMap>
 #include <QStyledItemDelegate>
 #include <QToolButton>
@@ -238,6 +239,21 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QFuture<QSet<Qutepart::CompletionItem>>
     getTagCompletions(const QString &prefix, const QString &previousWord, const QString &separator);
 
+    /// Called on text edits and cursor moves. Restarts the debounce timer while
+    /// the caret sits inside a function call's argument list, so LSP signature
+    /// help keeps the call tip current as arguments are typed. The `textEdited`
+    /// flag distinguishes the two sources: typing inside a call always re-asks
+    /// (the active parameter may have changed); a plain cursor move only
+    /// re-asks while a call tip is already expected, so scrolling or moving the
+    /// caret through the argument list with the keyboard does not make the
+    /// server re-answer for text it has already seen.
+    void maybeScheduleSignatureHelp(bool textEdited);
+    /// Sends GlobalCommands::SignatureHelp for the caret position and shows the
+    /// returned tooltip as a qutepart call tip.
+    void requestSignatureHelp();
+    /// True when the caret is directly inside the argument list of a call.
+    bool isInsideCall() const;
+
   private:
     QString getShortFileName();
     void showContextMenu(const QPoint &localPosition, const QPoint &globalPosition);
@@ -328,5 +344,13 @@ class qmdiEditor : public QWidget, public qmdiClient {
     } diffMetadata;
 
     QTimer *autoSaveTimer = nullptr;
+    // Debounces signature-help requests while the caret is inside a function call.
+    QTimer *signatureHelpTimer = nullptr;
+    QFutureWatcher<CommandArgs> signatureHelpWatcher;
+    // True while a call tip is expected: cleared when the caret leaves a call.
+    // Plain cursor moves only retrigger while this is set, so moving through an
+    // argument list refreshes an open tip without asking the server about text
+    // it has already seen.
+    bool signatureHelpActive = false;
     QString uid;
 };

@@ -634,3 +634,33 @@ void LspClientImpl::requestHover(const std::string &fileName, uint line, uint co
             callback({});
         });
 }
+
+void LspClientImpl::requestSignatureHelp(const std::string &fileName, uint line, uint column,
+                                         SignatureHelpCallback callback) {
+    if (!m_ready.load()) {
+        callback({});
+        return;
+    }
+
+    auto params = lsp::requests::TextDocumentSignatureHelp::Params{};
+    params.textDocument.uri = fileUriFromPath(fileName);
+    params.position = {.line = line, .character = column};
+
+    trace("--> signatureHelp " + fileName + ":" + std::to_string(line) + ":" +
+          std::to_string(column));
+    m_messageHandler->sendRequest<lsp::requests::TextDocumentSignatureHelp>(
+        std::move(params),
+        [this, callback](lsp::requests::TextDocumentSignatureHelp::Result &&result) {
+            auto help = lsp::SignatureHelp{};
+            if (!result.isNull()) {
+                help = *result;
+            }
+            trace("<-- signatureHelp result (" + std::to_string(help.signatures.size()) +
+                  " signatures)");
+            callback(std::move(help));
+        },
+        [callback](const lsp::ResponseError &error) {
+            std::cerr << "LspClientImpl: signatureHelp failed: " << error.what() << std::endl;
+            callback({});
+        });
+}
