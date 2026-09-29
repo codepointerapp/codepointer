@@ -50,7 +50,11 @@ class LspClientImpl {
     };
 
     using CodeActionCallback = std::function<void(std::vector<CodeAction>)>;
-    using RenameCallback = std::function<void(std::vector<TextEdit>)>;
+    // Receives the server's rename edits and, when the server answered with an
+    // error response, a non-empty message describing it (e.g. "no identifier at
+    // the requested location").
+    using RenameCallback =
+        std::function<void(std::vector<TextEdit> edits, const std::string &serverError)>;
     using DiagnosticsCallback =
         std::function<void(const std::string &, const std::vector<lsp::Diagnostic> &)>;
 
