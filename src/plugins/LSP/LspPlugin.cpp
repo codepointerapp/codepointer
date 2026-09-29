@@ -1,4 +1,5 @@
 #include <atomic>
+#include <cstddef>
 #include <memory>
 
 #include <QAction>
@@ -15,9 +16,12 @@
 #include <QMutexLocker>
 #include <QPromise>
 #include <QStandardPaths>
+#include <QString>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTimer>
+
+#include <lsp/messages.h>
 
 #include "GlobalCommands.hpp"
 #include "LspClientImpl.hpp"
@@ -196,6 +200,61 @@ auto expandArguments(const QStringList &arguments, const QString &sourceDir,
     return out;
 }
 
+/// Renders LSP signature help for the call tip widget: the active signature with
+/// its active parameter highlighted. Plain text is HTML-escaped; when the server
+/// reports parameter label offsets (UTF-16) within the signature label, those get
+/// <b> markers instead of a substring search. Returns an empty string when there
+/// is nothing to show.
+QString renderSignatureHelp(const lsp::SignatureHelp &help) {
+    if (help.signatures.empty()) {
+        return {};
+    }
+
+    auto active = help.activeSignature.has_value() ? static_cast<std::size_t>(*help.activeSignature)
+                                                   : std::size_t{0};
+    if (active >= help.signatures.size()) {
+        active = 0;
+    }
+    auto const &signature = help.signatures[active];
+    auto signatureLabel = QString::fromStdString(signature.label);
+
+    // The server names the active parameter per signature in 3.16+, falling back
+    // to the help-wide activeParameter. Both are null when nothing is active.
+    auto activeParameter = -1;
+    if (signature.activeParameter.has_value() && !signature.activeParameter->isNull()) {
+        activeParameter = static_cast<int>(**signature.activeParameter);
+    } else if (help.activeParameter.has_value() && !help.activeParameter->isNull()) {
+        activeParameter = static_cast<int>(**help.activeParameter);
+    }
+
+    // Resolve the active parameter to a [start, end) span of signatureLabel in
+    // UTF-16 code units, which is what QString indices are.
+    auto spanStart = -1;
+    auto spanEnd = -1;
+    if (signature.parameters.has_value() && activeParameter >= 0 &&
+        activeParameter < static_cast<int>(signature.parameters->size())) {
+        auto const &label = (*signature.parameters)[activeParameter].label;
+        if (std::holds_alternative<lsp::Tuple<lsp::Uint, lsp::Uint>>(label)) {
+            auto const &span = std::get<lsp::Tuple<lsp::Uint, lsp::Uint>>(label);
+            spanStart = static_cast<int>(std::get<0>(span));
+            spanEnd = static_cast<int>(std::get<1>(span));
+        } else {
+            auto const &text = std::get<lsp::String>(label);
+            spanStart = signatureLabel.indexOf(QString::fromStdString(text));
+            spanEnd = spanStart < 0 ? -1 : spanStart + int(text.size());
+        }
+    }
+
+    if (spanStart < 0 || spanStart >= spanEnd || spanEnd > signatureLabel.size()) {
+        // No usable highlight - the whole signature is fine as-is.
+        return signatureLabel.toHtmlEscaped();
+    }
+
+    return signatureLabel.left(spanStart).toHtmlEscaped() + QStringLiteral("<b>") +
+           signatureLabel.mid(spanStart, spanEnd - spanStart).toHtmlEscaped() +
+           QStringLiteral("</b>") + signatureLabel.mid(spanEnd).toHtmlEscaped();
+}
+
 } // namespace
 
 LspPlugin::LspPlugin() {
@@ -262,8 +321,8 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
     connect(this, &LspPlugin::diagnosticsReady, this, &LspPlugin::applyDiagnostics);
     connect(manager, &PluginManager::newClientAdded, this, [this](qmdiClient *client) {
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
-            applyDiagnostics(
-                QDir::toNativeSeparators(QFileInfo(editor->mdiClientFileName()).absoluteFilePath()));
+            applyDiagnostics(QDir::toNativeSeparators(
+                QFileInfo(editor->mdiClientFileName()).absoluteFilePath()));
         }
 
         // Deferred: the editor's content is loaded after the client is added, so
@@ -649,6 +708,8 @@ void LspPlugin::reconcileOpenDocuments() {
                 auto diagLocker = QMutexLocker(&diagnosticsMutex);
                 diagnostics.remove(fileName);
                 markedLines.remove(fileName);
+                auto syncLocker = QMutexLocker(&lastSyncedMutex);
+                lastSyncedContents.remove(fileName);
             }
         }
     }
@@ -712,6 +773,8 @@ void LspPlugin::cleanup() {
     auto locker = QMutexLocker(&serversMutex);
     // Each destructor sends shutdown/exit and joins its reader thread.
     servers.clear();
+    auto syncLocker = QMutexLocker(&lastSyncedMutex);
+    lastSyncedContents.clear();
 }
 
 LspClientImpl *LspPlugin::serverForFile(const QString &fileName) const {
@@ -942,6 +1005,18 @@ int LspPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &
                                        : CommandPriority::CannotHandle;
     }
 
+    if (command == GlobalCommands::SignatureHelp) {
+        auto fileName = args[GlobalArguments::FileName].toString();
+        if (languageForFile(fileName).isEmpty()) {
+            return CommandPriority::CannotHandle;
+        }
+        auto server = serverForFile(fileName);
+        if (!server || !server->hasCapability("signatureHelpProvider")) {
+            return CommandPriority::CannotHandle;
+        }
+        return CommandPriority::HighestPriority;
+    }
+
     return CommandPriority::CannotHandle;
 }
 
@@ -982,8 +1057,17 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
     auto path = QFileInfo(fileName).absoluteFilePath().toStdString();
 
     // The server must see the current buffer before it answers a positional
-    // question, otherwise the reply refers to a stale document.
-    server->syncDocument(path, content.toStdString(), languageForFile(fileName).toStdString());
+    // question, otherwise the reply refers to a stale document. Full-text sync
+    // is expensive (the server re-parses on each didChange), so only push when
+    // the text actually differs from what the server last received.
+    {
+        auto locker = QMutexLocker(&lastSyncedMutex);
+        if (lastSyncedContents.value(fileName) != content) {
+            server->syncDocument(path, content.toStdString(),
+                                 languageForFile(fileName).toStdString());
+            lastSyncedContents[fileName] = content;
+        }
+    }
 
     auto pending = std::make_shared<PendingRequest>();
     auto future = pending->promise.future();
@@ -1033,6 +1117,10 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
                 }
                 pending->complete(CommandArgs{{GlobalArguments::Tags, tags}});
             });
+    } else if (command == GlobalCommands::SignatureHelp) {
+        server->requestSignatureHelp(path, line, column, [pending](lsp::SignatureHelp help) {
+            pending->complete(CommandArgs{{GlobalArguments::Tooltip, renderSignatureHelp(help)}});
+        });
     } else {
         server->requestHover(path, line, column, [pending](std::string text) {
             auto result = CommandArgs{};
