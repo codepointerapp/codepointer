@@ -587,8 +587,7 @@ void LspPlugin::reconcileOpenDocuments() {
                 auto diagLocker = QMutexLocker(&diagnosticsMutex);
                 diagnostics.remove(fileName);
                 markedLines.remove(fileName);
-                auto syncLocker = QMutexLocker(&lastSyncedMutex);
-                lastSyncedContents.remove(fileName);
+                syncedContent.forget(fileName);
             }
         }
     }
@@ -645,17 +644,11 @@ bool LspPlugin::syncDocument(const QString &fileName, const QString &text) {
     server->syncDocument(QFileInfo(fileName).absoluteFilePath().toStdString(), text.toStdString(),
                          languageForFile(fileName).toStdString());
     dirtyDocuments.remove(fileName);
-    {
-        // The cache is the record of what the server actually holds, so it has to
-        // be written here and nowhere else. Sync reaches the server by three
-        // routes - this function, the debounce timer and the pre-request push -
-        // and when only one of them updated the cache it could claim the server
-        // was already current while it was a revision behind. A positional
-        // request then got answered against that stale text, and the edits came
-        // back as ranges for text that was no longer in the editor.
-        auto locker = QMutexLocker(&lastSyncedMutex);
-        lastSyncedContents[fileName] = text;
-    }
+    // Recorded here so every path that pushes a document updates the same
+    // record. When this was the only push path left out, the cache could claim
+    // a revision the server had never received, and a positional request was
+    // answered against text the editor no longer held.
+    syncedContent.record(fileName, text);
     return true;
 }
 
@@ -663,8 +656,7 @@ void LspPlugin::cleanup() {
     auto locker = QMutexLocker(&serversMutex);
     // Each destructor sends shutdown/exit and joins its reader thread.
     servers.clear();
-    auto syncLocker = QMutexLocker(&lastSyncedMutex);
-    lastSyncedContents.clear();
+    syncedContent.clear();
 }
 
 LspClientImpl *LspPlugin::serverForFile(const QString &fileName) const {
@@ -962,13 +954,8 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
     // question, otherwise the reply refers to a stale document. Full-text sync
     // is expensive (the server re-parses on each didChange), so only push when
     // the text actually differs from what the server last received.
-    {
-        auto locker = QMutexLocker(&lastSyncedMutex);
-        auto current = lastSyncedContents.value(fileName) != content;
-        locker.unlock();
-        if (current) {
-            syncDocument(fileName, content);
-        }
+    if (syncedContent.isStale(fileName, content)) {
+        syncDocument(fileName, content);
     }
 
     auto pending = std::make_shared<PendingRequest>();
