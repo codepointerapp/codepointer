@@ -2,13 +2,11 @@
 #include <cstddef>
 #include <memory>
 
-#include <QAction>
 #include <QDebug>
 #include <QDir>
 #include <QDockWidget>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
-#include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -40,6 +38,23 @@
 // clang-format on
 #endif
 
+/// Guards against a promise being completed twice - the server callback and any
+/// future timeout path must be able to race safely. A QFuture that never finishes
+/// leaks the caller's QFutureWatcher, so exactly-once matters in both directions.
+/// Declared at global scope because LspPlugin's header forward-declares it.
+struct PendingRequest {
+    QPromise<CommandArgs> promise;
+    std::atomic_flag done = ATOMIC_FLAG_INIT;
+
+    void complete(const CommandArgs &result) {
+        if (done.test_and_set()) {
+            return;
+        }
+        promise.addResult(result);
+        promise.finish();
+    }
+};
+
 namespace {
 
 /// \@breif function to load a file, and reload it on change
@@ -62,22 +77,6 @@ auto autoReloadFile(QObject *parent, const QString &path, std::function<bool(QSt
     reloadFile(path);
     return w;
 }
-
-/// Guards against a promise being completed twice - the server callback and any
-/// future timeout path must be able to race safely. A QFuture that never finishes
-/// leaks the caller's QFutureWatcher, so exactly-once matters in both directions.
-struct PendingRequest {
-    QPromise<CommandArgs> promise;
-    std::atomic_flag done = ATOMIC_FLAG_INIT;
-
-    void complete(const CommandArgs &result) {
-        if (done.test_and_set()) {
-            return;
-        }
-        promise.addResult(result);
-        promise.finish();
-    }
-};
 
 /// One entry of the servers array. Returns false and explains itself when the
 /// entry cannot be used.
@@ -265,12 +264,6 @@ LspPlugin::LspPlugin() {
     autoEnabled = true;
     alwaysEnabled = false;
 
-    refactorAction = new QAction(tr("Refactor..."), this);
-    refactorAction->setShortcut(QKeySequence("Ctrl+Alt+R"));
-    refactorAction->setShortcutContext(Qt::ApplicationShortcut);
-    connect(refactorAction, &QAction::triggered, this, &LspPlugin::refactorAtCursor);
-    menus[tr("&Edit")]->addAction(refactorAction);
-
     documentSyncTimer.setSingleShot(true);
     documentSyncTimer.setInterval(DocumentSyncDebounceMs);
     connect(&documentSyncTimer, &QTimer::timeout, this, &LspPlugin::flushDirtyDocuments);
@@ -452,120 +445,6 @@ int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits) {
     // The servers must be told, or the next request answers against stale text.
     syncOpenDocuments();
     return changed;
-}
-
-void LspPlugin::startRename(const QString &path, int line, int character) {
-    auto server = serverForFile(path);
-    if (!server) {
-        return;
-    }
-    auto ok = false;
-    auto newName = QInputDialog::getText(nullptr, tr("Rename symbol"), tr("New name:"),
-                                         QLineEdit::Normal, QString(), &ok);
-    if (!ok || newName.isEmpty()) {
-        return;
-    }
-    server->requestRename(
-        path.toStdString(), line, character, newName.toStdString(),
-        [this, newName](std::vector<LspClientImpl::TextEdit> edits) {
-            auto converted = QList<LspTextEdit>();
-            for (auto const &e : edits) {
-                converted.append(LspTextEdit{QString::fromStdString(e.file), e.startLine,
-                                             e.startCharacter, e.endLine, e.endCharacter,
-                                             QString::fromStdString(e.newText)});
-            }
-            // Editors are GUI-only and this arrives on a reader thread.
-            QMetaObject::invokeMethod(
-                this,
-                [this, converted, newName]() {
-                    auto files = applyTextEdits(converted);
-                    qDebug() << "LspPlugin: renamed to" << newName << "across" << files
-                             << "file(s)," << converted.size() << "edits";
-                },
-                Qt::QueuedConnection);
-        });
-}
-
-void LspPlugin::refactorAtCursor() {
-    auto manager = getManager();
-    if (!manager) {
-        return;
-    }
-    auto editor = dynamic_cast<qmdiEditor *>(manager->currentClient());
-    if (!editor) {
-        return;
-    }
-    auto fileName = editor->mdiClientFileName();
-    auto server = serverForFile(fileName);
-    if (!server) {
-        qDebug() << "LspPlugin: no ready server for" << fileName;
-        return;
-    }
-
-    auto path = QFileInfo(fileName).absoluteFilePath();
-    syncDocument(fileName, editor->getContent());
-
-    auto selection = editor->selectionRange();
-    auto canRename = server->hasCapability("renameProvider");
-    auto canAct = server->hasCapability("codeActionProvider");
-    if (!canRename && !canAct) {
-        qDebug() << "LspPlugin: server advertises neither rename nor code actions";
-        return;
-    }
-
-    auto showMenu = [this, path, selection,
-                     canRename](std::vector<LspClientImpl::CodeAction> actions) {
-        auto menu = QMenu(tr("Refactor"));
-        auto renameEntry = canRename ? menu.addAction(tr("Rename symbol...")) : nullptr;
-        if (renameEntry && !actions.empty()) {
-            menu.addSeparator();
-        }
-        auto entries = QHash<QAction *, int>();
-        for (auto i = 0u; i < actions.size(); ++i) {
-            auto entry = menu.addAction(QString::fromStdString(actions[i].title));
-            entry->setEnabled(!actions[i].needsCommand);
-            if (actions[i].needsCommand) {
-                // The server wants workspace/executeCommand and would push the edit
-                // back via workspace/applyEdit, which is not handled yet.
-                entry->setToolTip(tr("This action needs workspace/executeCommand"));
-            }
-            entries.insert(entry, static_cast<int>(i));
-        }
-        if (menu.isEmpty()) {
-            return;
-        }
-
-        auto chosen = menu.exec(QCursor::pos());
-        if (!chosen) {
-            return;
-        }
-        if (chosen == renameEntry) {
-            startRename(path, selection.startLine, selection.startCharacter);
-            return;
-        }
-        auto const &action = actions[entries.value(chosen)];
-        auto edits = QList<LspTextEdit>();
-        for (auto const &e : action.edits) {
-            edits.append(LspTextEdit{QString::fromStdString(e.file), e.startLine, e.startCharacter,
-                                     e.endLine, e.endCharacter, QString::fromStdString(e.newText)});
-        }
-        auto files = applyTextEdits(edits);
-        qDebug() << "LspPlugin: applied" << QString::fromStdString(action.title) << "to" << files
-                 << "file(s)";
-    };
-
-    if (!canAct) {
-        showMenu({});
-        return;
-    }
-    server->requestCodeActions(path.toStdString(), selection.startLine, selection.startCharacter,
-                               selection.endLine, selection.endCharacter, {"refactor", "quickfix"},
-                               [this, showMenu](std::vector<LspClientImpl::CodeAction> actions) {
-                                   // Hop to the GUI thread: menus and editors are GUI-only.
-                                   QMetaObject::invokeMethod(
-                                       this, [showMenu, actions]() { showMenu(actions); },
-                                       Qt::QueuedConnection);
-                               });
 }
 
 void LspPlugin::applyDiagnostics(const QString &fileName) {
@@ -766,6 +645,17 @@ bool LspPlugin::syncDocument(const QString &fileName, const QString &text) {
     server->syncDocument(QFileInfo(fileName).absoluteFilePath().toStdString(), text.toStdString(),
                          languageForFile(fileName).toStdString());
     dirtyDocuments.remove(fileName);
+    {
+        // The cache is the record of what the server actually holds, so it has to
+        // be written here and nowhere else. Sync reaches the server by three
+        // routes - this function, the debounce timer and the pre-request push -
+        // and when only one of them updated the cache it could claim the server
+        // was already current while it was a revision behind. A positional
+        // request then got answered against that stale text, and the edits came
+        // back as ranges for text that was no longer in the editor.
+        auto locker = QMutexLocker(&lastSyncedMutex);
+        lastSyncedContents[fileName] = text;
+    }
     return true;
 }
 
@@ -1017,6 +907,18 @@ int LspPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &
         return CommandPriority::HighestPriority;
     }
 
+    if (command == GlobalCommands::RenameSymbol) {
+        auto fileName = args[GlobalArguments::FileName].toString();
+        if (languageForFile(fileName).isEmpty()) {
+            return CommandPriority::CannotHandle;
+        }
+        auto server = serverForFile(fileName);
+        if (!server || !server->hasCapability("renameProvider")) {
+            return CommandPriority::CannotHandle;
+        }
+        return CommandPriority::HighestPriority;
+    }
+
     return CommandPriority::CannotHandle;
 }
 
@@ -1062,10 +964,10 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
     // the text actually differs from what the server last received.
     {
         auto locker = QMutexLocker(&lastSyncedMutex);
-        if (lastSyncedContents.value(fileName) != content) {
-            server->syncDocument(path, content.toStdString(),
-                                 languageForFile(fileName).toStdString());
-            lastSyncedContents[fileName] = content;
+        auto current = lastSyncedContents.value(fileName) != content;
+        locker.unlock();
+        if (current) {
+            syncDocument(fileName, content);
         }
     }
 
@@ -1121,6 +1023,38 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
         server->requestSignatureHelp(path, line, column, [pending](lsp::SignatureHelp help) {
             pending->complete(CommandArgs{{GlobalArguments::Tooltip, renderSignatureHelp(help)}});
         });
+    } else if (command == GlobalCommands::RenameSymbol) {
+        // The editor owns the prompt and supplies the name; all that is left is
+        // the round trip to the server and applying the edits it returns.
+        auto newName = args[GlobalArguments::NewName].toString();
+        server->requestRename(
+            path, line, column, newName.toStdString(),
+            [this, newName, pending](std::vector<LspClientImpl::TextEdit> edits,
+                                     const std::string &serverError) {
+                if (!serverError.empty()) {
+                    pending->complete(
+                        CommandArgs{{GlobalArguments::ErrorMessage,
+                                     tr("The language server could not rename the symbol: %1")
+                                         .arg(QString::fromStdString(serverError))}});
+                    return;
+                }
+                auto converted = QList<LspTextEdit>();
+                for (auto const &e : edits) {
+                    converted.append(LspTextEdit{QString::fromStdString(e.file), e.startLine,
+                                                 e.startCharacter, e.endLine, e.endCharacter,
+                                                 QString::fromStdString(e.newText)});
+                }
+                // Editors are GUI-only and this arrives on a reader thread.
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, converted, newName, pending]() {
+                        auto files = applyTextEdits(converted);
+                        qDebug() << "LspPlugin: renamed to" << newName << "across" << files
+                                 << "file(s)," << converted.size() << "edits";
+                        pending->complete(CommandArgs{});
+                    },
+                    Qt::QueuedConnection);
+            });
     } else {
         server->requestHover(path, line, column, [pending](std::string text) {
             auto result = CommandArgs{};
