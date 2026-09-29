@@ -39,6 +39,10 @@ inline constexpr const char *VariableInfo = "VariableInfo";
 // Editor requests information about variable below mouse
 inline constexpr const char *KeywordTooltip = "KeywordTooltip";
 
+// Editor requests function signature help (call tips) at the cursor. The result
+// is a rendered tooltip under GlobalArguments::Tooltip.
+inline constexpr const char *SignatureHelp = "SignatureHelp";
+
 // Open a new editor, with the attached document
 inline constexpr const char *DisplayText = "DisplayText";
 

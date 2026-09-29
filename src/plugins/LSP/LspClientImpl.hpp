@@ -21,6 +21,7 @@ class LspClientImpl {
 
     using CompletionCallback = std::function<void(std::vector<lsp::CompletionItem>)>;
     using HoverCallback = std::function<void(std::string)>;
+    using SignatureHelpCallback = std::function<void(lsp::SignatureHelp)>;
 
     // FIXME: line and column are int, but I see uint is used in some places.
     /// One resolved definition site: absolute path, 0-based line and column.
@@ -111,6 +112,8 @@ class LspClientImpl {
     void requestCompletion(const std::string &fileName, uint line, uint column,
                            CompletionCallback callback);
     void requestHover(const std::string &fileName, uint line, uint column, HoverCallback callback);
+    void requestSignatureHelp(const std::string &fileName, uint line, uint column,
+                              SignatureHelpCallback callback);
     void requestDefinition(const std::string &fileName, uint line, uint column,
                            DefinitionCallback callback);
 

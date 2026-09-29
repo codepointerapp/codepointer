@@ -170,6 +170,12 @@ class LspPlugin : public IPlugin {
     QHash<QString, QString> projectRoots;
     mutable QList<LspServerDefinition> cachedDefinitions;
 
+    // Absolute file path -> text last pushed to its server. Document sync is
+    // full-text, so identical requests (e.g. repeat signature-help asks on an
+    // unchanged buffer) must not re-send a didChange that forces a re-parse.
+    QHash<QString, QString> lastSyncedContents;
+    mutable QMutex lastSyncedMutex;
+
     mutable QList<LspServerDefinition> systemDefinitions;
     mutable QList<LspServerDefinition> userDefinitions;
     mutable QMutex serversMutex;
