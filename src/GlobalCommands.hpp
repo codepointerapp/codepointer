@@ -43,6 +43,12 @@ inline constexpr const char *KeywordTooltip = "KeywordTooltip";
 // is a rendered tooltip under GlobalArguments::Tooltip.
 inline constexpr const char *SignatureHelp = "SignatureHelp";
 
+// Editor requests a rename of the symbol at the given position. The editor owns
+// the prompt and passes the chosen new name in GlobalArguments::NewName; the
+// plugin applies it through the server and, on rejection, returns the reason
+// under GlobalArguments::ErrorMessage.
+inline constexpr const char *RenameSymbol = "RenameSymbol";
+
 // Open a new editor, with the attached document
 inline constexpr const char *DisplayText = "DisplayText";
 
@@ -74,6 +80,8 @@ inline constexpr const char *LineNumber = "LineNumber";
 inline constexpr const char *ColumnNumber = "ColumnNumber";
 inline constexpr const char *Type = "Type";
 inline constexpr const char *Value = "Value";
+// The new name a RenameSymbol request asks the server to apply.
+inline constexpr const char *NewName = "NewName";
 inline constexpr const char *Raw = "Raw";
 inline constexpr const char *Tags = "Tags";
 inline constexpr const char *Tooltip = "Tooltip";

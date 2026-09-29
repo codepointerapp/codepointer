@@ -22,11 +22,15 @@
 #include <QFileSystemWatcher>
 #include <QFuture>
 #include <QFutureWatcher>
+#include <QGraphicsDropShadowEffect>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QPointer>
+
 #include <QPromise>
 #include <QPushButton>
 #include <QRandomGenerator>
@@ -141,6 +145,27 @@ auto static getLineEnding(QIODevice &stream, const QString &defaultLineEnding) -
     }
     stream.seek(pos);
     return ending;
+}
+
+/// The identifier (letters, digits, underscores) spanning the 0-based
+/// (line, column) in `text`, or empty when the column is not over one. Used to
+/// pre-fill the rename dialog with the symbol's current name.
+static QString identifierAt(const QString &text, int line, int column) {
+    auto lines = text.split(QChar::LineFeed);
+    if (line < 0 || line >= lines.size() || column < 0 || column > lines.at(line).size()) {
+        return {};
+    }
+    auto const &s = lines.at(line);
+    auto isIdent = [](QChar c) { return c.isLetterOrNumber() || c == QChar('_'); };
+    auto start = column;
+    while (start > 0 && isIdent(s.at(start - 1))) {
+        --start;
+    }
+    auto end = column;
+    while (end < s.size() && isIdent(s.at(end))) {
+        ++end;
+    }
+    return s.mid(start, end - start);
 }
 
 static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
@@ -669,6 +694,14 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
 
     separator->setSeparator(true);
     menu->insertAction(firstAction, separator);
+
+    auto refactorAction = new QAction(tr("Rename..."), menu);
+    menu->insertAction(firstAction, refactorAction);
+    // Capture where the menu was opened: a right-click does not move the caret, so
+    // the word under the pointer has to be resolved from the click position.
+    QObject::connect(refactorAction, &QAction::triggered, this,
+                     [this, localPosition]() { requestRename(localPosition); });
+
     menu->insertMenu(firstAction, followSymbolMenu);
 
     auto future = getSuggestionsForCurrentWord(localPosition);
@@ -699,6 +732,16 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
 
     watcher->setFuture(future);
     menu->exec(globalPosition);
+    // The inline rename box is opened from the action's triggered handler, which
+    // runs inside exec()'s nested event loop. On the way out exec() gives the
+    // keyboard back to whichever widget had it before the menu appeared, so the
+    // focus requestRename() made has already been undone by the time the user
+    // could press a key. Taking it back here, once the loop has unwound, is what
+    // leaves the box typed into instead of the document.
+    if (renameEdit && renameEdit->isVisible()) {
+        renameEdit->setFocus();
+        renameEdit->selectAll();
+    }
     delete menu;
 }
 
@@ -1176,6 +1219,27 @@ void qmdiEditor::focusInEvent(QFocusEvent *event) {
 }
 
 bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == renameEdit) {
+        // Escape drops the pending name, Enter accepts it. Both are handled here
+        // so they never reach the editor underneath, and returning true keeps the
+        // box from acting on them as text movement.
+        if (event->type() == QEvent::KeyPress) {
+            auto keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                hideInlineRename();
+                return true;
+            }
+        }
+        // Clicking or tabbing away abandons the name, like any other inline edit.
+        // Only when it is up: hideInlineRename() itself moves focus back to the
+        // editor, and that must not be mistaken for the user leaving.
+        if (event->type() == QEvent::FocusOut && renameEdit->isVisible()) {
+            hideInlineRename();
+            return true;
+        }
+        return QWidget::eventFilter(watched, event);
+    }
+
     if (watched == this) {
         switch (event->type()) {
         case QEvent::Show:
@@ -1538,6 +1602,214 @@ void qmdiEditor::requestSignatureHelp() {
         {GlobalArguments::Content, textEditor->toPlainText()},
     }));
     // clang-format on
+}
+
+void qmdiEditor::requestRename(const QPoint &position) {
+    auto cursor = textEditor->cursorForPosition(position);
+    auto line = cursor.blockNumber();
+    auto column = cursor.position() - cursor.block().position();
+    auto currentName = identifierAt(textEditor->toPlainText(), line, column);
+    if (currentName.isEmpty()) {
+        displayBannerMessage(tr("There is no symbol to rename here."), 60);
+        return;
+    }
+
+    if (!renameEdit) {
+        // Drawn on the viewport, like the call tip and the completion list, so it
+        // sits in the text rather than in a dialog on top of it.
+        renameEdit = new QLineEdit(textEditor->viewport());
+        renameEdit->setFont(textEditor->font());
+        renameEdit->setAttribute(Qt::WA_InputMethodEnabled, true);
+        renameEdit->hide();
+        // The border names the Highlight palette role, which is where
+        // ThemeProxyStyle puts the app tint, so it follows the palette instead of
+        // naming a color of its own.
+        renameEdit->setStyleSheet(
+            QString("QLineEdit { border: 2px solid palette(highlight); border-radius: 3px;"
+                    " padding: 1px 5px; }"));
+        // The event filter on the box is what turns Escape and focus loss into a
+        // cancelled rename.
+        renameEdit->installEventFilter(this);
+
+        auto shadow = new QGraphicsDropShadowEffect(renameEdit);
+        shadow->setBlurRadius(8);
+        shadow->setOffset(1, 2);
+        // A shadow is depth, not a theme color, so it stays a dark overlay that
+        // works over any background.
+        shadow->setColor(QColor(0, 0, 0, 140));
+        renameEdit->setGraphicsEffect(shadow);
+
+        // Enter accepts the name, Escape drops it. Both are consumed here so they
+        // do not reach the editor underneath.
+        connect(renameEdit, &QLineEdit::returnPressed, this, [this]() {
+            auto name = renameEdit->text();
+            auto line = renameLine;
+            auto column = renameColumn;
+            auto content = textEditor->toPlainText();
+            hideInlineRename();
+            applyInlineRename(name, line, column, content);
+        });
+
+        // The name refers to one place in the buffer: if the text changes, or the
+        // user does something else, the box is no longer about that symbol. A
+        // scroll is not a change, it only moves the box along with the text.
+        connect(textEditor->document(), &QTextDocument::contentsChange, this,
+                [this](int, int, int) { hideInlineRename(); });
+        connect(textEditor, &Qutepart::Qutepart::cursorPositionChanged, this,
+                [this]() { hideInlineRename(); });
+        // Scrolling moves the text under the box, so it has to move with it.
+        connect(textEditor->verticalScrollBar(), &QScrollBar::valueChanged, this,
+                [this]() { repositionInlineRename(); });
+    }
+
+    renameLine = line;
+    renameColumn = column;
+    renameEdit->setText(currentName);
+    renameEdit->selectAll();
+    // Shown before positioning: the geometry is in viewport coordinates, and a
+    // hidden widget has no meaningful size to lay out against.
+    renameEdit->show();
+    renameEdit->raise();
+    repositionInlineRename();
+    renameEdit->setFocus();
+    textEditor->hideCallTip();
+}
+
+void qmdiEditor::repositionInlineRename() {
+    if (!renameEdit) {
+        return;
+    }
+    // Anchor over the symbol, so the box lines up with the name being replaced
+    // instead of sitting wherever the caret happened to be.
+    auto document = textEditor->document();
+    if (!document) {
+        hideInlineRename();
+        return;
+    }
+    auto block = document->findBlockByNumber(renameLine);
+    if (!block.isValid()) {
+        hideInlineRename();
+        return;
+    }
+    auto name = block.text();
+    auto column = qBound(0, renameColumn, name.size());
+    auto isIdent = [](QChar c) { return c.isLetterOrNumber() || c == QChar('_'); };
+    auto start = column;
+    while (start > 0 && isIdent(name.at(start - 1))) {
+        --start;
+    }
+    auto end = column;
+    while (end < name.size() && isIdent(name.at(end))) {
+        ++end;
+    }
+    if (start == end) {
+        hideInlineRename();
+        return;
+    }
+    // Qutepart redeclares cursorRect with its own private signature, so the base
+    // overload has to be named explicitly. The result is in viewport
+    // coordinates, which is what the parent uses too.
+    QTextCursor anchor = textEditor->textCursor();
+    anchor.setPosition(block.position() + start);
+    auto rect = textEditor->QPlainTextEdit::cursorRect(anchor);
+
+    // Size it to the line, with room for the border and padding, and wide enough
+    // for the current name plus what gets typed over it.
+    auto metrics = renameEdit->fontMetrics();
+    auto height = qMax(rect.height(), metrics.height() + 8);
+    auto textWidth = metrics.horizontalAdvance(name.mid(start, end - start));
+    auto width = qMax(textWidth * 2, rect.width() * 2) + 16;
+
+    // Preferred spot: two lines above the symbol, so the symbol and the line
+    // directly above it both stay readable. The previous block's cursorRect is
+    // used rather than just moving up by the box height, so it is still correct
+    // when the text above is wrapped. A y of -1 means there is no line above at
+    // all, and any negative value means it has scrolled off the top.
+    auto viewportSize = textEditor->viewport()->size();
+    auto y = -1;
+    if (renameLine > 0) {
+        auto above = document->findBlockByNumber(renameLine - 1);
+        if (above.isValid()) {
+            QTextCursor aboveAnchor = textEditor->textCursor();
+            aboveAnchor.setPosition(above.position());
+            y = textEditor->QPlainTextEdit::cursorRect(aboveAnchor).y() - rect.height();
+        }
+    }
+    if (y < 0) {
+        // No room above - the symbol is on the first line, or near the top of
+        // the viewport - so go below it rather than cover it.
+        y = rect.y() + rect.height();
+    }
+    y = qBound(0, y, qMax(0, viewportSize.height() - height));
+    auto x = qBound(0, rect.x(), qMax(0, viewportSize.width() - width));
+    renameEdit->setGeometry(x, y, width, height);
+}
+
+void qmdiEditor::hideInlineRename() {
+    if (!renameEdit) {
+        return;
+    }
+    renameEdit->hide();
+    renameLine = -1;
+    renameColumn = -1;
+    // Give the keyboard back to the text, but only if the box actually had it -
+    // renaming can be abandoned by a window switch, where stealing focus here
+    // would be wrong.
+    if (textEditor && renameEdit->hasFocus()) {
+        textEditor->setFocus();
+    }
+}
+
+void qmdiEditor::applyInlineRename(const QString &newName, int line, int column,
+                                   const QString &content) {
+    if (newName.isEmpty()) {
+        return;
+    }
+    if (newName == identifierAt(content, line, column)) {
+        // Nothing to ask the server to do.
+        return;
+    }
+    if (!mdiServer || !mdiServer->mdiHost) {
+        return;
+    }
+    auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    if (!pluginManager) {
+        return;
+    }
+
+    // The handling plugin applies the rename through the server and reports
+    // failures in the result - the editor only decides how to show them.
+    // clang-format off
+    auto future = pluginManager->handleCommandAsync(GlobalCommands::RenameSymbol, {
+        {GlobalArguments::FileName, mdiClientFileName()},
+        {GlobalArguments::LineNumber, line},
+        {GlobalArguments::ColumnNumber, column},
+        {GlobalArguments::Content, content},
+        {GlobalArguments::NewName, newName},
+    });
+    // clang-format on
+    if (!future.isValid()) {
+        // No plugin claimed the command, so nothing can rename here.
+        displayBannerMessage(tr("Rename is not available for this file."), 60);
+        return;
+    }
+
+    // The rename is fire-and-forget on the editor side: whatever the plugin could
+    // not do comes back as a message, and only the banner is ours. The watcher is
+    // parented to this editor and deletes itself once it has delivered, since the
+    // server answers on a reader thread well after this function has returned.
+    auto watcher = new QFutureWatcher<CommandArgs>(this);
+    connect(watcher, &QFutureWatcher<CommandArgs>::finished, this, [this, watcher]() {
+        watcher->deleteLater();
+        if (watcher->isCanceled()) {
+            return;
+        }
+        auto error = watcher->result()[GlobalArguments::ErrorMessage].toString();
+        if (!error.isEmpty()) {
+            displayBannerMessage(error, 60);
+        }
+    });
+    watcher->setFuture(future);
 }
 
 void qmdiEditor::displayBannerMessage(QString message, int time) {

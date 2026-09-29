@@ -14,7 +14,7 @@
 
 class LspClientImpl;
 class LspDebugWidget;
-class QAction;
+struct PendingRequest;
 
 /// One language server as configured: which binary, how to launch it, and which
 /// file suffixes it serves. Serialised as an array of these, in the shape of
@@ -117,10 +117,6 @@ class LspPlugin : public IPlugin {
 
     /// Paints the cached diagnostics for `fileName` onto its editor, if open.
     void applyDiagnostics(const QString &fileName);
-
-    /// Asks the server what refactorings it offers at the cursor, shows them in a
-    /// menu, and applies the chosen one.
-    void refactorAtCursor();
   signals:
     /// Emitted when a server finishes its handshake. Queued: raised on a reader
     /// thread, consumed on the GUI thread.
@@ -209,10 +205,7 @@ class LspPlugin : public IPlugin {
 
     /// Applies a set of server-supplied edits. Returns the number of files changed.
     int applyTextEdits(const QList<struct LspTextEdit> &edits);
-    /// Prompts for a new name and applies the server's rename edits.
-    void startRename(const QString &path, int line, int character);
 
-    QAction *refactorAction = nullptr;
     LspDebugWidget *debugWidget = nullptr;
     QDockWidget *debugDock = nullptr;
 };
