@@ -341,10 +341,10 @@ void LspClientImpl::shutdownLspServer() {
         [this](const lsp::ResponseError &) { m_running = false; });
 }
 
-void LspClientImpl::syncDocument(const std::string &fileName, const std::string &text,
+bool LspClientImpl::syncDocument(const std::string &fileName, const std::string &text,
                                  const std::string &languageId) {
     if (!m_ready.load()) {
-        return;
+        return false;
     }
 
     auto isNew = false;
@@ -368,7 +368,7 @@ void LspClientImpl::syncDocument(const std::string &fileName, const std::string 
         m_messageHandler->sendNotification<lsp::notifications::TextDocumentDidOpen>(
             std::move(params));
         trace("--> didOpen " + fileName + " v" + std::to_string(version));
-        return;
+        return true;
     }
 
     // Full-document sync. Incremental sync would need range tracking the editor
@@ -380,6 +380,7 @@ void LspClientImpl::syncDocument(const std::string &fileName, const std::string 
     m_messageHandler->sendNotification<lsp::notifications::TextDocumentDidChange>(
         std::move(params));
     trace("--> didChange " + fileName + " v" + std::to_string(version));
+    return true;
 }
 
 void LspClientImpl::closeDocument(const std::string &fileName) {

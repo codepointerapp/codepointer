@@ -108,7 +108,12 @@ class LspClientImpl {
     /// Sends didOpen the first time a file is seen, didChange afterwards. Requests
     /// that depend on buffer contents must call this first, otherwise the server
     /// answers against a stale (or unknown) document.
-    void syncDocument(const std::string &fileName, const std::string &text,
+    ///
+    /// Returns false when nothing was sent - the server is not ready yet - so the
+    /// caller does not record the text as held. Recording a send that never
+    /// happened makes every later positional request skip its didChange, and the
+    /// server answers about a document the editor no longer holds.
+    bool syncDocument(const std::string &fileName, const std::string &text,
                       const std::string &languageId);
 
     void closeDocument(const std::string &fileName);

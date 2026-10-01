@@ -103,11 +103,12 @@ class TestLspRename : public QObject {
         QCOMPARE(document.characterAt(3), QChar::ParagraphSeparator);
     }
 
-    void positionClampsPastTheEndOfALine() {
-        // A server can send an over-long character (e.g. after a botched sync).
-        // It is pinned to the end of that line, never spilling onto the next.
+    void positionRejectsAColumnPastTheEndOfALine() {
+        // An over-long character is not a position in this document. Rejecting
+        // it is what stops a stale reply from being clamped onto the line and
+        // pasting a name into unrelated code.
         QTextDocument document(QStringLiteral("one\ntwo"));
-        QCOMPARE(lspRename::positionOf(&document, 0, 99), 3);
+        QCOMPARE(lspRename::positionOf(&document, 0, 99), -1);
     }
 
     void positionOnAnInvalidLineIsMinusOne() {
@@ -115,9 +116,7 @@ class TestLspRename : public QObject {
         QCOMPARE(lspRename::positionOf(&document, 9, 0), -1);
     }
 
-    void positionOfANullDocumentIsMinusOne() {
-        QCOMPARE(lspRename::positionOf(nullptr, 0, 0), -1);
-    }
+    void positionOfANullDocumentIsMinusOne() { QCOMPARE(lspRename::positionOf(nullptr, 0, 0), -1); }
 
     // --- applyEdits: the whole rename response, applied ----------------------
 
@@ -187,6 +186,121 @@ class TestLspRename : public QObject {
         QCOMPARE(document.toPlainText(), QStringLiteral("abcdef"));
     }
 
+    void applyEditsRejectsANegativeColumnRatherThanClampingToZero() {
+        // This is the corruption seen in the field: a negative column clamped to
+        // 0 pastes the replacement at the start of the line and leaves the
+        // original symbol untouched, so the file gains a stray name.
+        QTextDocument document(QStringLiteral("    pal.setColor();"));
+        auto edits = QList<Edit>{Edit{0, -5, 0, -2, QStringLiteral("palette")}};
+        QCOMPARE(lspRename::applyEdits(&document, edits), 0);
+        QCOMPARE(document.toPlainText(), QStringLiteral("    pal.setColor();"));
+    }
+
+    void applyEditsRejectsAColumnPastTheLineEnd() {
+        QTextDocument document(QStringLiteral("ab"));
+        auto edits = QList<Edit>{Edit{0, 0, 0, 99, QStringLiteral("X")}};
+        QCOMPARE(lspRename::applyEdits(&document, edits), 0);
+        QCOMPARE(document.toPlainText(), QStringLiteral("ab"));
+    }
+
+    // --- rename replies are checked against the symbol they rename -----------
+
+    void applyRenameEditsReplacesEveryOccurrenceOfTheOldName() {
+        auto text = QStringLiteral("    void polish(QPalette &pal) override {\n"
+                                   "        QProxyStyle::polish(pal);\n"
+                                   "        pal.setColor(QPalette::Highlight, tint);\n"
+                                   "        pal.setColor(QPalette::HighlightedText, Qt::white);\n"
+                                   "    }\n");
+        QTextDocument document(text);
+        // Bottom-up, as the caller sorts them. Columns are where `pal` actually
+        // sits on each line: 26 and 28 inside the signatures, 8 at the start
+        // of each call.
+        auto edits = QList<Edit>{
+            Edit{3, 8, 3, 11, QStringLiteral("palette")},
+            Edit{2, 8, 2, 11, QStringLiteral("palette")},
+            Edit{1, 28, 1, 31, QStringLiteral("palette")},
+            Edit{0, 26, 0, 29, QStringLiteral("palette")},
+        };
+        auto rejected = QStringList();
+        QCOMPARE(lspRename::applyRenameEdits(&document, edits, QStringLiteral("pal"), &rejected),
+                 4);
+        QVERIFY(rejected.isEmpty());
+        QCOMPARE(document.toPlainText(),
+                 QStringLiteral("    void polish(QPalette &palette) override {\n"
+                                "        QProxyStyle::polish(palette);\n"
+                                "        palette.setColor(QPalette::Highlight, tint);\n"
+                                "        palette.setColor(QPalette::HighlightedText, Qt::white);\n"
+                                "    }\n"));
+    }
+
+    void applyRenameEditsRefusesAReplyForADifferentRevision() {
+        // The server answered about a document where the symbol was already
+        // renamed, so its ranges name something else. Applying it would paste
+        // the new name next to the old symbol; refusing leaves the file alone.
+        QTextDocument document(QStringLiteral("    pal.setColor();\n"));
+        auto edits = QList<Edit>{Edit{0, 4, 0, 4, QStringLiteral("palette\n    ")}};
+        auto rejected = QStringList();
+        QCOMPARE(lspRename::applyRenameEdits(&document, edits, QStringLiteral("pal"), &rejected),
+                 0);
+        QCOMPARE(document.toPlainText(), QStringLiteral("    pal.setColor();\n"));
+        QCOMPARE(rejected.size(), 1);
+    }
+
+    void applyRenameEditsIsAllOrNothing() {
+        // A rename is atomic. The server computed every range against the same
+        // snapshot, so if the buffer moved on while it worked, *all* the ranges
+        // are stale, not just the unlucky ones. Applying the subset that still
+        // happens to line up renames the symbol in some places and not others,
+        // which is a file that no longer compiles - worse than doing nothing.
+        QTextDocument document(QStringLiteral("pal\npal\nnope\n"));
+        auto edits = QList<Edit>{
+            Edit{2, 0, 2, 4, QStringLiteral("palette")}, // covers "nope", not "pal"
+            Edit{1, 0, 1, 3, QStringLiteral("palette")}, // fine
+            Edit{0, 0, 0, 3, QStringLiteral("palette")}, // fine
+        };
+        auto rejected = QStringList();
+        QCOMPARE(lspRename::applyRenameEdits(&document, edits, QStringLiteral("pal"), &rejected),
+                 0);
+        // Nothing applied: not the two valid edits either.
+        QCOMPARE(document.toPlainText(), QStringLiteral("pal\npal\nnope\n"));
+        QCOMPARE(rejected.size(), 1);
+    }
+
+    void applyRenameEditsRefusesAnOutOfRangeRange() {
+        QTextDocument document(QStringLiteral("pal"));
+        auto edits = QList<Edit>{Edit{42, 0, 42, 3, QStringLiteral("palette")}};
+        auto rejected = QStringList();
+        QCOMPARE(lspRename::applyRenameEdits(&document, edits, QStringLiteral("pal"), &rejected),
+                 0);
+        QCOMPARE(document.toPlainText(), QStringLiteral("pal"));
+        QCOMPARE(rejected.size(), 1);
+    }
+
+    void applyRenameEditsRefusesARangeSpanningLines() {
+        // An identifier is on one line; a range crossing a paragraph break is
+        // not a rename of it.
+        QTextDocument document(QStringLiteral("pal\npal"));
+        auto edits = QList<Edit>{Edit{0, 0, 1, 3, QStringLiteral("palette")}};
+        auto rejected = QStringList();
+        QCOMPARE(lspRename::applyRenameEdits(&document, edits, QStringLiteral("pal"), &rejected),
+                 0);
+        QCOMPARE(document.toPlainText(), QStringLiteral("pal\npal"));
+        QCOMPARE(rejected.size(), 1);
+    }
+
+    void applyRenameEditsIsOneUndoStep() {
+        QTextDocument document(QStringLiteral("pal\npal"));
+        auto edits = QList<Edit>{
+            Edit{1, 0, 1, 3, QStringLiteral("sym")},
+            Edit{0, 0, 0, 3, QStringLiteral("sym")},
+        };
+        auto rejected = QStringList();
+        QCOMPARE(lspRename::applyRenameEdits(&document, edits, QStringLiteral("pal"), &rejected),
+                 2);
+        document.undo();
+        QCOMPARE(document.toPlainText(), QStringLiteral("pal\npal"));
+    }
+
     void applyEditsIsOneUndoStep() {
         QTextDocument document(QStringLiteral("one\ntwo\nthree"));
         auto edits = QList<Edit>{
@@ -204,6 +318,39 @@ class TestLspRename : public QObject {
         auto edits = QList<Edit>{Edit{1, 0, 1, 11, QStringLiteral("first\nsecond")}};
         QCOMPARE(lspRename::applyEdits(&document, edits), 1);
         QCOMPARE(document.toPlainText(), QStringLiteral("keep\nfirst\nsecond\nkeep"));
+    }
+
+    // --- ranges that do not describe this document --------------------------
+    //
+    // A server answers against the revision it was last sent. If the buffer
+    // moved on, its ranges are still well-formed - they simply name ranges that
+    // mean something else here. Applying them then corrupts the file instead of
+    // failing, which is how a rename ends up with its replacement text wedged
+    // between indentation and the original symbol.
+
+    void aZeroWidthRangeInsertsRatherThanReplaces() {
+        // This is the shape observed in the field: newText carrying a newline
+        // plus the indentation, pasted at the column where the symbol started,
+        // leaving the symbol itself untouched. Pinned here so the behaviour is
+        // a known quantity rather than a surprise - the defence belongs in the
+        // caller, which must check the revision before applying.
+        QTextDocument document(QStringLiteral("    pal.setColor(Qt::white);\n"));
+        auto edits = QList<Edit>{Edit{0, 4, 0, 4, QStringLiteral("palette\n    ")}};
+        QCOMPARE(lspRename::applyEdits(&document, edits), 1);
+        QCOMPARE(document.toPlainText(),
+                 QStringLiteral("    palette\n    pal.setColor(Qt::white);\n"));
+    }
+
+    void aRangeNarrowerThanItsReplacementIsPastedNotSwapped() {
+        // A range computed against a document where the identifier was shorter
+        // cuts the name in half: the replacement lands, the tail stays. This is
+        // the corruption to guard against, and the reason the caller compares the
+        // buffer against the text the request was issued for.
+        QTextDocument document(QStringLiteral("int pal = 1;"));
+        // Server thought the identifier was "pa" (stale, longer original).
+        auto edits = QList<Edit>{Edit{0, 4, 0, 6, QStringLiteral("palette")}};
+        QCOMPARE(lspRename::applyEdits(&document, edits), 1);
+        QCOMPARE(document.toPlainText(), QStringLiteral("int palettel = 1;"));
     }
 };
 
