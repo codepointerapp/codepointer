@@ -22,10 +22,10 @@
 /// editor no longer holds: the reply is well-formed and silently wrong, which is
 /// how a rename ends up scattering the new name through the file.
 ///
-/// Every path that pushes text to a server must record it here. That is the
-/// whole invariant, and it is the one that was previously broken: the
-/// unconditional push in syncDocument() did not record, so the cache could
-/// claim a revision the server had never seen.
+/// Every path that pushes text to a server must record it here, and only once
+/// the text has really been sent. That is the whole invariant: a record that
+/// gets ahead of the server is the same failure as no record at all, because the
+/// next positional request then skips its didChange.
 class SyncedContent {
   public:
     /// True when the server does not already hold exactly `text` for `fileName`,
@@ -60,28 +60,6 @@ class SyncedContent {
     QString held(const QString &fileName) const {
         auto locker = QMutexLocker(&m_mutex);
         return m_contents.value(fileName);
-    }
-
-    /// Runs `push` and records `text` as held, but only if the server did not
-    /// already have it. Returns true when the push ran.
-    ///
-    /// The decision and the record are taken under one lock, so two callers
-    /// racing on the same text cannot both conclude a push is needed and send a
-    /// duplicate didChange. Recording before `push` rather than after is
-    /// deliberate: it keeps the critical section free of I/O, and the failure it
-    /// cannot handle - a send that dies - is already handled by the caller
-    /// forgetting the entry.
-    template <typename Push> bool syncIfStale(const QString &fileName, const QString &text,
-                                             Push &&push) {
-        {
-            auto locker = QMutexLocker(&m_mutex);
-            if (m_contents.value(fileName) == text) {
-                return false;
-            }
-            m_contents[fileName] = text;
-        }
-        push();
-        return true;
     }
 
   private:

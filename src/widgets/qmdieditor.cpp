@@ -1151,7 +1151,7 @@ qmdiEditor::Range qmdiEditor::selectionRange() const {
     return range;
 }
 
-bool qmdiEditor::applyTextEdits(const QList<TextEdit> &edits) {
+bool qmdiEditor::applyTextEdits(const QList<TextEdit> &edits, const QString &expectedOldName) {
     if (edits.isEmpty()) {
         return false;
     }
@@ -1165,9 +1165,32 @@ bool qmdiEditor::applyTextEdits(const QList<TextEdit> &edits) {
                                          edit.endCharacter, edit.newText});
     }
 
-    PlainTextEditStateGuard guard(textEditor);
-    lspRename::applyEdits(textEditor->document(), converted);
-    return true;
+    auto rejected = QStringList();
+    auto applied = expectedOldName.isEmpty()
+                       ? lspRename::applyEdits(textEditor->document(), converted)
+                       : lspRename::applyRenameEdits(textEditor->document(), converted,
+                                                     expectedOldName, &rejected);
+    if (!rejected.isEmpty()) {
+        // The buffer moved while the server was working, so its ranges no longer
+        // describe this document. Applying them would rename the symbol in some
+        // places and not others, so nothing is applied - which means the rename
+        // silently did nothing unless it is said out loud.
+        //
+        // TODO: a rejection is not necessarily the buffer moving. The ranges can
+        // also fail to cover expectedOldName because the server resolved the
+        // symbol differently than we did - a different overload, a macro, or a
+        // symbol in an inactive preprocessor branch. Both cases land here with
+        // the same message, so the banner can be wrong about the cause.
+        // Separating them means carrying the request-time text down here and
+        // comparing it against the current buffer: if they match, nothing moved
+        // and the disagreement is on the server's side. Until then this is the
+        // safe behaviour, just a blunt one.
+        qWarning() << "LspPlugin: refused" << rejected.size() << "rename edit(s):"
+                   << rejected.join(QStringLiteral("; "));
+        displayBannerMessage(
+            tr("Cannot rename: the file changed after the request was sent. Try again."), 60);
+    }
+    return applied > 0;
 }
 
 QString qmdiEditor::getSelectedText() const
@@ -1184,13 +1207,28 @@ void qmdiEditor::focusInEvent(QFocusEvent *event) {
 
 bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
     if (watched == renameEdit) {
-        // Escape drops the pending name, Enter accepts it. Both are handled here
+        // Escape drops the pending name, Enter accepts it. Both are consumed here
         // so they never reach the editor underneath, and returning true keeps the
         // box from acting on them as text movement.
+        //
+        // Enter has to be consumed here and not left to returnPressed alone. The
+        // box is drawn over the viewport, so without this the same key press also
+        // reaches the QPlainTextEdit and inserts a newline at the caret - which
+        // shifts every line below it and makes the ranges the server is about to
+        // return land on the wrong text.
         if (event->type() == QEvent::KeyPress) {
             auto keyEvent = static_cast<QKeyEvent *>(event);
             if (keyEvent->key() == Qt::Key_Escape) {
                 hideInlineRename();
+                return true;
+            }
+            if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+                auto name = renameEdit->text();
+                auto line = renameLine;
+                auto column = renameColumn;
+                auto content = textEditor->toPlainText();
+                hideInlineRename();
+                applyInlineRename(name, line, column, content);
                 return true;
             }
         }
@@ -1603,16 +1641,10 @@ void qmdiEditor::requestRename(const QPoint &position) {
         shadow->setColor(QColor(0, 0, 0, 140));
         renameEdit->setGraphicsEffect(shadow);
 
-        // Enter accepts the name, Escape drops it. Both are consumed here so they
-        // do not reach the editor underneath.
-        connect(renameEdit, &QLineEdit::returnPressed, this, [this]() {
-            auto name = renameEdit->text();
-            auto line = renameLine;
-            auto column = renameColumn;
-            auto content = textEditor->toPlainText();
-            hideInlineRename();
-            applyInlineRename(name, line, column, content);
-        });
+        // Enter accepts the name, Escape drops it. Both are consumed in
+        // eventFilter() rather than connected here: a key press that is only
+        // observed by a signal still reaches the editor underneath and inserts a
+        // newline at the caret.
 
         // The name refers to one place in the buffer: if the text changes, or the
         // user does something else, the box is no longer about that symbol. A
@@ -2196,13 +2228,16 @@ void qmdiEditor::loadContent(bool useBackup) {
 
 QFuture<void> qmdiEditor::reformatContent() {
     auto manager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    // The text the formatter is about to work on. Kept so the result can be
+    // discarded if the buffer moves on while clang-format runs.
+    auto const input = textEditor->toPlainText();
     auto args = CommandArgs{
         {GlobalArguments::FileName, mdiClientFileName()},
-        {GlobalArguments::Content, textEditor->toPlainText()},
+        {GlobalArguments::Content, input},
     };
 
     return manager->handleCommandAsync(GlobalCommands::ReformatCode, args)
-        .then(this, [this](CommandArgs args) {
+        .then(this, [this, input](CommandArgs args) {
             auto exitCode = args[GlobalArguments::ExitCode].toInt();
             if (exitCode != 0) {
                 auto processStderr = args[GlobalArguments::ErrorMessage].toString();
@@ -2231,6 +2266,20 @@ QFuture<void> qmdiEditor::reformatContent() {
 
             auto c = args[GlobalArguments::Content].toString();
             if (c == textEditor->toPlainText()) {
+                return;
+            }
+
+            // The formatter ran on a worker thread against the text captured above.
+            // If the buffer moved on in the meantime - a keystroke, or an LSP edit
+            // such as a rename landing mid-format - those changes are not in the
+            // formatter's output, and replacing the whole document would silently
+            // discard them. Only apply when the buffer is still exactly what was
+            // sent, and otherwise let the user re-run it on the current text.
+            if (textEditor->toPlainText() != input) {
+                displayBannerMessage(
+                    tr("The file changed while it was being formatted. Format it again to "
+                       "apply."),
+                    40);
                 return;
             }
 
