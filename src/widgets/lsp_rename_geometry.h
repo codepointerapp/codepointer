@@ -13,8 +13,6 @@
 #include <QTextCursor>
 #include <QTextDocument>
 
-#include <algorithm>
-
 /// The geometry behind an LSP rename: turning the position the user clicked, and
 /// the ranges a language server sends back, into edits on a text document.
 ///
@@ -57,14 +55,16 @@ inline QString identifierAt(const QString &text, int line, int column) {
 }
 
 /// The document offset of a 0-based LSP (line, character) position, or -1 when
-/// the line is not in the document.
+/// the position is not in the document.
 ///
 /// LSP character offsets are end-exclusive and may legally sit one past the last
-/// character of a line, so the valid range is [0, line length]. The clamp is
-/// against block.text().size(); the older spelling, block.length() - 1, is the
-/// same number, because length() adds exactly one for the block separator.
+/// character of a line, so the valid range is [0, line length]. Anything outside
+/// that - a negative index, or one past the end of the line - is rejected rather
+/// than clamped. Clamping is what turned a stale server reply into a corrupted
+/// file: a negative column silently became column 0, so the replacement was
+/// pasted at the start of the line and the original symbol was left behind.
 inline int positionOf(const QTextDocument *document, int line, int character) {
-    if (!document) {
+    if (!document || line < 0 || character < 0) {
         return -1;
     }
     auto block = document->findBlockByNumber(line);
@@ -72,7 +72,10 @@ inline int positionOf(const QTextDocument *document, int line, int character) {
         return -1;
     }
     auto lineLength = static_cast<int>(block.text().size());
-    return block.position() + std::clamp(character, 0, lineLength);
+    if (character > lineLength) {
+        return -1;
+    }
+    return block.position() + character;
 }
 
 /// Applies `edits` to `document` as one undoable action, and returns how many
@@ -104,6 +107,89 @@ inline int applyEdits(QTextDocument *document, const QList<Edit> &edits) {
     }
     cursor.endEditBlock();
     return applied;
+}
+
+/// Applies a rename's edits, refusing the whole reply unless every one of its
+/// ranges covers `oldName`.
+///
+/// A rename is the one positional request where the caller knows what text every
+/// returned edit is supposed to replace: the symbol being renamed. Checking that
+/// turns a server answering about a stale document - whose ranges are well-formed
+/// but name something else - into a refusal instead of a corrupted file.
+///
+/// The check is all or nothing, and that is the point. The server computed every
+/// range against one snapshot, so a reply that is stale anywhere is stale
+/// throughout. The ranges that still happen to line up with the current buffer are
+/// a coincidence, not permission: applying those and skipping the rest renames the
+/// symbol in some places and not others, which is a file that no longer compiles -
+/// strictly worse than leaving it alone. So every range is validated before
+/// anything is written.
+///
+/// `rejected`, when given, receives one note per edit that failed, for diagnostics.
+/// The notes carry the range as the server stated it, which is what identifies the
+/// divergence.
+inline int applyRenameEdits(QTextDocument *document, const QList<Edit> &edits,
+                            const QString &oldName, QStringList *rejected = nullptr) {
+    if (!document || edits.isEmpty()) {
+        return 0;
+    }
+
+    // Pass one: validate every range against the document as it stands. Nothing is
+    // written yet, so each range is measured against the same text.
+    auto ranges = QList<QPair<int, int>>();
+    ranges.reserve(edits.size());
+    auto allValid = true;
+
+    for (auto const &edit : edits) {
+        auto from = positionOf(document, edit.startLine, edit.startCharacter);
+        auto to = positionOf(document, edit.endLine, edit.endCharacter);
+        if (from < 0 || to < 0 || to < from) {
+            if (rejected) {
+                rejected->append(QStringLiteral("%1:%2-%3:%4 is outside the document")
+                                     .arg(edit.startLine)
+                                     .arg(edit.startCharacter)
+                                     .arg(edit.endLine)
+                                     .arg(edit.endCharacter));
+            }
+            allValid = false;
+            continue;
+        }
+
+        // Read the covered text without disturbing a cursor. selectedText() uses
+        // U+2029 for paragraph breaks; an identifier contains none, so a range
+        // spanning lines cannot match and is refused.
+        QTextCursor reader(document);
+        reader.setPosition(from);
+        reader.setPosition(to, QTextCursor::KeepAnchor);
+        if (reader.selectedText() != oldName) {
+            if (rejected) {
+                rejected->append(QStringLiteral("%1:%2 covers '%3', not '%4'")
+                                     .arg(edit.startLine)
+                                     .arg(edit.startCharacter)
+                                     .arg(reader.selectedText(), oldName));
+            }
+            allValid = false;
+            continue;
+        }
+
+        ranges.append({from, to});
+    }
+
+    if (!allValid) {
+        return 0;
+    }
+
+    // Pass two: every range checked out, so they are consistent with each other and
+    // can be written in the bottom-up order the caller sorted them in.
+    auto cursor = QTextCursor(document);
+    cursor.beginEditBlock();
+    for (auto i = 0; i < ranges.size(); ++i) {
+        cursor.setPosition(ranges.at(i).first);
+        cursor.setPosition(ranges.at(i).second, QTextCursor::KeepAnchor);
+        cursor.insertText(edits.at(i).newText);
+    }
+    cursor.endEditBlock();
+    return static_cast<int>(ranges.size());
 }
 
 } // namespace lspRename
