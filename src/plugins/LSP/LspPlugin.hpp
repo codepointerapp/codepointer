@@ -206,7 +206,19 @@ class LspPlugin : public IPlugin {
     QSet<QString> dirtyDocuments;
 
     /// Applies a set of server-supplied edits. Returns the number of files changed.
-    int applyTextEdits(const QList<struct LspTextEdit> &edits);
+    ///
+    /// When expectedOldName is non-empty the edits are a rename and every range
+    /// must still cover that identifier, so a reply for a stale revision is
+    /// refused rather than half-applied. It is only meaningful for the file the
+    /// rename started in; leave it empty for the other files and for ordinary
+    /// edits, which have no symbol to check against.
+    int applyTextEdits(const QList<struct LspTextEdit> &edits, const QString &expectedOldName = {},
+                       const QString &renameOriginFile = {});
+
+    /// Current buffer text for `fileName`, or a null string when the file is not
+    /// open. Compares against the text a request was issued for to detect that
+    /// the document moved on while the server was working.
+    QString editorTextFor(const QString &fileName);
 
     LspDebugWidget *debugWidget = nullptr;
     QDockWidget *debugDock = nullptr;

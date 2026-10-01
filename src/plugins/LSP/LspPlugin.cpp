@@ -26,6 +26,7 @@
 #include "LspDebugWidget.hpp"
 #include "LspPlugin.hpp"
 #include "pluginmanager.h"
+#include "widgets/lsp_rename_geometry.h"
 #include "widgets/qmdieditor.h"
 
 #ifdef Q_OS_WIN
@@ -399,7 +400,23 @@ QList<QPair<QString, int>> LspPlugin::documentsFor(const QString &root) const {
     return out;
 }
 
-int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits) {
+QString LspPlugin::editorTextFor(const QString &fileName) {
+    auto manager = getManager();
+    if (!manager) {
+        return {};
+    }
+    // Same normalisation applyTextEdits() uses to reach the editor, so this
+    // reports on the editor the edits will actually land in.
+    auto native = QDir::toNativeSeparators(QFileInfo(fileName).absoluteFilePath());
+    auto editor = dynamic_cast<qmdiEditor *>(manager->clientForFileName(native));
+    if (!editor) {
+        return {};
+    }
+    return editor->getContent();
+}
+
+int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits, const QString &expectedOldName,
+                              const QString &renameOriginFile) {
     auto manager = getManager();
     if (!manager || edits.isEmpty()) {
         return 0;
@@ -436,7 +453,12 @@ int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits) {
                                                       edit.endLine, edit.endCharacter,
                                                       edit.newText});
         }
-        if (!editor->applyTextEdits(documentEdits)) {
+        // The symbol check only holds for the file the rename was started in: its
+        // ranges are the ones the server resolved against a known symbol. Other
+        // files in a cross-file rename are edited on the plain path.
+        auto nativePath = QDir::toNativeSeparators(QFileInfo(it.key()).absoluteFilePath());
+        auto isRenameOrigin = expectedOldName.isEmpty() || nativePath == renameOriginFile;
+        if (!editor->applyTextEdits(documentEdits, isRenameOrigin ? expectedOldName : QString{})) {
             continue;
         }
         changed++;
@@ -641,13 +663,17 @@ bool LspPlugin::syncDocument(const QString &fileName, const QString &text) {
     if (!server) {
         return false;
     }
-    server->syncDocument(QFileInfo(fileName).absoluteFilePath().toStdString(), text.toStdString(),
-                         languageForFile(fileName).toStdString());
+    if (!server->syncDocument(QFileInfo(fileName).absoluteFilePath().toStdString(),
+                              text.toStdString(), languageForFile(fileName).toStdString())) {
+        // The server was not ready, so the text never went out. Recording it
+        // anyway would claim a revision the server does not have, and the next
+        // positional request would skip its didChange and be answered against
+        // whatever the server is actually holding.
+        return false;
+    }
     dirtyDocuments.remove(fileName);
-    // Recorded here so every path that pushes a document updates the same
-    // record. When this was the only push path left out, the cache could claim
-    // a revision the server had never received, and a positional request was
-    // answered against text the editor no longer held.
+    // Recorded only after the text has actually been sent, so the cache can
+    // never claim a revision the server never received.
     syncedContent.record(fileName, text);
     return true;
 }
@@ -954,8 +980,16 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
     // question, otherwise the reply refers to a stale document. Full-text sync
     // is expensive (the server re-parses on each didChange), so only push when
     // the text actually differs from what the server last received.
-    if (syncedContent.isStale(fileName, content)) {
-        syncDocument(fileName, content);
+    if (syncedContent.isStale(fileName, content) && !syncDocument(fileName, content)) {
+        // The push did not happen, so the server would answer about a document it
+        // is not holding. Its ranges would be well-formed and wrong, and for a
+        // rename that means writing the new name into the wrong places. Say so
+        // instead of corrupting the buffer.
+        qWarning() << "LspPlugin: cannot reach the server for" << fileName
+                   << "- request dropped rather than answered against a stale document";
+        return QtFuture::makeReadyValueFuture(
+            CommandArgs{{GlobalArguments::ErrorMessage,
+                         tr("The language server is not ready yet. Try again in a moment.")}});
     }
 
     auto pending = std::make_shared<PendingRequest>();
@@ -1014,10 +1048,13 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
         // The editor owns the prompt and supplies the name; all that is left is
         // the round trip to the server and applying the edits it returns.
         auto newName = args[GlobalArguments::NewName].toString();
+        // Resolved from the text the editor sent, so the reply can be checked
+        // against the symbol this request was actually about.
+        auto oldName = lspRename::identifierAt(content, line, column);
         server->requestRename(
             path, line, column, newName.toStdString(),
-            [this, newName, pending](std::vector<LspClientImpl::TextEdit> edits,
-                                     const std::string &serverError) {
+            [this, newName, oldName, pending, fileName,
+             content](std::vector<LspClientImpl::TextEdit> edits, const std::string &serverError) {
                 if (!serverError.empty()) {
                     pending->complete(
                         CommandArgs{{GlobalArguments::ErrorMessage,
@@ -1034,8 +1071,30 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
                 // Editors are GUI-only and this arrives on a reader thread.
                 QMetaObject::invokeMethod(
                     this,
-                    [this, converted, newName, pending]() {
-                        auto files = applyTextEdits(converted);
+                    [this, converted, newName, oldName, pending, fileName, content]() {
+                        // The ranges are positional and were computed against the
+                        // text the server held when the request went out. A
+                        // whole-document comparison here would refuse every rename
+                        // where an unrelated part of the file moved in flight,
+                        // which is the common case rather than the exception.
+                        // applyRenameEdits() is the real guard: it refuses any edit
+                        // whose range does not cover the symbol being renamed, so a
+                        // reply for a different revision cannot corrupt the file.
+                        // This only reports, to show whether the buffer is being
+                        // touched at all.
+                        auto current = editorTextFor(fileName);
+                        if (current != content) {
+                            auto manager = getManager();
+                            auto editor = manager ? dynamic_cast<qmdiEditor *>(
+                                                        manager->clientForFileName(fileName))
+                                                  : nullptr;
+                            qWarning()
+                                << "LspPlugin: buffer differs from request revision"
+                                << "file:" << fileName << "editorFound:" << (editor != nullptr)
+                                << "requestedBytes:" << content.size()
+                                << "currentBytes:" << current.size();
+                        }
+                        auto files = applyTextEdits(converted, oldName, fileName);
                         qDebug() << "LspPlugin: renamed to" << newName << "across" << files
                                  << "file(s)," << converted.size() << "edits";
                         pending->complete(CommandArgs{});
