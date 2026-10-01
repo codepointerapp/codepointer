@@ -429,13 +429,14 @@ int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits, const QString &ex
 
     auto changed = 0;
     for (auto it = byFile.begin(); it != byFile.end(); ++it) {
-        // Edits may land in files that are not open; open them so the change is
-        // visible and undoable rather than rewriting them behind the user's back.
         auto fileName = QDir::toNativeSeparators(QFileInfo(it.key()).absoluteFilePath());
-        manager->openFile(fileName);
+        if (!manager->clientForFileName(fileName)) {
+            manager->openFile(fileName);
+        }
+
         auto editor = dynamic_cast<qmdiEditor *>(manager->clientForFileName(fileName));
         if (!editor) {
-            qWarning() << "LspPlugin: cannot apply edits, could not open" << fileName;
+            qWarning() << "LspPlugin: cannot apply edits, no text editor for" << fileName;
             continue;
         }
 
