@@ -1,3 +1,11 @@
+/**
+ * \file LspPlugin.cpp
+ * \brief LSP plugin for the IDE
+ * \author Diego Iastrubni diegoiast@gmail.com
+ */
+
+// SPDX-License-Identifier: MIT
+
 #include <atomic>
 #include <cstddef>
 #include <memory>
@@ -29,6 +37,7 @@
 #include "LspClientImpl.hpp"
 #include "LspDebugWidget.hpp"
 #include "LspPlugin.hpp"
+#include "LspReferencesWidget.hpp"
 #include "lsp_text_edit.hpp"
 #include "pluginmanager.h"
 #include "widgets/lsp_rename_geometry.h"
@@ -312,6 +321,31 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
     debugWidget = new LspDebugWidget(this);
     debugDock = manager->createNewPanel(Panels::East, "lspdebug", tr("LSP"), debugWidget);
 
+    referencesWidget = new LspReferencesWidget;
+    referencesDock =
+        manager->createNewPanel(Panels::West, "lspreferences", tr("References"), referencesWidget);
+    referencesWidget->setDock(referencesDock);
+    // Only worth the screen space once a search has actually produced something.
+    referencesDock->hide();
+    connect(referencesWidget, &LspReferencesWidget::openLocation, this,
+            [this](const QString &fileName, int lineNumber, int columnNumber) {
+                auto mgr = getManager();
+                if (!mgr) {
+                    return;
+                }
+                auto const nativeFileName = QDir::toNativeSeparators(fileName);
+                mgr->openFile(nativeFileName);
+                auto const client = mgr->clientForFileName(nativeFileName);
+                auto const editor = dynamic_cast<qmdiEditor *>(client);
+                if (!editor) {
+                    return;
+                }
+                editor->loadContent(true);
+                editor->goTo(columnNumber > 0 ? columnNumber - 1 : 0,
+                             lineNumber > 0 ? lineNumber - 1 : 0);
+                editor->setFocus();
+            });
+
     // Queued by construction when the trace originates on a reader thread.
     connect(this, &LspPlugin::traceMessage, debugWidget, &LspDebugWidget::appendTrace);
     connect(this, &LspPlugin::serverReady, this, &LspPlugin::updateEditorCompletionMode);
@@ -361,6 +395,9 @@ void LspPlugin::on_client_unmerged(qmdiHost *host) {
     delete debugDock;
     debugDock = nullptr;
     debugWidget = nullptr;
+    delete referencesDock;
+    referencesDock = nullptr;
+    referencesWidget = nullptr;
     IPlugin::on_client_unmerged(host);
 }
 
@@ -1019,6 +1056,13 @@ int LspPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &
         return CommandPriority::HighestPriority;
     }
 
+    if (command == GlobalCommands::ShowReferences) {
+        if (!referencesWidget || !referencesDock) {
+            return CommandPriority::CannotHandle;
+        }
+        return CommandPriority::HighestPriority;
+    }
+
     if (command == GlobalCommands::FindReferences) {
         auto fileName = args[GlobalArguments::FileName].toString();
         if (languageForFile(fileName).isEmpty()) {
@@ -1056,6 +1100,15 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
         projectRoots.remove(root);
         auto locker = QMutexLocker(&serversMutex);
         servers.remove(root);
+        return QtFuture::makeReadyValueFuture(CommandArgs{});
+    }
+
+    if (command == GlobalCommands::ShowReferences) {
+        auto const symbol = args[GlobalArguments::Symbol].toString();
+        auto const rows = args[GlobalArguments::Tags].toList();
+        // Always on the GUI thread here: the editor dispatches this from a menu
+        // action, and the widget owns widgets.
+        referencesWidget->setResults(symbol, rows);
         return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
@@ -1184,9 +1237,14 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
                 }
                 auto converted = QList<LspTextEdit>();
                 for (auto const &e : edits) {
-                    converted.append(LspTextEdit{QString::fromStdString(e.file), e.startLine,
-                                                 e.startCharacter, e.endLine, e.endCharacter,
-                                                 QString::fromStdString(e.newText)});
+                    converted.append(LspTextEdit{
+                        QString::fromStdString(e.file),
+                        QString::fromStdString(e.newText),
+                        e.startLine,
+                        e.startCharacter,
+                        e.endLine,
+                        e.endCharacter,
+                    });
                 }
                 // Editors are GUI-only and this arrives on a reader thread.
                 QMetaObject::invokeMethod(
