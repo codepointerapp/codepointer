@@ -284,10 +284,12 @@ set(codepointer_sources
     src/plugins/LSP/lsp_text_edit.hpp
     src/plugins/LSP/LspDebugWidget.cpp
     src/plugins/LSP/LspDebugWidget.hpp
-    indenters.json
+    src/plugins/LSP/LspReferencesWidget.cpp
+    src/plugins/LSP/LspReferencesWidget.hpp
 
     src/main.cpp
     ${CMAKE_BINARY_DIR}/codepointer.qrc
+    indenters.json
     codepointer.rc
 
 )
