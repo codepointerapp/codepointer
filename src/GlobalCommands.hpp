@@ -51,6 +51,10 @@ inline constexpr const char *RenameSymbol = "RenameSymbol";
 
 inline constexpr const char *FindReferences = "FindReferences";
 
+// Hand a list of reference locations to the references dock and show it. Sent by
+// the editor when the user asks for the results the context menu could not fit.
+inline constexpr const char *ShowReferences = "ShowReferences";
+
 // Open a new editor, with the attached document
 inline constexpr const char *DisplayText = "DisplayText";
 

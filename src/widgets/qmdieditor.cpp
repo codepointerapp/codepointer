@@ -689,6 +689,7 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
     }
 
     auto groups = std::vector<std::pair<QString, QVariantList>>();
+    auto everyUnique = QVariantList();
     for (auto const &fileName : std::as_const(order)) {
         auto seen = QSet<QString>();
         auto unique = QVariantList();
@@ -704,6 +705,7 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
             unique.append(item);
         }
         groups.emplace_back(fileName, unique);
+        everyUnique.append(unique);
     }
 
     auto number = 0;
@@ -717,12 +719,12 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
 
         auto const shown = std::min(static_cast<int>(unique.size()), MAX_PER_FILE);
         for (auto i = 0; i < shown; ++i) {
+            number++;
+            shownTotal++;
+
             auto const tag = unique.at(i).toHash();
             auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
             auto const columnNumber = tag[GlobalArguments::ColumnNumber].toInt();
-            ++number;
-            ++shownTotal;
-
             auto const simpleFileName = QFileInfo(fileName).fileName();
             auto const title = QStringLiteral("%1. %2:%3 - %4")
                                    .arg(number)
@@ -751,7 +753,15 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
         if (unique.size() > shown) {
             auto const more = new QAction(
                 QObject::tr("More results from %1").arg(QFileInfo(fileName).fileName()), menu);
-            more->setEnabled(false);
+            auto const fileRows = unique;
+            QObject::connect(more, &QAction::triggered, menu, [symbol, fileRows, manager]() {
+                if (!manager) {
+                    return;
+                }
+                manager->handleCommandAsync(
+                    GlobalCommands::ShowReferences,
+                    {{GlobalArguments::Symbol, symbol}, {GlobalArguments::Tags, fileRows}});
+            });
             menu->addAction(more);
         }
     }
@@ -761,9 +771,15 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
         separator->setSeparator(true);
         menu->addAction(separator);
 
-        auto const more =
-            new QAction(QObject::tr("...and %1 more (not shown)").arg(unreached), menu);
-        more->setEnabled(false);
+        auto const more = new QAction(QObject::tr("...and %1 more").arg(unreached), menu);
+        QObject::connect(more, &QAction::triggered, menu, [symbol, everyUnique, manager]() {
+            if (!manager) {
+                return;
+            }
+            manager->handleCommandAsync(
+                GlobalCommands::ShowReferences,
+                {{GlobalArguments::Symbol, symbol}, {GlobalArguments::Tags, everyUnique}});
+        });
         menu->addAction(more);
     }
 }
