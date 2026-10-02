@@ -659,6 +659,115 @@ QString qmdiEditor::getShortFileName() {
     return s;
 }
 
+static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, PluginManager *manager)
+    -> void {
+    static auto const MAX_PER_FILE = 10;
+    static auto const MAX_TOTAL = 50;
+
+    if (!data.contains(GlobalArguments::Tags)) {
+        return;
+    }
+
+    auto const symbol = data[GlobalArguments::Symbol].toString();
+    auto const tags = data[GlobalArguments::Tags].toList();
+
+    if (tags.isEmpty()) {
+        auto const none = new QAction(QObject::tr("%1 - no references found").arg(symbol), menu);
+        none->setEnabled(false);
+        menu->addAction(none);
+        return;
+    }
+
+    auto order = QStringList();
+    auto byFile = QHash<QString, QVariantList>();
+    for (auto const &item : tags) {
+        auto const fileName = item.toHash()[GlobalArguments::FileName].toString();
+        if (!byFile.contains(fileName)) {
+            order.append(fileName);
+        }
+        byFile[fileName].append(item);
+    }
+
+    auto groups = std::vector<std::pair<QString, QVariantList>>();
+    for (auto const &fileName : std::as_const(order)) {
+        auto seen = QSet<QString>();
+        auto unique = QVariantList();
+        for (auto const &item : byFile.value(fileName)) {
+            auto const tag = item.toHash();
+            auto const key = QStringLiteral("%1:%2")
+                                 .arg(tag[GlobalArguments::LineNumber].toInt())
+                                 .arg(tag[GlobalArguments::ColumnNumber].toInt());
+            if (seen.contains(key)) {
+                continue;
+            }
+            seen.insert(key);
+            unique.append(item);
+        }
+        groups.emplace_back(fileName, unique);
+    }
+
+    auto number = 0;
+    auto shownTotal = 0;
+    auto unreached = 0;
+    for (auto const &[fileName, unique] : groups) {
+        if (shownTotal >= MAX_TOTAL) {
+            unreached += static_cast<int>(unique.size());
+            continue;
+        }
+
+        auto const shown = std::min(static_cast<int>(unique.size()), MAX_PER_FILE);
+        for (auto i = 0; i < shown; ++i) {
+            auto const tag = unique.at(i).toHash();
+            auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
+            auto const columnNumber = tag[GlobalArguments::ColumnNumber].toInt();
+            ++number;
+            ++shownTotal;
+
+            auto const simpleFileName = QFileInfo(fileName).fileName();
+            auto const title = QStringLiteral("%1. %2:%3 - %4")
+                                   .arg(number)
+                                   .arg(simpleFileName)
+                                   .arg(lineNumber)
+                                   .arg(symbol);
+
+            auto const action = new QAction(title, menu);
+            QObject::connect(action, &QAction::triggered, action,
+                             [fileName, lineNumber, columnNumber, manager]() {
+                                 auto const nativeFileName = QDir::toNativeSeparators(fileName);
+                                 manager->openFile(nativeFileName);
+                                 auto const client = manager->clientForFileName(nativeFileName);
+                                 auto const editor = dynamic_cast<qmdiEditor *>(client);
+                                 if (!editor) {
+                                     return;
+                                 }
+                                 editor->loadContent(true);
+                                 editor->goTo(columnNumber > 0 ? columnNumber - 1 : 0,
+                                              lineNumber > 0 ? lineNumber - 1 : 0);
+                                 editor->setFocus();
+                             });
+            menu->addAction(action);
+        }
+
+        if (unique.size() > shown) {
+            auto const more = new QAction(
+                QObject::tr("More results from %1").arg(QFileInfo(fileName).fileName()), menu);
+            more->setEnabled(false);
+            menu->addAction(more);
+        }
+    }
+
+    if (unreached > 0) {
+        auto const separator = new QAction(menu);
+        separator->setSeparator(true);
+        menu->addAction(separator);
+
+        auto const more =
+            new QAction(QObject::tr("...and %1 more (not shown)").arg(unreached), menu);
+        more->setEnabled(false);
+        menu->addAction(more);
+    }
+}
+
 void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &globalPosition) {
     auto followSymbolMenu = new QMenu(this);
     followSymbolMenu->setTitle(tr("Follow symbol"));
@@ -666,6 +775,13 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
     auto loadingAction = new QAction(tr("Loading..."), followSymbolMenu);
     loadingAction->setEnabled(false);
     followSymbolMenu->addAction(loadingAction);
+
+    auto referencesMenu = new QMenu(this);
+    referencesMenu->setTitle(tr("Find all references"));
+
+    auto loadingReferencesAction = new QAction(tr("Loading..."), referencesMenu);
+    loadingReferencesAction->setEnabled(false);
+    referencesMenu->addAction(loadingReferencesAction);
 
     auto menu = textEditor->createStandardContextMenu();
     auto separator = new QAction(this);
@@ -683,12 +799,17 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
                      [this, localPosition]() { requestRename(localPosition); });
 
     menu->insertMenu(firstAction, followSymbolMenu);
+    menu->insertMenu(firstAction, referencesMenu);
 
     auto future = getSuggestionsForCurrentWord(localPosition);
+    auto referencesFuture = getReferencesForCurrentWord(localPosition);
     auto watcher = new QFutureWatcher<CommandArgs>(this);
+    auto referencesWatcher = new QFutureWatcher<CommandArgs>(this);
     auto safeWatcher = QPointer(watcher);
     auto safeFollow = QPointer(followSymbolMenu);
     auto safeLoading = QPointer(loadingAction);
+    auto safeReferences = QPointer(referencesMenu);
+    auto safeLoadingReferences = QPointer(loadingReferencesAction);
     connect(watcher, &QFutureWatcher<CommandArgs>::finished, menu, [=, this]() {
         if (!safeFollow || !safeLoading /*|| !safeFollow->isVisible()*/) {
             qDebug() << "qmdiEditor: not safe follow";
@@ -710,7 +831,26 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
         createSubFollowSymbolSubmenu(res, safeFollow, pluginManager);
     });
 
+    connect(referencesWatcher, &QFutureWatcher<CommandArgs>::finished, menu, [=, this]() {
+        if (!safeReferences || !safeLoadingReferences) {
+            return;
+        }
+
+        safeReferences->removeAction(safeLoadingReferences);
+        if (!referencesWatcher || referencesWatcher->isCanceled()) {
+            return;
+        }
+
+        auto res = referencesWatcher->result();
+        auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+        if (!pluginManager) {
+            return;
+        }
+        createSubReferencesSubmenu(res, safeReferences, pluginManager);
+    });
+
     watcher->setFuture(future);
+    referencesWatcher->setFuture(referencesFuture);
     menu->exec(globalPosition);
     // The inline rename box is opened from the action's triggered handler, which
     // runs inside exec()'s nested event loop. On the way out exec() gives the
@@ -1492,6 +1632,10 @@ QFuture<CommandArgs> qmdiEditor::getCommandForLocation(const QPoint &localPositi
 
 QFuture<CommandArgs> qmdiEditor::getSuggestionsForCurrentWord(const QPoint &localPosition) {
     return getCommandForLocation(localPosition, GlobalCommands::VariableInfo);
+}
+
+QFuture<CommandArgs> qmdiEditor::getReferencesForCurrentWord(const QPoint &localPosition) {
+    return getCommandForLocation(localPosition, GlobalCommands::FindReferences);
 }
 
 QFuture<CommandArgs> qmdiEditor::getTooltipsForPosition(const QPoint &localPosition) {
