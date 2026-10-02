@@ -1,3 +1,11 @@
+/**
+ * \file LspPlugin.hpp
+ * \brief LSP plugin for the IDE
+ * \author Diego Iastrubni diegoiast@gmail.com
+ */
+
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <memory>
@@ -15,6 +23,7 @@
 
 class LspClientImpl;
 class LspDebugWidget;
+class LspReferencesWidget;
 struct PendingRequest;
 
 /// One language server as configured: which binary, how to launch it, and which
@@ -42,8 +51,11 @@ class QDockWidget;
 /// header does not have to include the generated lsp types.
 struct LspTextEdit {
     QString file;
-    int startLine = 0, startCharacter = 0, endLine = 0, endCharacter = 0;
     QString newText;
+    int startLine = 0;
+    int startCharacter = 0;
+    int endLine = 0;
+    int endCharacter = 0;
 };
 
 // FIXME: we could merge this with LspServerDefinition
@@ -227,4 +239,7 @@ class LspPlugin : public IPlugin {
 
     LspDebugWidget *debugWidget = nullptr;
     QDockWidget *debugDock = nullptr;
+
+    LspReferencesWidget *referencesWidget = nullptr;
+    QDockWidget *referencesDock = nullptr;
 };
