@@ -18,6 +18,23 @@ target_link_libraries(LspRenameTest
 
 add_test(NAME LspRenameTest COMMAND LspRenameTest)
 
+add_executable(LspTextEditTest test_lsp_text_edit.cpp)
+
+target_include_directories(LspTextEditTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+target_link_libraries(LspTextEditTest
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+)
+
+# The implementation under test. Kept as its own source file rather than part of
+# the plugin so the tests can link it without the editor, and so swapping it for
+# a Qt-free version is a one-line change here.
+target_sources(LspTextEditTest PRIVATE ${CMAKE_SOURCE_DIR}/src/plugins/LSP/lsp_text_edit_qt.cpp)
+
+add_test(NAME LspTextEditTest COMMAND LspTextEditTest)
+
 add_executable(LspSyncedContentTest test_lsp_synced_content.cpp)
 
 target_include_directories(LspSyncedContentTest PRIVATE ${CMAKE_SOURCE_DIR}/src)

@@ -1,10 +1,13 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include <QDebug>
 #include <QDir>
 #include <QDockWidget>
+#include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QJsonArray>
@@ -13,6 +16,7 @@
 #include <QMenu>
 #include <QMutexLocker>
 #include <QPromise>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QString>
 #include <QTextBlock>
@@ -25,6 +29,7 @@
 #include "LspClientImpl.hpp"
 #include "LspDebugWidget.hpp"
 #include "LspPlugin.hpp"
+#include "lsp_text_edit.hpp"
 #include "pluginmanager.h"
 #include "widgets/lsp_rename_geometry.h"
 #include "widgets/qmdieditor.h"
@@ -415,6 +420,74 @@ QString LspPlugin::editorTextFor(const QString &fileName) {
     return editor->getContent();
 }
 
+/// Applies `edits` to a file that has no editor open, by rewriting it on disk.
+///
+/// Returns true when the file was changed. The write is refused rather than
+/// attempted when the text on disk no longer matches the ranges - the file was
+/// never in an editor, so it cannot have unsaved changes, which means a mismatch
+/// is the file having been modified underneath the server while it worked.
+///
+/// No formatting is run over the result. The replacement text is the server's,
+/// and reformatting a file the user cannot see is a second, unrequested change
+/// on top of the first.
+auto LspPlugin::applyEditsToClosedFile(const QString &fileName, const QList<LspTextEdit> &edits,
+                                       const QString &expectedOldName) -> bool {
+    auto file = QFile(fileName);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "LspPlugin: cannot apply edits, cannot read" << fileName
+                   << file.errorString();
+        return false;
+    }
+    auto const original = file.readAll();
+    file.close();
+
+    auto plainEdits = std::vector<lspTextEdit::Edit>();
+    plainEdits.reserve(edits.size());
+    for (auto const &edit : edits) {
+        plainEdits.push_back(lspTextEdit::Edit{edit.startLine, edit.startCharacter, edit.endLine,
+                                               edit.endCharacter, edit.newText.toStdString()});
+    }
+
+    auto result =
+        lspTextEdit::apply(original.toStdString(), plainEdits, expectedOldName.toStdString());
+    if (!result.applied) {
+        // Nothing was rewritten, so the file is as it was. Say why: a refusal here
+        // is usually the file on disk moving on while the server worked, which is
+        // worth the user knowing about rather than a rename that half happened.
+        qWarning() << "LspPlugin: refused" << result.rejected.size() << "edit(s) for" << fileName
+                   << (result.rejected.empty() ? QStringLiteral("no edit could be placed")
+                                               : result.rejected.front().c_str());
+        return false;
+    }
+
+    // Write to a temporary next to the target and move it into place, so an
+    // interrupted write cannot leave a source file truncated.
+    QSaveFile out(fileName);
+    if (!out.open(QIODevice::WriteOnly)) {
+        qWarning() << "LspPlugin: cannot apply edits, cannot write" << fileName
+                   << out.errorString();
+        return false;
+    }
+    if (out.write(result.text.data(), static_cast<qint64>(result.text.size())) < 0 ||
+        !out.commit()) {
+        qWarning() << "LspPlugin: cannot apply edits, write failed for" << fileName
+                   << out.errorString();
+        return false;
+    }
+
+    // The server has to be told, and syncOpenDocuments() cannot do it: it walks
+    // visible tabs, and by definition this file is not one. Without this the
+    // server keeps answering positional requests against the text it read before
+    // we rewrote the file, so the next rename or hover in that file comes back
+    // with ranges for text that no longer exists on disk.
+    if (!syncDocument(fileName, QString::fromStdString(result.text))) {
+        qWarning() << "LspPlugin: rewrote" << fileName
+                   << "on disk but could not sync it to its server; it will answer"
+                      "against the previous contents until the server reloads it";
+    }
+    return true;
+}
+
 int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits, const QString &expectedOldName,
                               const QString &renameOriginFile) {
     auto manager = getManager();
@@ -430,15 +503,6 @@ int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits, const QString &ex
     auto changed = 0;
     for (auto it = byFile.begin(); it != byFile.end(); ++it) {
         auto fileName = QDir::toNativeSeparators(QFileInfo(it.key()).absoluteFilePath());
-        if (!manager->clientForFileName(fileName)) {
-            manager->openFile(fileName);
-        }
-
-        auto editor = dynamic_cast<qmdiEditor *>(manager->clientForFileName(fileName));
-        if (!editor) {
-            qWarning() << "LspPlugin: cannot apply edits, no text editor for" << fileName;
-            continue;
-        }
 
         // Every range is stated against the original document, so applying top-down
         // would invalidate the ranges below. Sort descending and work backwards.
@@ -447,6 +511,23 @@ int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits, const QString &ex
             return a.startLine != b.startLine ? a.startLine > b.startLine
                                               : a.startCharacter > b.startCharacter;
         });
+
+        auto editor = dynamic_cast<qmdiEditor *>(manager->clientForFileName(fileName));
+        if (!editor) {
+            // Not open, so there is nothing to edit in memory and no tab worth
+            // opening for it: a rename that reaches a public interface would
+            // otherwise open every header it touches. The file is rewritten on
+            // disk instead, and picked up when it is opened later.
+            //
+            // The symbol check is applied to every file, not only the one the
+            // rename started in. Out here nothing is undoable and nothing is
+            // visible, so a range that no longer covers the symbol would corrupt
+            // a file the user cannot see; refusing leaves it untouched.
+            if (applyEditsToClosedFile(it.key(), fileEdits, expectedOldName)) {
+                changed++;
+            }
+            continue;
+        }
 
         auto documentEdits = QList<qmdiEditor::TextEdit>();
         for (auto const &edit : fileEdits) {

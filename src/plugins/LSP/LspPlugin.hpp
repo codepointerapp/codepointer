@@ -215,6 +215,11 @@ class LspPlugin : public IPlugin {
     int applyTextEdits(const QList<struct LspTextEdit> &edits, const QString &expectedOldName = {},
                        const QString &renameOriginFile = {});
 
+    /// Rewrites a file that has no editor open. Returns true when it was changed.
+    /// The edits must be sorted bottom-up, as applyTextEdits() sorts them.
+    bool applyEditsToClosedFile(const QString &fileName, const QList<struct LspTextEdit> &edits,
+                                const QString &expectedOldName);
+
     /// Current buffer text for `fileName`, or a null string when the file is not
     /// open. Compares against the text a request was issued for to detect that
     /// the document moved on while the server was working.
