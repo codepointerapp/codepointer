@@ -481,6 +481,39 @@ void LspClientImpl::requestDefinition(const std::string &fileName, uint line, ui
         });
 }
 
+void LspClientImpl::requestReferences(const std::string &fileName, uint line, uint column,
+                                      bool includeDeclaration, DefinitionCallback callback) {
+    if (!m_ready.load()) {
+        callback({});
+        return;
+    }
+
+    auto params = lsp::requests::TextDocumentReferences::Params{};
+    params.textDocument.uri = fileUriFromPath(fileName);
+    params.position = {.line = line, .character = column};
+    params.context.includeDeclaration = includeDeclaration;
+
+    trace("--> references " + fileName + ":" + std::to_string(line) + ":" + std::to_string(column));
+    m_messageHandler->sendRequest<lsp::requests::TextDocumentReferences>(
+        std::move(params),
+        [this, callback](lsp::requests::TextDocumentReferences::Result &&result) {
+            auto out = std::vector<Location>();
+            if (!result.isNull()) {
+                for (auto const &location : result.value()) {
+                    out.push_back(Location{filePathFromUri(location.uri),
+                                           static_cast<int>(location.range.start.line),
+                                           static_cast<int>(location.range.start.character)});
+                }
+            }
+            trace("<-- references result (" + std::to_string(out.size()) + " locations)");
+            callback(std::move(out));
+        },
+        [callback](const lsp::ResponseError &error) {
+            std::cerr << "LspClientImpl: references failed: " << error.what() << std::endl;
+            callback({});
+        });
+}
+
 /// WorkspaceEdit has two forms; `changes` is the simple one and the only one
 /// handled here. `documentChanges` additionally creates/renames/deletes files,
 /// which needs filesystem work the caller does not do yet.
