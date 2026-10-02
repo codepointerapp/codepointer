@@ -734,7 +734,7 @@ void qmdiEditor::setState(const qmdiClientState &state) {
         if (state.contains(StateConstants::ROW)) {
             row = state[StateConstants::ROW].toInt();
         }
-        textEditor->goTo(col, row);
+        textEditor->goTo(row, col);
     }
 
     if (state.contains(StateConstants::SEL_ANCHOR) &&
