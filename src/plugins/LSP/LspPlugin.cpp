@@ -1019,6 +1019,18 @@ int LspPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &
         return CommandPriority::HighestPriority;
     }
 
+    if (command == GlobalCommands::FindReferences) {
+        auto fileName = args[GlobalArguments::FileName].toString();
+        if (languageForFile(fileName).isEmpty()) {
+            return CommandPriority::CannotHandle;
+        }
+        auto server = serverForFile(fileName);
+        if (!server || !server->hasCapability("referencesProvider")) {
+            return CommandPriority::CannotHandle;
+        }
+        return CommandPriority::HighestPriority;
+    }
+
     return CommandPriority::CannotHandle;
 }
 
@@ -1126,6 +1138,32 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
         server->requestSignatureHelp(path, line, column, [pending](lsp::SignatureHelp help) {
             pending->complete(CommandArgs{{GlobalArguments::Tooltip, renderSignatureHelp(help)}});
         });
+    } else if (command == GlobalCommands::FindReferences) {
+        auto symbol = args[GlobalArguments::RequestedSymbol].toString();
+        server->requestReferences(
+            path, line, column, true,
+            [pending, symbol](std::vector<LspClientImpl::Location> locations) {
+                auto tags = QVariantList();
+                tags.reserve(static_cast<int>(locations.size()));
+                for (auto const &location : locations) {
+                    auto const file = QString::fromStdString(location.file);
+                    tags.append(QVariant::fromValue(CommandArgs{
+                        {GlobalArguments::FileName, file},
+                        {GlobalArguments::LineNumber, location.line + 1},
+                        {GlobalArguments::ColumnNumber, location.column + 1},
+                        {GlobalArguments::Name, symbol},
+                        {GlobalArguments::Value, symbol},
+                        {GlobalArguments::Raw, symbol},
+                        {GlobalArguments::Type, QStringLiteral("reference")},
+                        {GlobalArguments::Source, QStringLiteral("LSP")},
+                        {GlobalArguments::IsDefinition, false},
+                    }));
+                }
+                pending->complete(CommandArgs{
+                    {GlobalArguments::Symbol, symbol},
+                    {GlobalArguments::Tags, tags},
+                });
+            });
     } else if (command == GlobalCommands::RenameSymbol) {
         // The editor owns the prompt and supplies the name; all that is left is
         // the round trip to the server and applying the edits it returns.

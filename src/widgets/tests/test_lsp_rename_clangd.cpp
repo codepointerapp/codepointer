@@ -74,7 +74,7 @@ class TestLspRenameClangd : public QObject {
         // - there is no AST to connect the declaration to the definition. That is
         // a property of the server, not of the code under test, so the database is
         // what makes this a cross-file rename at all.
-        writeCompileDatabase(m_dir, source.string());
+        writeCompileDatabase(m_dir, {source.string()});
 
         auto server = startServer();
         QVERIFY2(server != nullptr, "clangd did not become ready");
@@ -121,6 +121,63 @@ class TestLspRenameClangd : public QObject {
         QVERIFY2(hover.find("render") != std::string::npos,
                  qPrintable(QStringLiteral("server answered about the old name: %1")
                                 .arg(QString::fromStdString(hover))));
+    }
+
+    void aReferencesSearchFindsUsesInFilesThatWereNeverOpened() {
+        auto const header = m_dir / "refs.h";
+        writeFile(header, "int counter;\nvoid bump();\n");
+        auto const a = m_dir / "a.cpp";
+        auto const b = m_dir / "b.cpp";
+        writeFile(a, "#include \"refs.h\"\n\nvoid bump() {\n    counter++;\n}\n\nint readOne() {\n "
+                     "   return counter;\n}\n");
+        writeFile(b, "#include \"refs.h\"\n\nvoid other() {\n    counter = 0;\n    bump();\n}\n");
+        writeCompileDatabase(m_dir, {a.string(), b.string()});
+
+        auto server = startServer();
+        QVERIFY2(server != nullptr, "clangd did not become ready");
+        QVERIFY(server->isReady());
+
+        QVERIFY(server->syncDocument(header.string(), readFile(header), "cpp"));
+
+        // counter is declared in a header nobody has open and used in two source
+        // files, neither of which is open.
+        auto const locations = requestReferences(*server, header.string(), 0, 4, true);
+        QVERIFY2(locations.size() >= 4,
+                 qPrintable(QStringLiteral("expected the declaration plus 3 uses, got %1")
+                                .arg(static_cast<int>(locations.size()))));
+
+        auto files = std::set<std::string>();
+        for (auto const &location : locations) {
+            files.insert(location.file);
+        }
+        // Every use must be in a file we never announced, which is the whole point: the
+        // server reaches the project through the include graph.
+        QVERIFY2(
+            files.size() >= 3,
+            qPrintable(
+                QStringLiteral("expected 3 files, got %1").arg(static_cast<int>(files.size()))));
+    }
+
+    void aReferencesSearchExcludesTheDeclarationWhenAsked() {
+        auto const header = m_dir / "only.h";
+        writeFile(header, "int lone;\n");
+        auto const source = m_dir / "only.cpp";
+        writeFile(source, "#include \"only.h\"\n\nvoid go() { lone = 1; }\n");
+        writeCompileDatabase(m_dir, {source.string()});
+
+        auto server = startServer();
+        QVERIFY(server != nullptr && server->isReady());
+        QVERIFY(server->syncDocument(header.string(), readFile(header), "cpp"));
+
+        auto const with = requestReferences(*server, header.string(), 0, 4, true);
+        auto const without = requestReferences(*server, header.string(), 0, 4, false);
+        QVERIFY(!with.empty());
+        // The flag has to actually reach the server, or every search silently
+        // includes the declaration.
+        QVERIFY2(without.size() < with.size(),
+                 qPrintable(QStringLiteral("includeDeclaration ignored: %1 vs %2")
+                                .arg(static_cast<int>(without.size()))
+                                .arg(static_cast<int>(with.size()))));
     }
 
     void aStaleReplyIsRefusedRatherThanApplied() {
@@ -284,7 +341,8 @@ class TestLspRenameClangd : public QObject {
     /// the flags, so if LLVM's bin directory is not on PATH - the usual state on
     /// Windows - a bare name silently degrades to single-file renames and the
     /// test fails for a reason that has nothing to do with the code.
-    void writeCompileDatabase(std::filesystem::path const &dir, std::string const &source) {
+    void writeCompileDatabase(std::filesystem::path const &dir,
+                              std::vector<std::string> const &sources) {
         auto compiler = QDir::cleanPath(QFileInfo(m_clangd).absolutePath() + QDir::separator() +
                                         QStringLiteral("clang++"));
 #ifdef Q_OS_WIN
@@ -299,13 +357,17 @@ class TestLspRenameClangd : public QObject {
         auto const toPosix = [](std::string const &path) {
             return QString::fromStdString(path).replace(QLatin1Char('\\'), QLatin1Char('/'));
         };
-        auto const absoluteSource = toPosix(source);
-        auto entry = QJsonObject{};
-        entry.insert(QStringLiteral("directory"), toPosix(dir.string()));
-        entry.insert(QStringLiteral("command"),
-                     compiler + QStringLiteral(" -std=c++17 -c ") + absoluteSource);
-        entry.insert(QStringLiteral("file"), absoluteSource);
-        auto document = QJsonDocument(QJsonArray{entry});
+        auto entries = QJsonArray{};
+        for (auto const &source : sources) {
+            auto const absoluteSource = toPosix(source);
+            auto entry = QJsonObject{};
+            entry.insert(QStringLiteral("directory"), toPosix(dir.string()));
+            entry.insert(QStringLiteral("command"),
+                         compiler + QStringLiteral(" -std=c++17 -c ") + absoluteSource);
+            entry.insert(QStringLiteral("file"), absoluteSource);
+            entries.append(entry);
+        }
+        auto document = QJsonDocument(entries);
         writeFile(dir / "compile_commands.json",
                   document.toJson(QJsonDocument::Compact).toStdString());
     }
@@ -345,6 +407,23 @@ class TestLspRenameClangd : public QObject {
                 out = std::move(edits);
                 answered = !error.empty();
             });
+        waitFor(answered);
+        return out;
+    }
+
+    static auto requestReferences(LspClientImpl &server, std::string const &file, int line,
+                                  int column, bool includeDeclaration)
+        -> std::vector<LspClientImpl::Location> {
+        auto out = std::vector<LspClientImpl::Location>();
+        auto mutex = std::mutex();
+        auto answered = std::atomic_bool(false);
+        server.requestReferences(file, static_cast<uint>(line), static_cast<uint>(column),
+                                 includeDeclaration,
+                                 [&](std::vector<LspClientImpl::Location> locations) {
+                                     auto locker = std::lock_guard(mutex);
+                                     out = std::move(locations);
+                                     answered = true;
+                                 });
         waitFor(answered);
         return out;
     }
