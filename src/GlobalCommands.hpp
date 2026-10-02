@@ -49,6 +49,8 @@ inline constexpr const char *SignatureHelp = "SignatureHelp";
 // under GlobalArguments::ErrorMessage.
 inline constexpr const char *RenameSymbol = "RenameSymbol";
 
+inline constexpr const char *FindReferences = "FindReferences";
+
 // Open a new editor, with the attached document
 inline constexpr const char *DisplayText = "DisplayText";
 

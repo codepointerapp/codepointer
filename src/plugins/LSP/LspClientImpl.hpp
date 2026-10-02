@@ -126,6 +126,9 @@ class LspClientImpl {
     void requestDefinition(const std::string &fileName, uint line, uint column,
                            DefinitionCallback callback);
 
+    void requestReferences(const std::string &fileName, uint line, uint column,
+                           bool includeDeclaration, DefinitionCallback callback);
+
     /// Refactorings and fixes offered for a range. `kinds` filters by CodeActionKind
     /// prefix ("refactor", "quickfix"); empty asks for everything.
     void requestCodeActions(const std::string &fileName, uint startLine, uint startCharacter,

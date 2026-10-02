@@ -242,6 +242,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void handleWordTooltip(const QPoint &localPosition, const QPoint &globalPosition);
     QFuture<CommandArgs> getCommandForLocation(const QPoint &localPosition, const QString &cmd);
     QFuture<CommandArgs> getSuggestionsForCurrentWord(const QPoint &localPosition);
+    QFuture<CommandArgs> getReferencesForCurrentWord(const QPoint &localPosition);
     QFuture<CommandArgs> getTooltipsForPosition(const QPoint &localPosition);
     QFuture<QSet<Qutepart::CompletionItem>>
     getTagCompletions(const QString &prefix, const QString &previousWord, const QString &separator);
