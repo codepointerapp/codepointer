@@ -1150,7 +1150,7 @@ void ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
             hostArguments << QStringLiteral("--directory=%1").arg(workingDirectory);
             processBuildOutput("flatpak-spawm " + hostArguments.join(" "));
         } else {
-            processBuildOutput("Warning - direcotry");
+            processBuildOutput("Warning - directory");
         }
         hostArguments << program;
         hostArguments << arguments;
