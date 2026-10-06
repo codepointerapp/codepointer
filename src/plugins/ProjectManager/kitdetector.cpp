@@ -252,7 +252,7 @@ auto static findRustSetup(std::vector<KitDetector::ExtraPath> &detected, bool un
         if (unix_target) {
             extraPath.command = "export PATH=\"" + extraPath.compiler_path + "/bin:${PATH}\"";
         } else {
-            extraPath.command = "set PATH=" + extraPath.compiler_path + "\\bin;%PATH%";
+            extraPath.command = "set \"PATH=" + extraPath.compiler_path + "\\bin;%PATH%\"";
         }
         detected.push_back(extraPath);
     }
@@ -277,7 +277,8 @@ static auto checkVisualStudioVersion(PWSTR basePath, const std::wstring &version
         extraPath.name = "MSVC " + wstringToString(version);
         extraPath.compiler_path = wstringToString(versionPath);
         extraPath.comment = "@rem VS " + wstringToString(version);
-        extraPath.command = "call %1\\VC\\Auxiliary\\Build\\vcvarsall.bat";
+        // FIXME: will this work for ARM?`
+        extraPath.command = "call \"%1\\VC\\Auxiliary\\Build\\vcvars64.bat\"";
         extraPath.toolchain = KitDetector::Toolchain::MSVC;
         KitDetector::replaceAll(extraPath.command, "%1", versionPath.string());
         return true;
@@ -294,6 +295,10 @@ static auto findCppCompilersWindows(std::vector<KitDetector::ExtraPath> &detecte
 
     // clang-format off
     auto versions = std::vector<std::wstring>{
+    // Visual Studio 2026
+        L"18\\Community",
+        L"18\\Professional",
+        L"18\\Enterprise",
         L"2022\\Community",
         L"2022\\Professional",
         L"2022\\Enterprise",
@@ -328,7 +333,7 @@ static auto findCompilerToolsWindows(std::vector<KitDetector::ExtraPath> &detect
         extraPath.name = "CMake";
         extraPath.compiler_path = (std::filesystem::path(programFiles) / "CMake" / "bin").string();
         extraPath.comment = "@rem Found CMake";
-        extraPath.command = "set PATH=" + extraPath.compiler_path + ";%PATH%";
+        extraPath.command = "set \"PATH=" + extraPath.compiler_path + ";%PATH%\"";
         detected.push_back(extraPath);
     }
 
@@ -340,7 +345,7 @@ static auto findCompilerToolsWindows(std::vector<KitDetector::ExtraPath> &detect
         extraPath.compiler_path =
             (std::filesystem::path(programFiles86) / "CMake" / "bin").string();
         extraPath.comment = "@rem Found CMake (x86)";
-        extraPath.command = "set PATH=" + extraPath.compiler_path + ";%PATH%";
+        extraPath.command = "set \"PATH=" + extraPath.compiler_path + ";%PATH%\"";
         detected.push_back(extraPath);
     }
 }
@@ -412,7 +417,7 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
             extraPath.comment = unix_target ? "# detected " + full_path.string()
                                             : "@rem detected " + full_path.string();
             extraPath.command += unix_target ? "export CC=" + cc + "\nexport CXX=" + cxx
-                                             : "SET CC=" + cc + "\nSET CXX=" + cxx;
+                                             : "SET \"CC=" + cc + "\"\nSET \"CXX=" + cxx + "\"";
             detected.push_back(extraPath);
         });
     }
@@ -438,7 +443,7 @@ auto static findCompilersImpl(std::vector<KitDetector::ExtraPath> &detected,
         extraPath.comment = unix_target ? "# detected " + full_path.string()
                                         : "@rem detected " + full_path.string();
         extraPath.command += unix_target ? "export CC=" + cc + "\nexport CXX=" + cxx
-                                         : "SET CC=" + cc + "\nSET CXX=" + cxx;
+                                         : "SET \"CC=" + cc + "\"\nSET \"CXX=" + cxx + "\"";
         detected.push_back(extraPath);
     });
 }
@@ -571,13 +576,13 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
             extraPath.command += "fi\n";
         } else {
             extraPath.comment = "@REM qt installation";
-            extraPath.command = "SET QTDIR=%1\n";
-            extraPath.command += "SET QT_DIR=%1\n";
-            extraPath.command += "SET QT6_DIR=%1\n\n";
+            extraPath.command = "SET \"QTDIR=%1\"\n";
+            extraPath.command += "SET \"QT_DIR=%1\"\n";
+            extraPath.command += "SET \"QT6_DIR=%1\"\n\n";
             // Note that on windows, the DLLs are in the bin directory, so we need to add
             // that directory to the path, unlike unix - which needs LD_LIBRARY_PATH
             extraPath.command += "@REM lets add qt to the path\n";
-            extraPath.command += "SET PATH=%QT6_DIR%\\bin;%PATH%\n";
+            extraPath.command += "SET \"PATH=%QT6_DIR%\\bin;%PATH%\"\n";
         }
         replaceAll(extraPath.command, "%1", dir);
         replaceAll(extraPath.comment, "%1", dir);
@@ -619,12 +624,12 @@ auto findQtVersions(bool unix_target, std::vector<ExtraPath> &detectedQt,
                 extraPath.command += "export PATH=\"${PATH};${MINGW_DIR}/bin\n";
             } else {
                 extraPath.comment = "@rem MingW installation from Qt (*)";
-                extraPath.command += "set MINGW_DIR=%1\n";
-                extraPath.command += "set PATH=%PATH%;%MINGW_DIR%\\bin\n";
-                extraPath.command += "set CC=x86_64-w64-mingw32-gcc.exe\n";
-                extraPath.command += "set CXX=x86_64-w64-mingw32-g++.exe\n";
-                extraPath.command += "set CMAKE_GENERATOR=MinGW Makefiles\n";
-                extraPath.command += "set CMAKE_MAKE_PROGRAM=mingw32-make.exe\n";
+                extraPath.command += "set \"MINGW_DIR=%1\"\n";
+                extraPath.command += "set \"PATH=%PATH%;%MINGW_DIR%\\bin\"\n";
+                extraPath.command += "set \"CC=x86_64-w64-mingw32-gcc.exe\"\n";
+                extraPath.command += "set \"CXX=x86_64-w64-mingw32-g++.exe\"\n";
+                extraPath.command += "set \"CMAKE_GENERATOR=MinGW Makefiles\"\n";
+                extraPath.command += "set \"CMAKE_MAKE_PROGRAM=mingw32-make.exe\"\n";
             }
             replaceAll(extraPath.command, "%1", subEntry.path().string());
             detectedCompilers.push_back(extraPath);
