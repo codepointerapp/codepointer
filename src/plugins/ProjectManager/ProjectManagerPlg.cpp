@@ -603,6 +603,26 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
                     });
             }
 
+            auto compileCommands = project->expand("${build_directory}/compile_commands.json");
+            compileCommands = QDir::toNativeSeparators(compileCommands);
+            qDebug() << "Checking for " << compileCommands;
+            auto fileInfo = QFileInfo(compileCommands);
+            if (!fileInfo.exists() || !fileInfo.isFile() || !fileInfo.isReadable()) {
+                auto text = tr("compile_commands.json is missing");
+                auto tooltip =
+                    tr("completion is not going to work properly, this is needed for the "
+                       "completion model to work properly. Fix the build system.\n\n"
+                       "on CMake, pass -DCMAKE_EXPORT_COMPILE_COMMANDS=ON, or "
+                       "set(CMAKE_EXPORT_COMPILE_COMMANDS ON). Cargo and go should auto detect.");
+                auto color = projectDock->palette().color(QPalette::Highlight);
+                color = "red";
+                auto message = QString("<div style=\"color: %1;\">%2</div>")
+                                   .arg(color.name(), text.toHtmlEscaped());
+                showBanner(message, tooltip);
+            } else {
+                hideBanner();
+            }
+
             runProcess.setProperty("runningTask", {});
             runProcess.setProperty("runningProject", {});
         });
@@ -758,6 +778,8 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
     auto quickOpen = new QAction(tr("Quick open file..."), this);
     quickOpen->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_P));
     this->menus[tr("&Project")]->addAction(quickOpen);
+
+    hideBanner();
 
     commandPalette = new CommandPalette(manager);
     commandPalette->setFilterModes(CommandPalette::FilterMode::FileMatch);
@@ -1130,6 +1152,18 @@ auto ProjectManagerPlugin::releaseTaskPty() -> void {
 #endif
 }
 
+void ProjectManagerPlugin::showBanner(const QString message, const QString tooltip) {
+    gui->banner->setText(message);
+    gui->banner->setToolTip(tooltip);
+    gui->banner->show();
+    gui->bannerButton->show();
+}
+
+void ProjectManagerPlugin::hideBanner() {
+    gui->banner->hide();
+    gui->bannerButton->hide();
+}
+
 auto ProjectManagerPlugin::stopRunningTask() -> bool {
     // processId() is 0 while the process is still in the Starting state, so it is
     // not a usable liveness test - use state() instead.
@@ -1393,7 +1427,7 @@ void ProjectManagerPlugin::runTask_clicked() {
     }
     auto manager = getManager();
     auto count = manager->visibleTabs();
-    for (auto i = 0; i < count; i++) {
+    for (auto i = 0u; i < count; i++) {
         auto client = manager->getMdiClient(i);
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
             editor->removeMetaData();
@@ -1792,7 +1826,6 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
 }
 
 auto ProjectManagerPlugin::tryScrollOutput(int line) -> bool {
-
     auto browser = this->outputPanel->commandOuput;
     if (!browser) {
         return false;

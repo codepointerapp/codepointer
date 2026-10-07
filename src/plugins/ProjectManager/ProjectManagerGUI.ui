@@ -35,19 +35,10 @@
    <property name="horizontalSpacing">
     <number>0</number>
    </property>
-   <item row="1" column="3">
-    <widget class="QToolButton" name="toolkitToolButton">
-     <property name="toolTip">
-      <string>Scan/Delete kits</string>
-     </property>
+   <item row="4" column="0" colspan="3">
+    <widget class="QLabel" name="banner">
      <property name="text">
-      <string/>
-     </property>
-     <property name="icon">
-      <iconset theme="QIcon::ThemeIcon::MailMessageNew"/>
-     </property>
-     <property name="autoRaise">
-      <bool>true</bool>
+      <string>TextLabel</string>
      </property>
     </widget>
    </item>
@@ -70,29 +61,94 @@
      </property>
     </widget>
    </item>
-   <item row="3" column="3">
-    <widget class="QToolButton" name="cleanButton">
+   <item row="3" column="0" colspan="2">
+    <widget class="QToolButton" name="runButton">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
      <property name="toolTip">
-      <string>Clean the build dir</string>
+      <string>Target (which application to run)</string>
+     </property>
+     <property name="autoFillBackground">
+      <bool>true</bool>
      </property>
      <property name="text">
       <string>...</string>
      </property>
+     <property name="popupMode">
+      <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
+     </property>
+     <property name="autoRaise">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="0" colspan="2">
+    <widget class="SearchableMenuButton" name="projectButton">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="toolTip">
+      <string>Active project</string>
+     </property>
+     <property name="autoFillBackground">
+      <bool>true</bool>
+     </property>
+     <property name="text">
+      <string>...</string>
+     </property>
+     <property name="popupMode">
+      <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
+     </property>
+     <property name="autoRaise">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="3">
+    <widget class="QToolButton" name="toolkitToolButton">
+     <property name="toolTip">
+      <string>Scan/Delete kits</string>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
      <property name="icon">
-      <iconset theme="edit-delete"/>
+      <iconset theme="QIcon::ThemeIcon::MailMessageNew"/>
      </property>
      <property name="autoRaise">
       <bool>true</bool>
      </property>
     </widget>
    </item>
-   <item row="4" column="0" colspan="4">
-    <widget class="FilesList" name="filesList" native="true">
+   <item row="2" column="0" colspan="2">
+    <widget class="QToolButton" name="taskButton">
      <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
+      <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
        <horstretch>0</horstretch>
        <verstretch>0</verstretch>
       </sizepolicy>
+     </property>
+     <property name="toolTip">
+      <string>Active task (configure, build, clear etc)</string>
+     </property>
+     <property name="autoFillBackground">
+      <bool>true</bool>
+     </property>
+     <property name="text">
+      <string>...</string>
+     </property>
+     <property name="popupMode">
+      <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
+     </property>
+     <property name="autoRaise">
+      <bool>false</bool>
      </property>
     </widget>
    </item>
@@ -114,6 +170,22 @@
      </property>
      <property name="icon">
       <iconset theme="QIcon::ThemeIcon::ListRemove"/>
+     </property>
+     <property name="autoRaise">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="3">
+    <widget class="QToolButton" name="cleanButton">
+     <property name="toolTip">
+      <string>Clean the build dir</string>
+     </property>
+     <property name="text">
+      <string>...</string>
+     </property>
+     <property name="icon">
+      <iconset theme="edit-delete"/>
      </property>
      <property name="autoRaise">
       <bool>true</bool>
@@ -143,33 +215,8 @@
      </property>
     </widget>
    </item>
-<item row="0" column="0" colspan="2">
-     <widget class="SearchableMenuButton" name="projectButton">
-      <property name="sizePolicy">
-       <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
-        <horstretch>0</horstretch>
-        <verstretch>0</verstretch>
-       </sizepolicy>
-      </property>
-      <property name="toolTip">
-       <string>Active project</string>
-      </property>
-      <property name="autoFillBackground">
-       <bool>true</bool>
-      </property>
-      <property name="text">
-       <string>...</string>
-      </property>
-      <property name="popupMode">
-       <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
-      </property>
-      <property name="autoRaise">
-       <bool>false</bool>
-      </property>
-     </widget>
-    </item>
-   <item row="2" column="0" colspan="2">
-    <widget class="QToolButton" name="taskButton">
+   <item row="1" column="0" colspan="2">
+    <widget class="SearchableMenuButton" name="kitButton">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
        <horstretch>0</horstretch>
@@ -177,7 +224,7 @@
       </sizepolicy>
      </property>
      <property name="toolTip">
-      <string>Active task (configure, build, clear etc)</string>
+      <string>Active kit (environment)</string>
      </property>
      <property name="autoFillBackground">
       <bool>true</bool>
@@ -193,71 +240,44 @@
      </property>
     </widget>
    </item>
-<item row="1" column="0" colspan="2">
-     <widget class="SearchableMenuButton" name="kitButton">
-      <property name="sizePolicy">
-       <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
-        <horstretch>0</horstretch>
-        <verstretch>0</verstretch>
-       </sizepolicy>
-      </property>
-      <property name="toolTip">
-       <string>Active kit (environment)</string>
-      </property>
-      <property name="autoFillBackground">
-       <bool>true</bool>
-      </property>
-      <property name="text">
-       <string>...</string>
-      </property>
-      <property name="popupMode">
-       <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
-      </property>
-      <property name="autoRaise">
-       <bool>false</bool>
-      </property>
-     </widget>
-    </item>
-   <item row="3" column="0" colspan="2">
-    <widget class="QToolButton" name="runButton">
+   <item row="5" column="0" colspan="4">
+    <widget class="FilesList" name="filesList" native="true">
      <property name="sizePolicy">
-      <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
+      <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
        <horstretch>0</horstretch>
        <verstretch>0</verstretch>
       </sizepolicy>
      </property>
-     <property name="toolTip">
-      <string>Target (which application to run)</string>
-     </property>
-     <property name="autoFillBackground">
-      <bool>true</bool>
-     </property>
+    </widget>
+   </item>
+   <item row="4" column="3">
+    <widget class="QToolButton" name="bannerButton">
      <property name="text">
       <string>...</string>
      </property>
-     <property name="popupMode">
-      <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
+     <property name="icon">
+      <iconset theme="QIcon::ThemeIcon::DialogError"/>
      </property>
      <property name="autoRaise">
-      <bool>false</bool>
+      <bool>true</bool>
      </property>
     </widget>
    </item>
   </layout>
  </widget>
-<customwidgets>
-   <customwidget>
-    <class>FilesList</class>
-    <extends>QWidget</extends>
-    <header>widgets/FilesList.hpp</header>
-    <container>1</container>
-   </customwidget>
-   <customwidget>
-    <class>SearchableMenuButton</class>
-    <extends>QToolButton</extends>
-    <header>widgets/SearchableMenuButton.hpp</header>
-   </customwidget>
-  </customwidgets>
+ <customwidgets>
+  <customwidget>
+   <class>FilesList</class>
+   <extends>QWidget</extends>
+   <header>widgets/FilesList.hpp</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>SearchableMenuButton</class>
+   <extends>QToolButton</extends>
+   <header>widgets/SearchableMenuButton.hpp</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
