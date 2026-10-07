@@ -142,6 +142,9 @@ class ProjectManagerPlugin : public IPlugin {
     /// Closes the pty master fd (and its notifier) owned by the last task, if any.
     auto releaseTaskPty() -> void;
 
+    void showBanner(const QString message, const QString tooltip);
+    void hideBanner();
+
     int panelIndex = -1;
     Ui::ProjectManagerGUI *gui = nullptr;
     Ui::BuildRunOutput *outputPanel = nullptr;
