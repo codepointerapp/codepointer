@@ -625,7 +625,7 @@ void HelpPlugin::actionAbout_triggered() {
     auto appName = QCoreApplication::applicationName();
     auto version = QCoreApplication::applicationVersion();
     auto aboutText = tr(R"(
-<h2>%1 %2</h2>
+<h2>%1 %2 - LSP</h2>
 <p>A versatile text editor</p>
 <p>Home page: <a href="%3">%3</a></p>
 <p>Mirror: <a href="%4">%4</a></p>
