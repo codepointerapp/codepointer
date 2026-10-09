@@ -43,6 +43,9 @@ Source: "dist\windows-msvc\usr\share\icons\breeze\devices\16\*.svg"; DestDir: "{
 Source: "dist\windows-msvc\usr\share\icons\breeze\devices\22\*.svg"; DestDir: "{app}\icons\breeze\devices\22\"; Flags: ignoreversion
 Source: "dist\windows-msvc\usr\{#AppName}.ico"; DestDir: "{app}\"; Flags: ignoreversion
 
+; Runtime data read from <app dir>\share\<app name>\
+Source: "dist\windows-msvc\usr\share\codepointer\*"; DestDir: "{app}\share\codepointer"; Flags: ignoreversion
+
 [Registry]
 ; Right-click menu for .txt (safe, does not steal default app)
 Root: HKCU; Subkey: "Software\Classes\txtfile\shell\Edit with {#AppName}"; ValueType: string; ValueData: "Edit with {#AppName}"
