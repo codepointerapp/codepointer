@@ -308,18 +308,23 @@ install(TARGETS codepointer
 
 if (NOT CODEPOINTER_WORK_OFFLINE AND CODEPOINTER_BUNDLE_ICON_THEME)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/share/
-            DESTINATION share/
+            DESTINATION share
             DIRECTORY_PERMISSIONS
                 OWNER_READ OWNER_WRITE OWNER_EXECUTE
                 GROUP_READ GROUP_EXECUTE
                 WORLD_READ WORLD_EXECUTE)
 endif()
 
+# Runtime data (indenters.json, lsp-servers.json). Always installed, independent
+# of the icon theme: the app looks these up at <app dir>/share/<app name>/.
+install(DIRECTORY ${CMAKE_BINARY_DIR}/share/codepointer/
+        DESTINATION share/codepointer)
+
 if (WIN32)
     install(FILES ${CMAKE_SOURCE_DIR}/${CODEPOINTER_ICON}.svg
-            DESTINATION /)
+            DESTINATION .)
     install(FILES ${CMAKE_SOURCE_DIR}/${CODEPOINTER_ICON}.ico
-            DESTINATION /)
+            DESTINATION .)
 else()
     install(FILES ${CMAKE_SOURCE_DIR}/${CODEPOINTER_ICON}.svg
             DESTINATION share/icons/hicolor/scalable/apps)
