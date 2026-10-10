@@ -32,6 +32,9 @@ class LspDebugWidget : public QWidget {
     void runHover();
     void runSync();
 
+  public:
+    QTimer *refreshTimer = nullptr;
+
   private:
     void log(const QString &message);
     /// Fires `command` through the plugin's normal async path, so the panel
@@ -54,5 +57,4 @@ class LspDebugWidget : public QWidget {
     QPushButton *syncButton = nullptr;
     QCheckBox *traceCheck = nullptr;
     QPlainTextEdit *logView = nullptr;
-    QTimer *refreshTimer = nullptr;
 };

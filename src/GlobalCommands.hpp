@@ -30,6 +30,9 @@ inline constexpr const char *ProjectLoaded = "ProjectLoaded";
 // Broadcast - a new project has been removed (ctags plugin uses to clear memory)
 inline constexpr const char *ProjectRemoved = "ProjectRemoved";
 
+// Broadcast - the project's codepointer.json config file changed on disk
+inline constexpr const char *ProjectConfigChanged = "ProjectConfigChanged";
+
 // User clicked on an issue, scroll the build output to the line passed in payload
 inline constexpr const char *ScrollOutput = "ScrollOutput";
 

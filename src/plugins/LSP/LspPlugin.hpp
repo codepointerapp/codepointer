@@ -96,6 +96,8 @@ class LspPlugin : public IPlugin {
     int canHandleAsyncCommand(const QString &command, const CommandArgs &args) const override;
     QFuture<CommandArgs> handleCommandAsync(const QString &command,
                                             const CommandArgs &args) override;
+    void configurationHasBeenModified() override;
+    void stopAllServers();
 
     void on_client_merged(qmdiHost *host) override;
     void on_client_unmerged(qmdiHost *host) override;

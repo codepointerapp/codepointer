@@ -370,6 +370,7 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
     auto userDataFile = userDataDir + QDir::separator() + "lsp-servers.json";
     autoReloadFile(this, userDataFile, [this](const QString &s) {
         this->userDefinitions = loadDefinitionsFromFile(s);
+        this->stopAllServers();
         return this->userDefinitions.size() != 0;
     });
 
@@ -386,6 +387,7 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
         QDir::toNativeSeparators(systemDataDir) + QDir::separator() + "lsp-servers.json";
     autoReloadFile(this, systemataFile, [this](const QString &s) {
         this->systemDefinitions = loadDefinitionsFromFile(s);
+        this->stopAllServers();
         return this->systemDefinitions.size() != 0;
     });
 }
@@ -798,10 +800,44 @@ bool LspPlugin::syncDocument(const QString &fileName, const QString &text) {
 }
 
 void LspPlugin::cleanup() {
+    // Teardown: no restart of the servers, and the dock goes away right after.
+    if (debugWidget && debugWidget->refreshTimer) {
+        debugWidget->refreshTimer->stop();
+    }
     auto locker = QMutexLocker(&serversMutex);
-    // Each destructor sends shutdown/exit and joins its reader thread.
     servers.clear();
     syncedContent.clear();
+}
+
+void LspPlugin::stopAllServers() {
+    // Held for the duration of the clear: destroying a client tears down its reader
+    // thread, which re-enters the dock through queued trace/progress signals.
+    if (debugWidget && debugWidget->refreshTimer) {
+        debugWidget->refreshTimer->stop();
+    }
+    {
+        auto locker = QMutexLocker(&serversMutex);
+        servers.clear();
+        syncedContent.clear();
+    }
+    syncOpenDocuments();
+
+    if (debugWidget && debugWidget->refreshTimer) {
+        // Deferred, so the servers registered by syncOpenDocuments() - and the
+        // ready notifications still in flight - are visible on the first tick.
+        QTimer::singleShot(0, debugWidget, [this]() {
+            if (debugWidget && debugWidget->refreshTimer) {
+                debugWidget->refreshTimer->start();
+            }
+            if (debugWidget) {
+                debugWidget->refreshState();
+            }
+        });
+    }
+}
+
+void LspPlugin::configurationHasBeenModified() {
+    stopAllServers();
 }
 
 LspClientImpl *LspPlugin::serverForFile(const QString &fileName) const {
@@ -1017,7 +1053,8 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
 }
 
 int LspPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &args) const {
-    if (command == GlobalCommands::ProjectLoaded || command == GlobalCommands::ProjectRemoved) {
+    if (command == GlobalCommands::ProjectLoaded || command == GlobalCommands::ProjectRemoved ||
+        command == GlobalCommands::ProjectConfigChanged) {
         return CommandPriority::HighPriority;
     }
 
@@ -1091,6 +1128,21 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
             // Servers start when a file of their language is actually opened.
             syncOpenDocuments();
         }
+        return QtFuture::makeReadyValueFuture(CommandArgs{});
+    }
+
+    if (command == GlobalCommands::ProjectConfigChanged) {
+        // Refresh root -> build dir before restarting, otherwise ensureServerForFile()
+        // would rebuild the server with the build dir the old config pointed at.
+        auto sourceDir = args[GlobalArguments::SourceDirectory].toString();
+        if (!sourceDir.isEmpty()) {
+            auto root = QDir::cleanPath(QDir(sourceDir).absolutePath());
+            auto buildDir = args[GlobalArguments::BuildDirectory].toString();
+            projectRoots.insert(root, buildDir.isEmpty()
+                                          ? QString()
+                                          : QDir::cleanPath(QDir(buildDir).absolutePath()));
+        }
+        stopAllServers();
         return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
