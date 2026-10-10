@@ -1496,7 +1496,16 @@ void ProjectManagerPlugin::projectFile_modified(const QString &path) {
     }
     newProjectSelected(gui->projectButton->currentIndex());
 
-    // TODO  - new file created is not working yet.
+    // The build dir may have moved, and the LSP plugin only learns root -> build
+    // dir on ProjectLoaded - which this path does not fire. Ship the fresh dirs
+    // along so restarted servers are not handed a stale build directory.
+    auto changedSourceDir = inMemoryConfig->expand(inMemoryConfig->sourceDir);
+    auto changedBuildDir = inMemoryConfig->expand(inMemoryConfig->buildDir);
+    getManager()->handleCommandAsync(GlobalCommands::ProjectConfigChanged, {
+        {GlobalArguments::SourceDirectory, changedSourceDir},
+        {GlobalArguments::BuildDirectory, changedBuildDir},
+    });
+
     qDebug("Config file modified - %s", path.toStdString().data());
 }
 
