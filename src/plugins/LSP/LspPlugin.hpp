@@ -197,6 +197,13 @@ class LspPlugin : public IPlugin {
     mutable QMutex diagnosticsMutex;
     QHash<QString, QList<lspDiagnostic::Diagnostic>> diagnostics;
 
+    // Files whose buffer has moved on since these diagnostics were published.
+    // The entries stay cached - the gutter still shows them until the server
+    // republishes - but they must not be echoed into a codeAction request,
+    // because the server would be matching fixes against ranges that describe
+    // text it has already been told has changed.
+    QSet<QString> staleDiagnostics;
+
     // Lines we marked last time, so ours can be cleared without wiping the build
     // markers that ProjectManager paints onto the same editor.
     QHash<QString, QList<int>> markedLines;

@@ -46,13 +46,37 @@ class LspClientImpl {
         int startLine = 0, startCharacter = 0, endLine = 0, endCharacter = 0;
         std::string newText;
     };
-    /// A refactoring the server offers. `edits` is empty when the server wants a
-    /// workspace/executeCommand round trip instead of handing us the edit.
+    /// A refactoring or fix the server offers.
+    ///
+    /// An action can arrive in one of three shapes, and telling them apart is
+    /// the whole point of this struct - "no edits" means something different in
+    /// each, and treating them as one thing drops runnable actions:
+    ///
+    ///  - edits present: runnable now.
+    ///  - `needsResolve`: no edit yet, but `data` is set and the action is
+    ///    expected to be completed by textDocument/codeAction/resolve.
+    ///  - `needsCommand`: no edit, and the server wants workspace/executeCommand
+    ///    instead, optionally followed by a workspace/applyEdit it pushes at us.
+    ///
+    /// `rawArguments` and `rawData` are JSON text rather than lsp types so the
+    /// plugin can hand them back verbatim, which is the whole contract of both
+    /// fields.
     struct CodeAction {
         std::string title;
         std::string kind;
         std::vector<TextEdit> edits;
+        bool needsResolve = false;
         bool needsCommand = false;
+        /// The server marks this as the action it would apply automatically.
+        bool isPreferred = false;
+        /// Set when the action cannot currently be applied. The reason goes in
+        /// `disabledReason`, which the spec wants shown to the user.
+        bool disabled = false;
+        std::string disabledReason;
+        /// The identifier for workspace/executeCommand, when needsCommand.
+        std::string commandName;
+        std::string rawArguments;
+        std::string rawData;
     };
 
     using CodeActionCallback = std::function<void(std::vector<CodeAction>)>;

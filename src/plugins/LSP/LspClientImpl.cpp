@@ -124,13 +124,15 @@ auto clientCapabilities() -> lsp::ClientCapabilities {
                                 .codeActionKind =
                                     lsp::ClientCodeActionKindOptions{.valueSet = supportedKinds},
                             },
+                        // Both are honoured now: the menu greys out
+                        // disabled actions with the server's reason, and
+                        // sorts the preferred one to the top.
+                        .isPreferredSupport = true,
+                        .disabledSupport = true,
                         // Licenses echoing a diagnostic's `data` back in
-                        // context.diagnostics, which is how clangd recognises
-                        // the diagnostic it handed us.
+                        // context.diagnostics, which is how clangd
+                        // recognises the diagnostic it handed us.
                         .dataSupport = true,
-                        // isPreferred and disabled are dropped by the parser
-                        // today; advertising them before honouring them would be
-                        // a lie.
                     },
             },
         // Without this clangd never reports indexing progress at all.
@@ -632,20 +634,53 @@ void LspClientImpl::requestCodeActions(const std::string &fileName, uint startLi
                 for (auto const &entry : *result) {
                     if (std::holds_alternative<lsp::CodeAction>(entry)) {
                         auto const &action = std::get<lsp::CodeAction>(entry);
-                        auto item = CodeAction{action.title, "", {}, false};
+                        auto item = CodeAction{};
+                        item.title = action.title;
                         if (action.kind.has_value()) {
                             item.kind = std::string(action.kind->value());
                         }
                         if (action.edit.has_value()) {
                             item.edits = flatten(*action.edit);
                         }
-                        // No edit means the server wants executeCommand and will
-                        // push the result back via workspace/applyEdit.
-                        item.needsCommand = item.edits.empty();
+                        if (action.command.has_value()) {
+                            item.needsCommand = true;
+                            item.commandName = action.command->command;
+                            if (action.command->arguments.has_value()) {
+                                item.rawArguments =
+                                    lsp::json::stringify(*action.command->arguments);
+                            }
+                        }
+                        if (action.data.has_value()) {
+                            item.rawData = lsp::json::stringify(*action.data);
+                        }
+                        if (action.isPreferred.has_value()) {
+                            item.isPreferred = *action.isPreferred;
+                        }
+                        if (action.disabled.has_value()) {
+                            item.disabled = true;
+                            item.disabledReason = action.disabled->reason;
+                        }
+                        // Neither shape needs a round trip when the edit is already
+                        // there, and the spec runs the command *after* the edit, so
+                        // an action carrying both is runnable.
+                        if (item.edits.empty() && !item.needsCommand) {
+                            // With `data` and no edit, this is an action the server
+                            // expects us to resolve rather than run. Guessing
+                            // "needsCommand" here is what used to hide these.
+                            item.needsResolve = !item.rawData.empty();
+                        }
                         actions.push_back(std::move(item));
                     } else {
                         auto const &command = std::get<lsp::Command>(entry);
-                        actions.push_back(CodeAction{command.title, "command", {}, true});
+                        auto item = CodeAction{};
+                        item.title = command.title;
+                        item.kind = "command";
+                        item.needsCommand = true;
+                        item.commandName = command.command;
+                        if (command.arguments.has_value()) {
+                            item.rawArguments = lsp::json::stringify(*command.arguments);
+                        }
+                        actions.push_back(std::move(item));
                     }
                 }
             }
