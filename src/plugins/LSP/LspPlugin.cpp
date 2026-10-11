@@ -31,6 +31,7 @@
 #include <QTextCursor>
 #include <QTimer>
 
+#include <lsp/json/json.h>
 #include <lsp/messages.h>
 
 #include "GlobalCommands.hpp"
@@ -38,6 +39,7 @@
 #include "LspDebugWidget.hpp"
 #include "LspPlugin.hpp"
 #include "LspReferencesWidget.hpp"
+#include "lsp_diagnostic.hpp"
 #include "lsp_text_edit.hpp"
 #include "pluginmanager.h"
 #include "widgets/lsp_rename_geometry.h"
@@ -181,9 +183,6 @@ auto insertTextFor(const lsp::CompletionItem &item) -> QString {
     return QString::fromStdString(item.label);
 }
 
-/// The paths to try for a configured executable. On Windows a server may be
-/// configured either as "clangd" or "clangd.exe", and an absolute path is not
-/// extension-completed by QStandardPaths, so expand it ourselves.
 auto executableCandidates(const QString &path) -> QStringList {
     auto candidates = QStringList{path};
 #if defined(Q_OS_WIN)
@@ -600,7 +599,7 @@ void LspPlugin::applyDiagnostics(const QString &fileName) {
         return;
     }
 
-    auto items = QList<Diagnostic>();
+    auto items = QList<lspDiagnostic::Diagnostic>();
     {
         auto locker = QMutexLocker(&diagnosticsMutex);
         items = diagnostics.value(fileName);
@@ -615,19 +614,23 @@ void LspPlugin::applyDiagnostics(const QString &fileName) {
 
     auto marked = QList<int>();
     for (auto const &item : items) {
+        // The one place the protocol type meets Qt's: every editor marker API
+        // takes an int block number.
+        auto const line = static_cast<int>(item.line);
         switch (item.severity) {
-        case 1:
-            editor->setLineError(item.line, true);
+        case lspDiagnostic::Severity::Error:
+            editor->setLineError(line, true);
             break;
-        case 2:
-            editor->setLineWarning(item.line, true);
+        case lspDiagnostic::Severity::Warning:
+            editor->setLineWarning(line, true);
             break;
-        default:
-            editor->setLineInfo(item.line, true);
+        case lspDiagnostic::Severity::Information:
+        case lspDiagnostic::Severity::Hint:
+            editor->setLineInfo(line, true);
             break;
         }
-        editor->setMetaDataMessage(item.line, item.message);
-        marked.append(item.line);
+        editor->setMetaDataMessage(line, item.message);
+        marked.append(line);
     }
     markedLines[fileName] = marked;
     editor->update();
@@ -836,9 +839,7 @@ void LspPlugin::stopAllServers() {
     }
 }
 
-void LspPlugin::configurationHasBeenModified() {
-    stopAllServers();
-}
+void LspPlugin::configurationHasBeenModified() { stopAllServers(); }
 
 LspClientImpl *LspPlugin::serverForFile(const QString &fileName) const {
     // Owning the directory is not enough - the server also has to speak the
@@ -997,17 +998,10 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
             [this](const std::string &file, const std::vector<lsp::Diagnostic> &items) {
                 auto fileName = QDir::toNativeSeparators(
                     QFileInfo(QString::fromStdString(file)).absoluteFilePath());
-                auto converted = QList<Diagnostic>();
+                auto converted = QList<lspDiagnostic::Diagnostic>();
                 converted.reserve(static_cast<int>(items.size()));
                 for (auto const &item : items) {
-                    auto msg = std::holds_alternative<lsp::MarkupContent>(item.message)
-                                   ? std::get<lsp::MarkupContent>(item.message).value
-                                   : std::get<lsp::String>(item.message);
-                    converted.append(Diagnostic{
-                        static_cast<int>(item.range.start.line),
-                        item.severity.has_value() ? static_cast<int>(*item.severity) : 1,
-                        QString::fromStdString(msg),
-                    });
+                    converted.append(lspDiagnostic::fromItem(item));
                 }
                 {
                     auto locker = QMutexLocker(&diagnosticsMutex);

@@ -76,6 +76,25 @@ if(CODEPOINTER_BUILD_LSP_TESTS)
     set_tests_properties(LspRenameClangdTest PROPERTIES TIMEOUT 300)
 endif()
 
+add_executable(LspDiagnosticTest test_lsp_diagnostic.cpp)
+
+target_include_directories(LspDiagnosticTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/lib/lsp-framework
+)
+
+target_link_libraries(LspDiagnosticTest
+    Qt6::Core
+    Qt6::Test
+    lsp
+)
+
+target_sources(LspDiagnosticTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/plugins/LSP/lsp_diagnostic.cpp
+)
+
+add_test(NAME LspDiagnosticTest COMMAND LspDiagnosticTest)
+
 add_executable(LspSyncedContentTest test_lsp_synced_content.cpp)
 
 target_include_directories(LspSyncedContentTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -86,3 +105,26 @@ target_link_libraries(LspSyncedContentTest
 )
 
 add_test(NAME LspSyncedContentTest COMMAND LspSyncedContentTest)
+
+add_executable(LspCapabilitiesTest test_lsp_capabilities.cpp)
+
+target_include_directories(LspCapabilitiesTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/lib/lsp-framework
+)
+
+target_link_libraries(LspCapabilitiesTest
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    lsp
+)
+
+# clientCapabilities() lives in the client's translation unit. Linking the whole
+# file is what the clangd test already does; no server is started here because
+# the function is pure.
+target_sources(LspCapabilitiesTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/plugins/LSP/LspClientImpl.cpp
+)
+
+add_test(NAME LspCapabilitiesTest COMMAND LspCapabilitiesTest)
