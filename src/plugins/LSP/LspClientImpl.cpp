@@ -92,6 +92,55 @@ auto describeCapability(const lsp::json::Value &value) -> std::string {
 
 } // namespace
 
+/// What we tell the server we can do. Split out so the serialised form can be
+/// asserted in a test: a capability that fails to reach the wire leaves every
+/// server answering as if we had never asked.
+auto clientCapabilities() -> lsp::ClientCapabilities {
+    // Only the kinds a caller actually asks for; advertising a kind we never
+    // request is a promise we would not keep. The empty string is the wildcard
+    // every kind matches under.
+    auto supportedKinds = lsp::Array<lsp::CodeActionKindEnum>();
+    for (auto const &kind : {"", "quickfix", "refactor", "source"}) {
+        auto value = lsp::CodeActionKindEnum();
+        value = std::string(kind);
+        supportedKinds.push_back(value);
+    }
+
+    return lsp::ClientCapabilities{
+        .textDocument =
+            lsp::TextDocumentClientCapabilities{
+                .synchronization = lsp::TextDocumentSyncClientCapabilities{},
+                .completion = lsp::CompletionClientCapabilities{},
+                .hover =
+                    lsp::HoverClientCapabilities{
+                        .contentFormat = {{lsp::MarkupKind::PlainText}},
+                    },
+                // Without this a server may only answer with Command literals,
+                // which carry no edit and would leave every fix unrunnable.
+                .codeAction =
+                    lsp::CodeActionClientCapabilities{
+                        .codeActionLiteralSupport =
+                            lsp::ClientCodeActionLiteralOptions{
+                                .codeActionKind =
+                                    lsp::ClientCodeActionKindOptions{.valueSet = supportedKinds},
+                            },
+                        // Licenses echoing a diagnostic's `data` back in
+                        // context.diagnostics, which is how clangd recognises
+                        // the diagnostic it handed us.
+                        .dataSupport = true,
+                        // isPreferred and disabled are dropped by the parser
+                        // today; advertising them before honouring them would be
+                        // a lie.
+                    },
+            },
+        // Without this clangd never reports indexing progress at all.
+        .window =
+            lsp::WindowClientCapabilities{
+                .workDoneProgress = true,
+            },
+    };
+}
+
 LspClientImpl::LspClientImpl(const std::string &executable,
                              const std::vector<std::string> &arguments,
                              const std::string &documentRoot)
@@ -267,22 +316,7 @@ void LspClientImpl::stopServer() {
 void LspClientImpl::initializeLspServer() {
     auto initializeParams = lsp::requests::Initialize::Params{};
     initializeParams.rootUri = fileUriFromPath(m_documentRoot);
-    initializeParams.capabilities = lsp::ClientCapabilities{
-        .textDocument =
-            lsp::TextDocumentClientCapabilities{
-                .synchronization = lsp::TextDocumentSyncClientCapabilities{},
-                .completion = lsp::CompletionClientCapabilities{},
-                .hover =
-                    lsp::HoverClientCapabilities{
-                        .contentFormat = {{lsp::MarkupKind::PlainText}},
-                    },
-            },
-        // Without this clangd never reports indexing progress at all.
-        .window =
-            lsp::WindowClientCapabilities{
-                .workDoneProgress = true,
-            },
-    };
+    initializeParams.capabilities = clientCapabilities();
 
     m_messageHandler->sendRequest<lsp::requests::Initialize>(
         std::move(initializeParams),
@@ -562,6 +596,7 @@ std::vector<LspClientImpl::TextEdit> LspClientImpl::flatten(const lsp::Workspace
 
 void LspClientImpl::requestCodeActions(const std::string &fileName, uint startLine,
                                        uint startCharacter, uint endLine, uint endCharacter,
+                                       const std::vector<lsp::Diagnostic> &diagnostics,
                                        const std::vector<std::string> &kinds,
                                        CodeActionCallback callback) {
     if (!m_ready.load()) {
@@ -573,6 +608,11 @@ void LspClientImpl::requestCodeActions(const std::string &fileName, uint startLi
     params.textDocument.uri = fileUriFromPath(fileName);
     params.range = {.start = {.line = startLine, .character = startCharacter},
                     .end = {.line = endLine, .character = endCharacter}};
+    // Echoed back verbatim, `data` included: this is how the server recognises
+    // which of its own diagnostics it already handed us.
+    params.context.diagnostics.assign(diagnostics.begin(), diagnostics.end());
+    params.context.triggerKind =
+        lsp::CodeActionTriggerKindEnum{lsp::CodeActionTriggerKind::Invoked};
     if (!kinds.empty()) {
         auto only = lsp::Array<lsp::CodeActionKindEnum>();
         for (auto const &kind : kinds) {

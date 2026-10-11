@@ -280,6 +280,8 @@ set(codepointer_sources
     src/plugins/LSP/LspClientImpl.hpp
     src/plugins/LSP/LspPlugin.cpp
     src/plugins/LSP/LspPlugin.hpp
+    src/plugins/LSP/lsp_diagnostic.cpp
+    src/plugins/LSP/lsp_diagnostic.hpp
     src/plugins/LSP/lsp_text_edit_qt.cpp
     src/plugins/LSP/lsp_text_edit.hpp
     src/plugins/LSP/LspDebugWidget.cpp

@@ -19,6 +19,7 @@
 #include <QTimer>
 
 #include "iplugin.h"
+#include "plugins/LSP/lsp_diagnostic.hpp"
 #include "plugins/LSP/lsp_synced_content.h"
 
 class LspClientImpl;
@@ -192,16 +193,9 @@ class LspPlugin : public IPlugin {
     mutable QList<LspServerDefinition> userDefinitions;
     mutable QMutex serversMutex;
 
-    // FIXME: add a enum for severity.
-    struct Diagnostic {
-        int line = 0;
-        int severity = 1; // lsp::DiagnosticSeverity: 1 error, 2 warning, 3 info, 4 hint
-        QString message;
-    };
-
     // Written from reader threads, read on the GUI thread.
     mutable QMutex diagnosticsMutex;
-    QHash<QString, QList<Diagnostic>> diagnostics;
+    QHash<QString, QList<lspDiagnostic::Diagnostic>> diagnostics;
 
     // Lines we marked last time, so ours can be cleared without wiping the build
     // markers that ProjectManager paints onto the same editor.

@@ -13,6 +13,12 @@
 #include <lsp/messages.h>
 #include <lsp/process.h>
 
+/// What we advertise to the server at initialize. Free-standing rather than a
+/// member so a test can assert the serialised form: a capability that fails to
+/// reach the wire leaves every server answering as if we had never asked, which
+/// is indistinguishable from having not written the code.
+auto clientCapabilities() -> lsp::ClientCapabilities;
+
 /// Thin wrapper around one language server process. All callbacks are invoked on
 /// the reader thread, never on the GUI thread - marshal before touching widgets.
 class LspClientImpl {
@@ -131,9 +137,15 @@ class LspClientImpl {
 
     /// Refactorings and fixes offered for a range. `kinds` filters by CodeActionKind
     /// prefix ("refactor", "quickfix"); empty asks for everything.
+    ///
+    /// `diagnostics` is not optional decoration: it goes back as
+    /// context.diagnostics, and servers match their stored fix-its against it.
+    /// clangd keeps the handle in Diagnostic.data, gopls bails out entirely when
+    /// the array is empty, so an empty vector means "no actions", not "all".
     void requestCodeActions(const std::string &fileName, uint startLine, uint startCharacter,
-                            uint endLine, uint endCharacter, const std::vector<std::string> &kinds,
-                            CodeActionCallback callback);
+                            uint endLine, uint endCharacter,
+                            const std::vector<lsp::Diagnostic> &diagnostics,
+                            const std::vector<std::string> &kinds, CodeActionCallback callback);
 
     void requestRename(const std::string &fileName, uint line, uint column,
                        const std::string &newName, RenameCallback callback);
