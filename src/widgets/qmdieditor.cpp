@@ -7,6 +7,8 @@
 
 // SPDX-License-Identifier: MIT
 
+#include <algorithm>
+
 #include <QActionGroup>
 #include <QClipboard>
 #include <QComboBox>
@@ -172,11 +174,14 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         menu->addAction(a);
     }
 
+    int aaaa;
+    int bb = 0;
+    std::map<int, float> aaaaa;
     QSet<QString> addedItems;
     QVariantList definitions;
     QVariantList otherTags;
 
-    bool isCpp = false;
+    auto isCpp = false;
     for (const QVariant &item : std::as_const(tags)) {
         auto const tag = item.toHash();
         auto fileName = tag[GlobalArguments::FileName].toString().toLower();
@@ -411,6 +416,18 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
             [this]() { maybeScheduleSignatureHelp(true); });
     connect(textEditor, &QPlainTextEdit::cursorPositionChanged, this,
             [this]() { maybeScheduleSignatureHelp(false); });
+
+    // The reply arrives on a reader thread; the watcher brings it back here
+    // before any menu is built.
+    connect(&codeActionWatcher, &QFutureWatcher<CommandArgs>::finished, this, [this]() {
+        if (codeActionWatcher.isCanceled()) {
+            return;
+        }
+        auto const result = codeActionWatcher.result();
+        qDebug() << "qmdiEditor: code action reply with"
+                 << result[GlobalArguments::Actions].toList().size() << "action(s)";
+        showCodeActionMenu(result);
+    });
 
     connect(fileSystemWatcher, &QFileSystemWatcher::fileChanged, this, &qmdiEditor::on_fileChanged);
     fileModifications = true;
@@ -814,6 +831,19 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
     QObject::connect(refactorAction, &QAction::triggered, this,
                      [this, localPosition]() { requestRename(localPosition); });
 
+    // Same action as Alt+Return, for when the shortcut is not remembered. Unlike
+    // the fixes themselves this entry is always present: the plugin declines
+    // CodeAction for a file no server claims, and the reply is empty, so picking
+    // it does nothing. Hiding it would need a synchronous capability query on the
+    // command bus, which does not exist yet.
+    auto fixAction = new QAction(tr("Fix available..."), menu);
+    menu->insertAction(firstAction, fixAction);
+    QObject::connect(fixAction, &QAction::triggered, this, [this, localPosition]() {
+        auto cursor = textEditor->cursorForPosition(localPosition);
+        textEditor->setTextCursor(cursor);
+        requestCodeActions();
+    });
+
     menu->insertMenu(firstAction, followSymbolMenu);
     menu->insertMenu(firstAction, referencesMenu);
 
@@ -1012,12 +1042,14 @@ void qmdiEditor::setupActions() {
     actionChangeCase = new QAction(tr("Change ca&se"), this);
     actionToggleHeader = new QAction(tr("Toggle header/implementation"), this);
     actionTogglePreview = new QAction(tr("Toggle preview"), this);
+    actionCodeActions = new QAction(tr("Fix available..."), this);
 
     addAction(actionCapitalize);
     addAction(actionLowerCase );
     addAction(actionChangeCase );
     addAction(actionToggleHeader );
     addAction(actionTogglePreview );
+    addAction(actionCodeActions);
     addAction(actionSaveNoFormat);
 
     actionSave->setShortcut(QKeySequence::Save);
@@ -1044,6 +1076,10 @@ void qmdiEditor::setupActions() {
     actionLowerCase->setShortcut(QKeySequence(Qt::ControlModifier | Qt::ShiftModifier | Qt::Key_U));
     actionToggleHeader->setShortcut(Qt::Key_F4);
     actionTogglePreview->setShortcut(QKeySequence(Qt::ControlModifier | Qt::Key_Period));
+    // Alt+Return is the muscle memory for "fix this line" from every other
+    // editor; the menu entry below is the discoverable route to the same thing.
+    actionCodeActions->setShortcut(QKeySequence(Qt::AltModifier | Qt::Key_Return));
+    actionCodeActions->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 
     auto highlighters = Qutepart::getAvailableHighlihters();
     comboChangeHighlighter->setObjectName("qmdiEditor::comboChangeHighlighter");
@@ -1151,6 +1187,7 @@ void qmdiEditor::setupActions() {
     connect(actionChangeCase, &QAction::triggered, this, &qmdiEditor::transformBlockCase);
     connect(actionToggleHeader, &QAction::triggered, this, &qmdiEditor::toggleHeaderImpl);
     connect(actionTogglePreview, &QAction::triggered, previewButton, &QPushButton::click);
+    connect(actionCodeActions, &QAction::triggered, this, &qmdiEditor::requestCodeActions);
 
     // default is control+b - which we want to use for build
     textEditor->toggleBookmarkAction()->setShortcut(QKeySequence());
@@ -1764,6 +1801,109 @@ void qmdiEditor::requestSignatureHelp() {
         {GlobalArguments::Content, textEditor->toPlainText()},
     }));
     // clang-format on
+}
+
+void qmdiEditor::requestCodeActions() {
+    if (!mdiServer || !mdiServer->mdiHost) {
+        return;
+    }
+    auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    if (!pluginManager || mdiClientFileName().isEmpty()) {
+        return;
+    }
+
+    auto const range = selectionRange();
+    // clang-format off
+    codeActionWatcher.setFuture(pluginManager->handleCommandAsync(GlobalCommands::CodeAction, {
+        {GlobalArguments::FileName, mdiClientFileName()},
+        {GlobalArguments::LineNumber, range.startLine},
+        {GlobalArguments::ColumnNumber, range.startCharacter},
+        {GlobalArguments::EndLineNumber, range.endLine},
+        {GlobalArguments::EndColumnNumber, range.endCharacter},
+        {GlobalArguments::Content, textEditor->toPlainText()},
+    }));
+    // clang-format on
+}
+
+void qmdiEditor::showCodeActionMenu(const CommandArgs &result) {
+    auto const actions = result[GlobalArguments::Actions].toList();
+    if (actions.isEmpty()) {
+        // Nothing offered. Staying silent is right here: the shortcut is bound
+        // unconditionally, and a banner on every Alt+Return over a clean line
+        // would be noise.
+        return;
+    }
+
+    auto *menu = new QMenu(this);
+    menu->setObjectName("qmdiEditor::codeActionsMenu");
+
+    // Preferred first, then everything else in server order. Stable, so two
+    // equally preferred actions keep the order the server chose.
+    auto ranked = QList<QVariant>(actions);
+    std::stable_sort(ranked.begin(), ranked.end(), [](auto const &a, auto const &b) {
+        return a.toHash()[GlobalArguments::IsDefinition].toBool() &&
+               !b.toHash()[GlobalArguments::IsDefinition].toBool();
+    });
+
+    for (auto const &entry : ranked) {
+        auto const action = entry.toHash();
+        auto *item = new QAction(action[GlobalArguments::Name].toString(), menu);
+        auto const kind = action[GlobalArguments::Type].toString();
+        if (!kind.isEmpty()) {
+            // The kind is what a user would call the fix ("quickfix" against a
+            // bare "fix"), and it is the only way to tell two same-titled fixes
+            // apart before picking one.
+            item->setToolTip(kind);
+        }
+        // A disabled action is shown, not hidden: the spec wants the reason
+        // visible. Clicking one must do nothing, which is also what a greyed
+        // entry says.
+        auto const disabled = action[GlobalArguments::ReadOnly].toBool();
+        if (disabled) {
+            item->setEnabled(false);
+            auto const reason = action[GlobalArguments::ErrorMessage].toString();
+            if (!reason.isEmpty()) {
+                item->setToolTip(reason);
+            }
+        } else {
+            // The entry travels by value and the menu is the context object, so
+            // both it and `this` are safe: the menu is a child of this editor,
+            // and a destroyed context drops its connections.
+            QObject::connect(item, &QAction::triggered, menu,
+                             [this, entry]() { applyChosenCodeAction(entry); });
+        }
+        menu->addAction(item);
+    }
+
+    // qutepart has its own cursorRect but it is private; QPlainTextEdit's is
+    // public. Both are viewport-relative, while QMenu::popup() wants global
+    // coordinates - so this has to go through the viewport or the list opens
+    // near the screen origin instead of at the caret.
+    auto const viewportPos = static_cast<QPlainTextEdit *>(textEditor)->cursorRect().bottomLeft();
+    // popup() returns immediately, so the menu cannot be deleted here: the
+    // deferred delete would run on the next event loop pass and close it again
+    // before it could be used. aboutToHide is when it is genuinely finished.
+    QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    menu->popup(textEditor->viewport()->mapToGlobal(viewportPos));
+}
+
+void qmdiEditor::applyChosenCodeAction(const QVariant &entry) {
+    if (!mdiServer || !mdiServer->mdiHost) {
+        return;
+    }
+    auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    if (!pluginManager) {
+        return;
+    }
+    // Fire and forget: the menu is gone by now, so nothing is waiting on a
+    // future that outlives it. The plugin sorts the edits and rewrites any file
+    // that has no editor open, which a fix touching a header needs.
+    pluginManager->handleCommandAsync(
+        GlobalCommands::ApplyCodeAction,
+        {
+            {GlobalArguments::Name, entry.toHash()[GlobalArguments::Name]},
+            {GlobalArguments::Tags, entry.toHash()[GlobalArguments::Tags]},
+        });
 }
 
 void qmdiEditor::requestRename(const QPoint &position) {

@@ -54,6 +54,20 @@ inline constexpr const char *RenameSymbol = "RenameSymbol";
 
 inline constexpr const char *FindReferences = "FindReferences";
 
+// Editor asks for refactorings and fixes at the caret: "Fix available" entries
+// for the diagnostics on this line, plus the quick fixes and refactorings the
+// server offers for the range. The result is a list of {Name, Type, Tags} under
+// GlobalArguments::Actions, where Type is the CodeActionKind and Tags holds the
+// edits. Actions that need workspace/executeCommand are omitted rather than
+// listed as dead entries - see docs/lsp-code-actions-proposal.md.
+inline constexpr const char *CodeAction = "CodeAction";
+
+// Editor picked one of the actions CodeAction returned and wants it applied.
+// The payload is the same {Name, Type, Tags} entry, with Tags the edits. Applied
+// plugin-side rather than in the editor so a fix that spans files works the same
+// way a cross-file rename does.
+inline constexpr const char *ApplyCodeAction = "ApplyCodeAction";
+
 // Hand a list of reference locations to the references dock and show it. Sent by
 // the editor when the user asks for the results the context menu could not fit.
 inline constexpr const char *ShowReferences = "ShowReferences";
@@ -101,10 +115,20 @@ inline constexpr const char *Separator = "Separator";
 inline constexpr const char *Content = "Content";
 inline constexpr const char *ReadOnly = "ReadOnly";
 inline constexpr const char *Position = "Position";
+// End of the range a command applies to. Absent means the caret, so a caller
+// with no selection does not have to spell out a zero-width range.
+inline constexpr const char *EndLineNumber = "EndLineNumber";
+inline constexpr const char *EndColumnNumber = "EndColumnNumber";
 inline constexpr const char *FoldTopLevel = "FoldTopLevel";
 inline constexpr const char *IsDefinition = "IsDefinition";
 inline constexpr const char *ExitCode = "ExitCode";
 inline constexpr const char *ErrorMessage = "ErrorMessage";
+// Entries are CommandArgs: Name is the action title, Type the CodeActionKind,
+// and Tags a QVariantList of edits. Each edit is FileName, LineNumber /
+// ColumnNumber for the start, EndLineNumber / EndColumnNumber for the end, and
+// NewName - all 0-based, end-exclusive, as LSP states them. All six are needed:
+// an edit missing its end arrives as an inverted range and is silently refused.
+inline constexpr const char *Actions = "Actions";
 } // namespace GlobalArguments
 
 namespace GlobalResults {

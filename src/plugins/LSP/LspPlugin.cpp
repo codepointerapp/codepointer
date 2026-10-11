@@ -698,6 +698,11 @@ void LspPlugin::flushDirtyDocuments() {
         }
         if (syncDocument(fileName, editor->getContent())) {
             sent++;
+            // The server now holds different text from the one these diagnostics
+            // were computed against. They stay cached so the gutter does not
+            // blink, but they stop being evidence about the current revision.
+            auto diagLocker = QMutexLocker(&diagnosticsMutex);
+            staleDiagnostics.insert(fileName);
         }
     }
     if (sent > 0) {
@@ -732,6 +737,7 @@ void LspPlugin::reconcileOpenDocuments() {
                 closed++;
                 auto diagLocker = QMutexLocker(&diagnosticsMutex);
                 diagnostics.remove(fileName);
+                staleDiagnostics.remove(fileName);
                 markedLines.remove(fileName);
                 syncedContent.forget(fileName);
             }
@@ -1006,6 +1012,8 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
                 {
                     auto locker = QMutexLocker(&diagnosticsMutex);
                     diagnostics[fileName] = converted;
+                    // Fresh for the revision the server just looked at.
+                    staleDiagnostics.remove(fileName);
                 }
                 // Queued: we are on a reader thread and the editor is GUI-only.
                 emit diagnosticsReady(fileName);
@@ -1094,6 +1102,24 @@ int LspPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &
         return CommandPriority::HighestPriority;
     }
 
+    // The editor owns the menu, so this only has to reach the plugin that owns
+    // the edits.
+    if (command == GlobalCommands::ApplyCodeAction) {
+        return CommandPriority::HighestPriority;
+    }
+
+    if (command == GlobalCommands::CodeAction) {
+        auto fileName = args[GlobalArguments::FileName].toString();
+        if (languageForFile(fileName).isEmpty()) {
+            return CommandPriority::CannotHandle;
+        }
+        auto server = serverForFile(fileName);
+        if (!server || !server->hasCapability("codeActionProvider")) {
+            return CommandPriority::CannotHandle;
+        }
+        return CommandPriority::HighestPriority;
+    }
+
     if (command == GlobalCommands::FindReferences) {
         auto fileName = args[GlobalArguments::FileName].toString();
         if (languageForFile(fileName).isEmpty()) {
@@ -1158,6 +1184,29 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
         return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
+    if (command == GlobalCommands::ApplyCodeAction) {
+        auto edits = QList<LspTextEdit>();
+        for (auto const &row : args[GlobalArguments::Tags].toList()) {
+            auto const edit = row.toHash();
+            edits.append(LspTextEdit{
+                .file = edit[GlobalArguments::FileName].toString(),
+                .newText = edit[GlobalArguments::NewName].toString(),
+                .startLine = edit[GlobalArguments::LineNumber].toInt(),
+                .startCharacter = edit[GlobalArguments::ColumnNumber].toInt(),
+                .endLine = edit[GlobalArguments::EndLineNumber].toInt(),
+                .endCharacter = edit[GlobalArguments::EndColumnNumber].toInt(),
+            });
+        }
+        emit traceMessage(tr("LspPlugin: applying code action \"%1\" with %2 edit(s)")
+                              .arg(args[GlobalArguments::Name].toString())
+                              .arg(edits.size()));
+        // applyTextEdits() sorts bottom-up per file and rewrites files that have
+        // no editor open, which is a fix touching a header needs.
+        auto const changed = applyTextEdits(edits);
+        emit traceMessage(tr("LspPlugin: code action changed %1 file(s)").arg(changed));
+        return QtFuture::makeReadyValueFuture(CommandArgs{});
+    }
+
     auto fileName = args[GlobalArguments::FileName].toString();
     auto server = serverForFile(fileName);
     if (!server) {
@@ -1166,6 +1215,17 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
 
     auto line = args[GlobalArguments::LineNumber].toInt();
     auto column = args[GlobalArguments::ColumnNumber].toInt();
+    // A range command falls back to the caret, so callers without a selection do
+    // not have to send a zero-width range.
+    auto const startLine = static_cast<uint>(line);
+    auto const startCharacter = static_cast<uint>(column);
+    auto const endLine = args.contains(GlobalArguments::EndLineNumber)
+                             ? static_cast<uint>(args[GlobalArguments::EndLineNumber].toInt())
+                             : startLine;
+    auto const endCharacter =
+        args.contains(GlobalArguments::EndColumnNumber)
+            ? static_cast<uint>(args[GlobalArguments::EndColumnNumber].toInt())
+            : startCharacter;
     auto content = args[GlobalArguments::Content].toString();
     auto path = QFileInfo(fileName).absoluteFilePath().toStdString();
 
@@ -1232,6 +1292,105 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
                     }));
                 }
                 pending->complete(CommandArgs{{GlobalArguments::Tags, tags}});
+            });
+    } else if (command == GlobalCommands::CodeAction) {
+        // Diagnostics overlapping the range, echoed back so the server can match
+        // them against the fix-its it handed out. Sending none is not "no
+        // filters" - gopls answers with nothing at all in that case.
+        auto overlapping = QList<lspDiagnostic::Diagnostic>();
+        auto stale = false;
+        {
+            auto locker = QMutexLocker(&diagnosticsMutex);
+            stale = staleDiagnostics.contains(fileName);
+            if (!stale) {
+                for (auto const &item : diagnostics.value(fileName)) {
+                    auto const lastLine = std::max(item.endLine, item.line);
+                    if (item.line <= endLine && lastLine >= startLine) {
+                        overlapping.append(item);
+                    }
+                }
+            }
+        }
+        // Sending them anyway would have the server match its stored fix-its
+        // against ranges describing text it has already been told changed, which
+        // is how a fix gets offered for a line that no longer has the problem.
+        // An empty array is the honest answer: clangd still answers from the
+        // range, it just cannot attribute a specific diagnostic.
+        auto sent = std::vector<lsp::Diagnostic>();
+        sent.reserve(static_cast<size_t>(overlapping.size()));
+        for (auto const &item : std::as_const(overlapping)) {
+            sent.push_back(lspDiagnostic::toItem(item));
+        }
+        emit traceMessage(stale ? tr("LspPlugin: diagnostics for %1 are stale - sent none")
+                                      .arg(QFileInfo(fileName).fileName())
+                                : tr("LspPlugin: codeAction over %1:%2-%3:%4 with %5 "
+                                     "diagnostic(s) sent")
+                                      .arg(fileName)
+                                      .arg(startLine)
+                                      .arg(startCharacter)
+                                      .arg(endLine)
+                                      .arg(endCharacter)
+                                      .arg(sent.size()));
+
+        // Asking for everything and filtering here keeps one request shape and
+        // one code path, at the cost of actions the editor then hides by kind.
+        server->requestCodeActions(
+            path, startLine, startCharacter, endLine, endCharacter, sent, {},
+            [this, pending](std::vector<LspClientImpl::CodeAction> actions) {
+                auto out = QVariantList();
+                out.reserve(static_cast<int>(actions.size()));
+                for (auto const &action : actions) {
+                    // Each of these is a real gap, not a reason to hide the entry
+                    // quietly, so each says what it would take. Showing them would
+                    // be worse than not showing them.
+                    if (action.needsResolve) {
+                        emit traceMessage(
+                            tr("LspPlugin: dropping \"%1\" [%2] - needs codeAction/resolve")
+                                .arg(QString::fromStdString(action.title),
+                                     QString::fromStdString(action.kind)));
+                        continue;
+                    }
+                    if (action.needsCommand) {
+                        emit traceMessage(
+                            tr("LspPlugin: dropping \"%1\" [%2] - needs executeCommand \"%3\"")
+                                .arg(QString::fromStdString(action.title),
+                                     QString::fromStdString(action.kind),
+                                     QString::fromStdString(action.commandName)));
+                        continue;
+                    }
+                    if (action.edits.empty()) {
+                        emit traceMessage(
+                            tr("LspPlugin: dropping \"%1\" [%2] - no edits and no follow-up")
+                                .arg(QString::fromStdString(action.title),
+                                     QString::fromStdString(action.kind)));
+                        continue;
+                    }
+                    auto edits = QVariantList();
+                    edits.reserve(static_cast<int>(action.edits.size()));
+                    for (auto const &edit : action.edits) {
+                        edits.append(QVariant::fromValue(CommandArgs{
+                            {GlobalArguments::FileName, QString::fromStdString(edit.file)},
+                            {GlobalArguments::LineNumber, edit.startLine},
+                            {GlobalArguments::ColumnNumber, edit.startCharacter},
+                            {GlobalArguments::EndLineNumber, edit.endLine},
+                            {GlobalArguments::EndColumnNumber, edit.endCharacter},
+                            {GlobalArguments::NewName, QString::fromStdString(edit.newText)},
+                        }));
+                    }
+                    out.append(QVariant::fromValue(CommandArgs{
+                        {GlobalArguments::Name, QString::fromStdString(action.title)},
+                        {GlobalArguments::Type, QString::fromStdString(action.kind)},
+                        {GlobalArguments::Tags, edits},
+                        {GlobalArguments::IsDefinition, action.isPreferred},
+                        {GlobalArguments::ReadOnly, action.disabled},
+                        {GlobalArguments::ErrorMessage,
+                         QString::fromStdString(action.disabledReason)},
+                    }));
+                }
+                emit traceMessage(tr("LspPlugin: %1 of %2 action(s) offered")
+                                      .arg(out.size())
+                                      .arg(actions.size()));
+                pending->complete(CommandArgs{{GlobalArguments::Actions, out}});
             });
     } else if (command == GlobalCommands::SignatureHelp) {
         server->requestSignatureHelp(path, line, column, [pending](lsp::SignatureHelp help) {

@@ -18,6 +18,7 @@ class LspCapabilitiesTest : public QObject {
 
   private slots:
     void advertisesCodeActionSupport();
+
   private:
     /// Serialise the way initializeLspServer does, by hand rather than by
     /// reaching into the client, so this test needs no running server.
@@ -86,9 +87,14 @@ void LspCapabilitiesTest::advertisesCodeActionSupport() {
     QVERIFY(dataSupport != nullptr);
     QCOMPARE(dataSupport->boolean(), true);
 
-    // We drop these in the parser today, so they must not be advertised.
-    QVERIFY(!ca.contains("isPreferredSupport"));
-    QVERIFY(!ca.contains("disabledSupport"));
+    // Honoured now: the menu greys out disabled actions with the server's
+    // reason and sorts the preferred one to the top.
+    auto preferred = ca.find("isPreferredSupport");
+    QVERIFY(preferred != nullptr);
+    QCOMPARE(preferred->boolean(), true);
+    auto disabled = ca.find("disabledSupport");
+    QVERIFY(disabled != nullptr);
+    QCOMPARE(disabled->boolean(), true);
 }
 
 QTEST_MAIN(LspCapabilitiesTest)

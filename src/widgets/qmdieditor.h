@@ -262,6 +262,16 @@ class qmdiEditor : public QWidget, public qmdiClient {
     /// True when the caret is directly inside the argument list of a call.
     bool isInsideCall() const;
 
+    /// Sends GlobalCommands::CodeAction for the current selection and, once the
+    /// server answers, shows the actions in a popup at the caret. Does nothing
+    /// when there is no server for the file or it offers nothing.
+    void requestCodeActions();
+    /// Turns a {Name, Type, Tags} entry from that reply into menu entries and
+    /// applies whichever one is picked.
+    void showCodeActionMenu(const CommandArgs &result);
+    /// Fire-and-forget dispatch, so an action outlives the menu it was picked from.
+    void applyChosenCodeAction(const QVariant &entry);
+
     /// Opens an inline edit box over the symbol at `position` (the point the
     /// context menu was opened at, since a right-click does not move the caret),
     /// pre-filled with its current name. Accepting it sends
@@ -358,6 +368,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QAction *actionCopyFilePath = nullptr;
     QAction *actionToggleHeader = nullptr;
     QAction *actionTogglePreview = nullptr;
+    QAction *actionCodeActions = nullptr;
 
     struct diffLineNumber {
         QString file;
@@ -384,6 +395,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     // Debounces signature-help requests while the caret is inside a function call.
     QTimer *signatureHelpTimer = nullptr;
     QFutureWatcher<CommandArgs> signatureHelpWatcher;
+    QFutureWatcher<CommandArgs> codeActionWatcher;
     // True while a call tip is expected: cleared when the caret leaves a call.
     // Plain cursor moves only retrigger while this is set, so moving through an
     // argument list refreshes an open tip without asking the server about text
