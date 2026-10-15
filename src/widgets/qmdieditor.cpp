@@ -1895,14 +1895,17 @@ void qmdiEditor::applyChosenCodeAction(const QVariant &entry) {
     if (!pluginManager) {
         return;
     }
-    // Fire and forget: the menu is gone by now, so nothing is waiting on a
-    // future that outlives it. The plugin sorts the edits and rewrites any file
-    // that has no editor open, which a fix touching a header needs.
+    // Fire and forget for the edits: the menu is gone by now, so nothing is
+    // waiting on a future that outlives it. Content comes back with the action -
+    // it is the text the server computed the ranges against, and the plugin
+    // refuses rather than write a fix into a buffer that has since moved.
     pluginManager->handleCommandAsync(
         GlobalCommands::ApplyCodeAction,
         {
+            {GlobalArguments::FileName, mdiClientFileName()},
             {GlobalArguments::Name, entry.toHash()[GlobalArguments::Name]},
             {GlobalArguments::Tags, entry.toHash()[GlobalArguments::Tags]},
+            {GlobalArguments::Content, entry.toHash()[GlobalArguments::Content]},
         });
 }
 

@@ -112,12 +112,30 @@ class qmdiEditor : public QWidget, public qmdiClient {
     /// Applies replacements as one undoable action. The caller must have sorted
     /// them bottom-up; ranges are stated against the current document.
     ///
+    /// No diagnostic bookkeeping is needed here: diagnostics are attributed to
+    /// their owner and cleared by owner, so nothing has to remember which line
+    /// each one was on and an edit that shifts the lines cannot strand them.
+    ///
     /// When expectedOldName is non-empty the edits are treated as a rename: each
     /// range must still cover exactly that identifier, and if any does not, none
     /// are applied and a message is shown. That makes a reply computed against a
     /// stale revision harmless instead of half-applying it. Pass it only for
     /// renames - ordinary edits use the plain path.
     bool applyTextEdits(const QList<TextEdit> &edits, const QString &expectedOldName = {});
+
+    // Attributed diagnostics, forwarded to qutepart. `owner` is a logical name -
+    // "clangd", "clang-tidy" - so a server that restarts keeps its identity and
+    // cannot strand the marks of the run it replaced.
+    using Diagnostic = Qutepart::Diagnostic;
+    using DiagnosticSeverity = Qutepart::DiagnosticSeverity;
+    inline void setDiagnostic(int line, const Diagnostic &diagnostic) {
+        textEditor->setDiagnostic(line, diagnostic);
+    }
+    inline void clearDiagnostics(const QString &owner) { textEditor->clearDiagnostics(owner); }
+    /// Drops every attributed diagnostic, leaving the unowned setLineError marks
+    /// that ProjectManager paints onto the same editor untouched.
+    inline void clearAllDiagnostics() { textEditor->clearAllDiagnostics(); }
+    inline auto diagnosticsOn(int line) const { return textEditor->diagnosticsOn(line); }
 
     /// When set, the completion provider is the only source of suggestions -
     /// keywords and words scraped from the buffer are suppressed.
