@@ -584,8 +584,10 @@ int LspPlugin::applyTextEdits(const QList<LspTextEdit> &edits, const QString &ex
         changed++;
     }
 
-    // The servers must be told, or the next request answers against stale text.
-    syncOpenDocuments();
+    for (auto it = byFile.cbegin(); it != byFile.cend(); ++it) {
+        dirtyDocuments.insert(QFileInfo(it.key()).absoluteFilePath());
+    }
+    documentSyncTimer.start();
     return changed;
 }
 
@@ -599,42 +601,42 @@ void LspPlugin::applyDiagnostics(const QString &fileName) {
         return;
     }
 
-    auto items = QList<lspDiagnostic::Diagnostic>();
+    auto byOwner = QHash<QString, QList<lspDiagnostic::Diagnostic>>();
     {
         auto locker = QMutexLocker(&diagnosticsMutex);
-        items = diagnostics.value(fileName);
-    }
-
-    for (auto line : markedLines.value(fileName)) {
-        editor->setLineError(line, false);
-        editor->setLineWarning(line, false);
-        editor->setLineInfo(line, false);
-        editor->setMetaDataMessage(line, {});
-    }
-
-    auto marked = QList<int>();
-    for (auto const &item : items) {
-        // The one place the protocol type meets Qt's: every editor marker API
-        // takes an int block number.
-        auto const line = static_cast<int>(item.line);
-        switch (item.severity) {
-        case lspDiagnostic::Severity::Error:
-            editor->setLineError(line, true);
-            break;
-        case lspDiagnostic::Severity::Warning:
-            editor->setLineWarning(line, true);
-            break;
-        case lspDiagnostic::Severity::Information:
-        case lspDiagnostic::Severity::Hint:
-            editor->setLineInfo(line, true);
-            break;
+        for (auto it = diagnostics.cbegin(); it != diagnostics.cend(); ++it) {
+            auto const perFile = it.value().constFind(fileName);
+            if (perFile != it.value().cend() && !perFile->isEmpty()) {
+                byOwner.insert(it.key(), *perFile);
+            }
         }
-        editor->setMetaDataMessage(line, item.message);
-        marked.append(line);
     }
-    markedLines[fileName] = marked;
+
+    editor->clearAllDiagnostics();
+    auto shown = 0;
+    for (auto it = byOwner.cbegin(); it != byOwner.cend(); ++it) {
+        for (auto const &item : it.value()) {
+            auto severity = Qutepart::DiagnosticSeverity::Information;
+            switch (item.severity) {
+            case lspDiagnostic::Severity::Error:
+                severity = Qutepart::DiagnosticSeverity::Error;
+                break;
+            case lspDiagnostic::Severity::Warning:
+                severity = Qutepart::DiagnosticSeverity::Warning;
+                break;
+            case lspDiagnostic::Severity::Information:
+            case lspDiagnostic::Severity::Hint:
+                break;
+            }
+            // The one place the protocol type meets the editor's: every line
+            // based API here takes an int block number.
+            editor->setDiagnostic(static_cast<int>(item.line),
+                                  Qutepart::Diagnostic{it.key(), severity, item.message});
+            shown++;
+        }
+    }
     editor->update();
-    qDebug() << "LspPlugin:" << items.size() << "diagnostics applied to"
+    qDebug() << "LspPlugin:" << shown << "diagnostic(s) applied to"
              << QFileInfo(fileName).fileName();
 }
 
@@ -698,11 +700,6 @@ void LspPlugin::flushDirtyDocuments() {
         }
         if (syncDocument(fileName, editor->getContent())) {
             sent++;
-            // The server now holds different text from the one these diagnostics
-            // were computed against. They stay cached so the gutter does not
-            // blink, but they stop being evidence about the current revision.
-            auto diagLocker = QMutexLocker(&diagnosticsMutex);
-            staleDiagnostics.insert(fileName);
         }
     }
     if (sent > 0) {
@@ -736,9 +733,11 @@ void LspPlugin::reconcileOpenDocuments() {
                 sit.value()->closeDocument(file);
                 closed++;
                 auto diagLocker = QMutexLocker(&diagnosticsMutex);
-                diagnostics.remove(fileName);
+                // The file goes from every server's set, not from the map itself.
+                for (auto owner = diagnostics.begin(); owner != diagnostics.end(); ++owner) {
+                    owner.value().remove(fileName);
+                }
                 staleDiagnostics.remove(fileName);
-                markedLines.remove(fileName);
                 syncedContent.forget(fileName);
             }
         }
@@ -795,16 +794,14 @@ bool LspPlugin::syncDocument(const QString &fileName, const QString &text) {
     }
     if (!server->syncDocument(QFileInfo(fileName).absoluteFilePath().toStdString(),
                               text.toStdString(), languageForFile(fileName).toStdString())) {
-        // The server was not ready, so the text never went out. Recording it
-        // anyway would claim a revision the server does not have, and the next
-        // positional request would skip its didChange and be answered against
-        // whatever the server is actually holding.
         return false;
     }
     dirtyDocuments.remove(fileName);
-    // Recorded only after the text has actually been sent, so the cache can
-    // never claim a revision the server never received.
     syncedContent.record(fileName, text);
+    {
+        auto diagLocker = QMutexLocker(&diagnosticsMutex);
+        staleDiagnostics.insert(fileName);
+    }
     return true;
 }
 
@@ -1001,7 +998,8 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
             emit progressChanged(root, text, percentage, active);
         });
         client->setDiagnosticsCallback(
-            [this](const std::string &file, const std::vector<lsp::Diagnostic> &items) {
+            [this, owner = definition.name](const std::string &file,
+                                            const std::vector<lsp::Diagnostic> &items) {
                 auto fileName = QDir::toNativeSeparators(
                     QFileInfo(QString::fromStdString(file)).absoluteFilePath());
                 auto converted = QList<lspDiagnostic::Diagnostic>();
@@ -1011,8 +1009,7 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
                 }
                 {
                     auto locker = QMutexLocker(&diagnosticsMutex);
-                    diagnostics[fileName] = converted;
-                    // Fresh for the revision the server just looked at.
+                    diagnostics[owner][fileName] = converted;
                     staleDiagnostics.remove(fileName);
                 }
                 // Queued: we are on a reader thread and the editor is GUI-only.
@@ -1200,8 +1197,18 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
         emit traceMessage(tr("LspPlugin: applying code action \"%1\" with %2 edit(s)")
                               .arg(args[GlobalArguments::Name].toString())
                               .arg(edits.size()));
-        // applyTextEdits() sorts bottom-up per file and rewrites files that have
-        // no editor open, which is a fix touching a header needs.
+        auto const requested = args[GlobalArguments::Content].toString();
+        if (!requested.isEmpty()) {
+            auto const current = editorTextFor(args[GlobalArguments::FileName].toString());
+            if (current != requested) {
+                emit traceMessage(
+                    tr("LspPlugin: refusing code action - the file changed after it was "
+                       "offered"));
+                return QtFuture::makeReadyValueFuture(
+                    CommandArgs{{GlobalArguments::ErrorMessage,
+                                 tr("The file changed after this fix was offered. Try again.")}});
+            }
+        }
         auto const changed = applyTextEdits(edits);
         emit traceMessage(tr("LspPlugin: code action changed %1 file(s)").arg(changed));
         return QtFuture::makeReadyValueFuture(CommandArgs{});
@@ -1294,49 +1301,51 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
                 pending->complete(CommandArgs{{GlobalArguments::Tags, tags}});
             });
     } else if (command == GlobalCommands::CodeAction) {
-        // Diagnostics overlapping the range, echoed back so the server can match
-        // them against the fix-its it handed out. Sending none is not "no
-        // filters" - gopls answers with nothing at all in that case.
         auto overlapping = QList<lspDiagnostic::Diagnostic>();
         auto stale = false;
         {
             auto locker = QMutexLocker(&diagnosticsMutex);
             stale = staleDiagnostics.contains(fileName);
             if (!stale) {
-                for (auto const &item : diagnostics.value(fileName)) {
-                    auto const lastLine = std::max(item.endLine, item.line);
-                    if (item.line <= endLine && lastLine >= startLine) {
-                        overlapping.append(item);
+                for (auto owner = diagnostics.cbegin(); owner != diagnostics.cend(); ++owner) {
+                    auto const perFile = owner.value().constFind(fileName);
+                    if (perFile == owner.value().cend()) {
+                        continue;
+                    }
+                    for (auto const &item : *perFile) {
+                        auto const lastLine = std::max(item.endLine, item.line);
+                        if (item.line <= endLine && lastLine >= startLine) {
+                            overlapping.append(item);
+                        }
                     }
                 }
             }
         }
-        // Sending them anyway would have the server match its stored fix-its
-        // against ranges describing text it has already been told changed, which
-        // is how a fix gets offered for a line that no longer has the problem.
-        // An empty array is the honest answer: clangd still answers from the
-        // range, it just cannot attribute a specific diagnostic.
         auto sent = std::vector<lsp::Diagnostic>();
         sent.reserve(static_cast<size_t>(overlapping.size()));
         for (auto const &item : std::as_const(overlapping)) {
             sent.push_back(lspDiagnostic::toItem(item));
         }
-        emit traceMessage(stale ? tr("LspPlugin: diagnostics for %1 are stale - sent none")
-                                      .arg(QFileInfo(fileName).fileName())
-                                : tr("LspPlugin: codeAction over %1:%2-%3:%4 with %5 "
-                                     "diagnostic(s) sent")
-                                      .arg(fileName)
-                                      .arg(startLine)
-                                      .arg(startCharacter)
-                                      .arg(endLine)
-                                      .arg(endCharacter)
-                                      .arg(sent.size()));
+
+        if (stale) {
+            emit traceMessage(tr("LspPlugin: diagnostics for %1 are stale - sent none")
+                                  .arg(QFileInfo(fileName).fileName()));
+        } else {
+            emit traceMessage(tr("LspPlugin: codeAction over %1:%2-%3:%4 with %5 diagnostic(s) "
+                                 "sent")
+                                  .arg(fileName)
+                                  .arg(startLine)
+                                  .arg(startCharacter)
+                                  .arg(endLine)
+                                  .arg(endCharacter)
+                                  .arg(sent.size()));
+        }
 
         // Asking for everything and filtering here keeps one request shape and
         // one code path, at the cost of actions the editor then hides by kind.
         server->requestCodeActions(
             path, startLine, startCharacter, endLine, endCharacter, sent, {},
-            [this, pending](std::vector<LspClientImpl::CodeAction> actions) {
+            [this, pending, content](std::vector<LspClientImpl::CodeAction> actions) {
                 auto out = QVariantList();
                 out.reserve(static_cast<int>(actions.size()));
                 for (auto const &action : actions) {
@@ -1385,6 +1394,10 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
                         {GlobalArguments::ReadOnly, action.disabled},
                         {GlobalArguments::ErrorMessage,
                          QString::fromStdString(action.disabledReason)},
+                        // The text these ranges were computed against. Carried so
+                        // ApplyCodeAction can refuse rather than write the fix
+                        // into a buffer that has since moved.
+                        {GlobalArguments::Content, content},
                     }));
                 }
                 emit traceMessage(tr("LspPlugin: %1 of %2 action(s) offered")

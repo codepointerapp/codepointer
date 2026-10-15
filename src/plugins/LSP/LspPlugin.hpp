@@ -194,8 +194,14 @@ class LspPlugin : public IPlugin {
     mutable QMutex serversMutex;
 
     // Written from reader threads, read on the GUI thread.
+    //
+    // Keyed by server name first, then file: a server republishing replaces only
+    // its own findings, and two servers on one file no longer overwrite each
+    // other. The outer key is the `owner` the marks are attributed to, so a
+    // server that restarts keeps its identity and its old marks can be cleared
+    // without remembering which lines they were on.
     mutable QMutex diagnosticsMutex;
-    QHash<QString, QList<lspDiagnostic::Diagnostic>> diagnostics;
+    QHash<QString, QHash<QString, QList<lspDiagnostic::Diagnostic>>> diagnostics;
 
     // Files whose buffer has moved on since these diagnostics were published.
     // The entries stay cached - the gutter still shows them until the server
@@ -203,10 +209,6 @@ class LspPlugin : public IPlugin {
     // because the server would be matching fixes against ranges that describe
     // text it has already been told has changed.
     QSet<QString> staleDiagnostics;
-
-    // Lines we marked last time, so ours can be cleared without wiping the build
-    // markers that ProjectManager paints onto the same editor.
-    QHash<QString, QList<int>> markedLines;
 
     // Editors we have already hooked destroyed()/contentChanged() on.
     QSet<QObject *> watchedEditors;
