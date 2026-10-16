@@ -174,9 +174,6 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         menu->addAction(a);
     }
 
-    int aaaa;
-    int bb = 0;
-    std::map<int, float> aaaaa;
     QSet<QString> addedItems;
     QVariantList definitions;
     QVariantList otherTags;
@@ -417,6 +414,28 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     connect(textEditor, &QPlainTextEdit::cursorPositionChanged, this,
             [this]() { maybeScheduleSignatureHelp(false); });
 
+    // The availability probe. The mark is dropped the instant the caret moves
+    // rather than waiting out the debounce: a hint that trails the cursor is
+    // worse than no hint, and it points at a line the user has already left.
+    codeActionTimer = new QTimer(this);
+    codeActionTimer->setSingleShot(true);
+    codeActionTimer->setInterval(250);
+    connect(codeActionTimer, &QTimer::timeout, this, &qmdiEditor::probeCodeActions);
+    // Clicking the mark is the same gesture as the shortcut: open the menu. The
+    // line is ignored - the caret is already where the mark is, and a right-click
+    // style move would fight qutepart's own click handling.
+    textEditor->setCodeActionCallback([this](int) { requestCodeActions(); });
+    connect(textEditor, &QPlainTextEdit::cursorPositionChanged, this, [this]() {
+        setCodeActionMark(-1, false);
+        codeActionTimer->start();
+    });
+    connect(textEditor, &QPlainTextEdit::textChanged, this, [this]() {
+        // The server has not seen this text yet, so its previous answer no
+        // longer describes anything.
+        setCodeActionMark(-1, false);
+        codeActionTimer->start();
+    });
+
     // The reply arrives on a reader thread; the watcher brings it back here
     // before any menu is built.
     connect(&codeActionWatcher, &QFutureWatcher<CommandArgs>::finished, this, [this]() {
@@ -424,8 +443,17 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
             return;
         }
         auto const result = codeActionWatcher.result();
-        qDebug() << "qmdiEditor: code action reply with"
-                 << result[GlobalArguments::Actions].toList().size() << "action(s)";
+        auto const actions = result[GlobalArguments::Actions].toList();
+        if (codeActionProbe) {
+            // A probe, not a request: only the marker moves, no menu. The caret
+            // may have moved while the server thought about it, so the mark goes
+            // on the line we asked about rather than wherever the caret ended up.
+            // The plugin already drops what it cannot run - command-shaped,
+            // resolveable, or empty - so anything left is applicable.
+            setCodeActionMark(codeActionProbeLine, !actions.isEmpty());
+            return;
+        }
+        qDebug() << "qmdiEditor: code action reply with" << actions.size() << "action(s)";
         showCodeActionMenu(result);
     });
 
@@ -1813,6 +1841,7 @@ void qmdiEditor::requestCodeActions() {
     }
 
     auto const range = selectionRange();
+    codeActionProbe = false;
     // clang-format off
     codeActionWatcher.setFuture(pluginManager->handleCommandAsync(GlobalCommands::CodeAction, {
         {GlobalArguments::FileName, mdiClientFileName()},
@@ -1823,6 +1852,48 @@ void qmdiEditor::requestCodeActions() {
         {GlobalArguments::Content, textEditor->toPlainText()},
     }));
     // clang-format on
+}
+
+void qmdiEditor::probeCodeActions() {
+    if (!mdiServer || !mdiServer->mdiHost || mdiClientFileName().isEmpty()) {
+        return;
+    }
+    auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+    if (!pluginManager) {
+        return;
+    }
+
+    // The caret, not the selection: the probe answers "is there anything to do
+    // where I am", and a selection spanning ten lines is not that question.
+    auto const cursor = textEditor->textCursor();
+    auto const line = cursor.blockNumber();
+    auto const column = cursor.position() - cursor.block().position();
+    codeActionProbe = true;
+    codeActionProbeLine = line;
+    // clang-format off
+    codeActionWatcher.setFuture(pluginManager->handleCommandAsync(GlobalCommands::CodeAction, {
+        {GlobalArguments::FileName, mdiClientFileName()},
+        {GlobalArguments::LineNumber, line},
+        {GlobalArguments::ColumnNumber, column},
+        {GlobalArguments::EndLineNumber, line},
+        {GlobalArguments::EndColumnNumber, column},
+        {GlobalArguments::Content, textEditor->toPlainText()},
+        // Refactorings are offered on most lines; only a fix justifies a
+        // permanent mark, so the probe asks for quickfixes alone.
+        {GlobalArguments::OnlyCodeActionKinds, QStringList{"quickfix"}},
+    }));
+    // clang-format on
+}
+
+void qmdiEditor::setCodeActionMark(int line, bool available) {
+    if (codeActionMarkLine >= 0) {
+        textEditor->setLineCodeAction(codeActionMarkLine, false);
+    }
+    codeActionMarkLine = available ? line : -1;
+    if (available) {
+        textEditor->setLineCodeAction(line, true);
+    }
+    textEditor->update();
 }
 
 void qmdiEditor::showCodeActionMenu(const CommandArgs &result) {
@@ -1884,6 +1955,20 @@ void qmdiEditor::showCodeActionMenu(const CommandArgs &result) {
     // deferred delete would run on the next event loop pass and close it again
     // before it could be used. aboutToHide is when it is genuinely finished.
     QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+
+    // Land on an action rather than on nothing, so Enter applies the top one
+    // without a click. Set before the popup so it is highlighted from the first
+    // frame. The first *enabled* entry, not the first entry: disabled ones are
+    // listed so their reason is visible, and arriving on one would make Enter
+    // look like it had done nothing. After the ranking above, that is the server's
+    // preferred action, which is the one a blind Enter should get.
+    for (auto *item : menu->actions()) {
+        if (item->isEnabled()) {
+            menu->setActiveAction(item);
+            break;
+        }
+    }
+
     menu->popup(textEditor->viewport()->mapToGlobal(viewportPos));
 }
 

@@ -6,12 +6,6 @@
 
 // SPDX-License-Identifier: MIT
 
-#include <atomic>
-#include <cstddef>
-#include <memory>
-#include <string>
-#include <vector>
-
 #include <QDebug>
 #include <QDir>
 #include <QDockWidget>
@@ -89,6 +83,7 @@ auto autoReloadFile(QObject *parent, const QString &path, std::function<bool(QSt
             qDebug() << "Reloading failed" << path;
         }
     };
+
     w->addPath(path);
     w->connect(w, &QFileSystemWatcher::fileChanged, parent, reloadFile);
     reloadFile(path);
@@ -1012,7 +1007,6 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
                     diagnostics[owner][fileName] = converted;
                     staleDiagnostics.remove(fileName);
                 }
-                // Queued: we are on a reader thread and the editor is GUI-only.
                 emit diagnosticsReady(fileName);
             });
         auto locker = QMutexLocker(&serversMutex);
@@ -1024,10 +1018,6 @@ void LspPlugin::startOneServer(const LspServerDefinition &definition, const QStr
         qDebug() << "LspPlugin: started" << definition.name << executable << argLog << "for"
                  << root;
 
-        // A binary can exist, launch, and still be useless - a rustup proxy shim for
-        // an uninstalled component exits immediately, for instance. Nothing else
-        // notices: initialize is never answered, isReady() stays false forever, and
-        // the language silently has no server. Check back and say so.
         auto watched = std::weak_ptr<LspClientImpl>(servers[root].value(definition.name));
         auto id = definition.name;
         auto binary = definition.binary;
@@ -1062,8 +1052,6 @@ int LspPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &
         if (languageForFile(fileName).isEmpty()) {
             return CommandPriority::CannotHandle;
         }
-        // Only outrank CTags/TreeSitter once a server is actually up: while clangd
-        // is still starting, a lower-priority provider is better than no answer.
         return serverForFile(fileName) ? CommandPriority::HighestPriority
                                        : CommandPriority::CannotHandle;
     }
@@ -1132,120 +1120,446 @@ int LspPlugin::canHandleAsyncCommand(const QString &command, const CommandArgs &
     return CommandPriority::CannotHandle;
 }
 
-QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
-                                                   const CommandArgs &args) {
-    if (command == GlobalCommands::ProjectLoaded) {
-        auto sourceDir = args[GlobalArguments::SourceDirectory].toString();
-        if (!sourceDir.isEmpty()) {
-            auto root = QDir::cleanPath(QDir(sourceDir).absolutePath());
-            auto buildDir = args[GlobalArguments::BuildDirectory].toString();
-            projectRoots.insert(root, buildDir.isEmpty()
-                                          ? QString()
-                                          : QDir::cleanPath(QDir(buildDir).absolutePath()));
-            // Servers start when a file of their language is actually opened.
-            syncOpenDocuments();
+// Commands that answer on the GUI thread without a server in the picture. They
+// get a ready future, so handleCommandAsync can return before the rest.
+
+void LspPlugin::handleProjectLoaded(const CommandArgs &args) {
+    auto sourceDir = args[GlobalArguments::SourceDirectory].toString();
+    if (sourceDir.isEmpty()) {
+        return;
+    }
+    auto root = QDir::cleanPath(QDir(sourceDir).absolutePath());
+    auto buildDir = args[GlobalArguments::BuildDirectory].toString();
+    projectRoots.insert(root, buildDir.isEmpty() ? QString()
+                                                 : QDir::cleanPath(QDir(buildDir).absolutePath()));
+    // Servers start when a file of their language is actually opened.
+    syncOpenDocuments();
+}
+
+void LspPlugin::handleProjectConfigChanged(const CommandArgs &args) {
+    auto sourceDir = args[GlobalArguments::SourceDirectory].toString();
+    if (!sourceDir.isEmpty()) {
+        // Refresh root -> build dir before restarting, or ensureServerForFile()
+        // rebuilds the servers against the directory the old config named.
+        auto root = QDir::cleanPath(QDir(sourceDir).absolutePath());
+        auto buildDir = args[GlobalArguments::BuildDirectory].toString();
+        projectRoots.insert(
+            root, buildDir.isEmpty() ? QString() : QDir::cleanPath(QDir(buildDir).absolutePath()));
+    }
+    stopAllServers();
+}
+
+void LspPlugin::handleProjectRemoved(const CommandArgs &args) {
+    auto root =
+        QDir::cleanPath(QDir(args[GlobalArguments::SourceDirectory].toString()).absolutePath());
+    projectRoots.remove(root);
+    auto locker = QMutexLocker(&serversMutex);
+    servers.remove(root);
+}
+
+void LspPlugin::handleShowReferences(const CommandArgs &args) {
+    // Always on the GUI thread here: the editor dispatches this from a menu
+    // action, and the widget owns widgets.
+    referencesWidget->setResults(args[GlobalArguments::Symbol].toString(),
+                                 args[GlobalArguments::Tags].toList());
+}
+
+void LspPlugin::handleApplyCodeAction(const CommandArgs &args) {
+    auto edits = QList<LspTextEdit>();
+    for (auto const &row : args[GlobalArguments::Tags].toList()) {
+        auto const edit = row.toHash();
+        edits.append(LspTextEdit{
+            .file = edit[GlobalArguments::FileName].toString(),
+            .newText = edit[GlobalArguments::NewName].toString(),
+            .startLine = edit[GlobalArguments::LineNumber].toInt(),
+            .startCharacter = edit[GlobalArguments::ColumnNumber].toInt(),
+            .endLine = edit[GlobalArguments::EndLineNumber].toInt(),
+            .endCharacter = edit[GlobalArguments::EndColumnNumber].toInt(),
+        });
+    }
+    emit traceMessage(tr("LspPlugin: applying code action \"%1\" with %2 edit(s)")
+                          .arg(args[GlobalArguments::Name].toString())
+                          .arg(edits.size()));
+
+    // The ranges were computed against the buffer as it was when the action was
+    // offered. Applying them to a buffer that has moved writes the fix into the
+    // wrong place: an inserted #include lands at a stale offset, the error
+    // stays, and the marker never clears. Refusing is the same trade rename
+    // makes, for the same reason.
+    auto const requested = args[GlobalArguments::Content].toString();
+    if (!requested.isEmpty()) {
+        auto const current = editorTextFor(args[GlobalArguments::FileName].toString());
+        if (current != requested) {
+            emit traceMessage(tr("LspPlugin: refusing code action - the file changed after it was "
+                                 "offered"));
+            return;
         }
-        return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
-    if (command == GlobalCommands::ProjectConfigChanged) {
-        // Refresh root -> build dir before restarting, otherwise ensureServerForFile()
-        // would rebuild the server with the build dir the old config pointed at.
-        auto sourceDir = args[GlobalArguments::SourceDirectory].toString();
-        if (!sourceDir.isEmpty()) {
-            auto root = QDir::cleanPath(QDir(sourceDir).absolutePath());
-            auto buildDir = args[GlobalArguments::BuildDirectory].toString();
-            projectRoots.insert(root, buildDir.isEmpty()
-                                          ? QString()
-                                          : QDir::cleanPath(QDir(buildDir).absolutePath()));
-        }
-        stopAllServers();
-        return QtFuture::makeReadyValueFuture(CommandArgs{});
-    }
+    // applyTextEdits() sorts bottom-up per file and rewrites files that have no
+    // editor open, which a fix touching a header needs.
+    auto const changed = applyTextEdits(edits);
+    emit traceMessage(tr("LspPlugin: code action changed %1 file(s)").arg(changed));
+}
 
-    if (command == GlobalCommands::ProjectRemoved) {
-        auto root =
-            QDir::cleanPath(QDir(args[GlobalArguments::SourceDirectory].toString()).absolutePath());
-        projectRoots.remove(root);
-        auto locker = QMutexLocker(&serversMutex);
-        servers.remove(root);
-        return QtFuture::makeReadyValueFuture(CommandArgs{});
-    }
+// Handlers that talk to a server.
 
-    if (command == GlobalCommands::ShowReferences) {
-        auto const symbol = args[GlobalArguments::Symbol].toString();
-        auto const rows = args[GlobalArguments::Tags].toList();
-        // Always on the GUI thread here: the editor dispatches this from a menu
-        // action, and the widget owns widgets.
-        referencesWidget->setResults(symbol, rows);
-        return QtFuture::makeReadyValueFuture(CommandArgs{});
-    }
-
-    if (command == GlobalCommands::ApplyCodeAction) {
-        auto edits = QList<LspTextEdit>();
-        for (auto const &row : args[GlobalArguments::Tags].toList()) {
-            auto const edit = row.toHash();
-            edits.append(LspTextEdit{
-                .file = edit[GlobalArguments::FileName].toString(),
-                .newText = edit[GlobalArguments::NewName].toString(),
-                .startLine = edit[GlobalArguments::LineNumber].toInt(),
-                .startCharacter = edit[GlobalArguments::ColumnNumber].toInt(),
-                .endLine = edit[GlobalArguments::EndLineNumber].toInt(),
-                .endCharacter = edit[GlobalArguments::EndColumnNumber].toInt(),
+void LspPlugin::handleDefinition(const LspRequest &ctx, const CommandArgs &args,
+                                 std::shared_ptr<PendingRequest> pending) {
+    auto const symbol = args[GlobalArguments::RequestedSymbol].toString();
+    ctx.server->requestDefinition(
+        ctx.path, ctx.line, ctx.column,
+        [pending, symbol](std::vector<LspClientImpl::Location> locations) {
+            auto tags = QVariantList();
+            for (auto const &location : locations) {
+                tags.append(QVariant::fromValue(CommandArgs{
+                    {GlobalArguments::FileName, QString::fromStdString(location.file)},
+                    {GlobalArguments::LineNumber, location.line + 1},
+                    {GlobalArguments::ColumnNumber, location.column + 1},
+                    {GlobalArguments::Name, symbol},
+                    {GlobalArguments::Value, symbol},
+                    {GlobalArguments::Raw, symbol},
+                    {GlobalArguments::Type, QStringLiteral("definition")},
+                    {GlobalArguments::Source, QStringLiteral("LSP")},
+                    {GlobalArguments::IsDefinition, true},
+                }));
+            }
+            pending->complete(CommandArgs{
+                {GlobalArguments::Symbol, symbol},
+                {GlobalArguments::Tags, tags},
             });
+        });
+}
+
+void LspPlugin::handleCompletion(const LspRequest &ctx, std::shared_ptr<PendingRequest> pending) {
+    ctx.server->requestCompletion(
+        ctx.path, ctx.line, ctx.column,
+        [pending, fileName = ctx.fileName](std::vector<lsp::CompletionItem> items) {
+            auto tags = QVariantList();
+            tags.reserve(static_cast<int>(items.size()));
+            for (auto const &item : items) {
+                auto const detail =
+                    item.detail.has_value() ? QString::fromStdString(*item.detail) : QString();
+                tags.append(QVariant::fromValue(CommandArgs{
+                    {GlobalArguments::Name, insertTextFor(item)},
+                    {GlobalArguments::Value, QString::fromStdString(item.label)},
+                    {GlobalArguments::Type, detail},
+                    {GlobalArguments::Source, QStringLiteral("LSP")},
+                }));
+            }
+            pending->complete(CommandArgs{{GlobalArguments::Tags, tags}});
+        });
+}
+
+void LspPlugin::handleSignatureHelp(const LspRequest &ctx,
+                                    std::shared_ptr<PendingRequest> pending) {
+    ctx.server->requestSignatureHelp(
+        ctx.path, ctx.line, ctx.column, [pending](lsp::SignatureHelp help) {
+            pending->complete(CommandArgs{{GlobalArguments::Tooltip, renderSignatureHelp(help)}});
+        });
+}
+
+void LspPlugin::handleFindReferences(const LspRequest &ctx, const CommandArgs &args,
+                                     std::shared_ptr<PendingRequest> pending) {
+    auto const symbol = args[GlobalArguments::RequestedSymbol].toString();
+    ctx.server->requestReferences(
+        ctx.path, ctx.line, ctx.column, true,
+        [pending, symbol](std::vector<LspClientImpl::Location> locations) {
+            auto tags = QVariantList();
+            tags.reserve(static_cast<int>(locations.size()));
+            for (auto const &location : locations) {
+                tags.append(QVariant::fromValue(CommandArgs{
+                    {GlobalArguments::FileName, QString::fromStdString(location.file)},
+                    {GlobalArguments::LineNumber, location.line + 1},
+                    {GlobalArguments::ColumnNumber, location.column + 1},
+                    {GlobalArguments::Name, symbol},
+                    {GlobalArguments::Value, symbol},
+                    {GlobalArguments::Raw, symbol},
+                    {GlobalArguments::Type, QStringLiteral("reference")},
+                    {GlobalArguments::Source, QStringLiteral("LSP")},
+                    {GlobalArguments::IsDefinition, false},
+                }));
+            }
+            pending->complete(CommandArgs{
+                {GlobalArguments::Symbol, symbol},
+                {GlobalArguments::Tags, tags},
+            });
+        });
+}
+
+void LspPlugin::handleHover(const LspRequest &ctx, std::shared_ptr<PendingRequest> pending) {
+    ctx.server->requestHover(ctx.path, ctx.line, ctx.column, [pending](std::string text) {
+        auto result = CommandArgs{};
+        if (!text.empty()) {
+            result[GlobalArguments::Tooltip] = QString::fromStdString(text);
         }
-        emit traceMessage(tr("LspPlugin: applying code action \"%1\" with %2 edit(s)")
-                              .arg(args[GlobalArguments::Name].toString())
-                              .arg(edits.size()));
-        auto const requested = args[GlobalArguments::Content].toString();
-        if (!requested.isEmpty()) {
-            auto const current = editorTextFor(args[GlobalArguments::FileName].toString());
-            if (current != requested) {
-                emit traceMessage(
-                    tr("LspPlugin: refusing code action - the file changed after it was "
-                       "offered"));
-                return QtFuture::makeReadyValueFuture(
+        pending->complete(result);
+    });
+}
+
+void LspPlugin::handleRename(const LspRequest &ctx, const CommandArgs &args,
+                             std::shared_ptr<PendingRequest> pending) {
+    // The editor owns the prompt and supplies the name; all that is left is the
+    // round trip to the server and applying the edits it returns.
+    auto const newName = args[GlobalArguments::NewName].toString();
+    // Resolved from the text the editor sent, so the reply can be checked against
+    // the symbol this request was actually about.
+    auto const oldName = lspRename::identifierAt(ctx.content, ctx.line, ctx.column);
+    auto const fileName = ctx.fileName;
+    auto const content = ctx.content;
+
+    ctx.server->requestRename(
+        ctx.path, ctx.line, ctx.column, newName.toStdString(),
+        [this, newName, oldName, pending, fileName,
+         content](std::vector<LspClientImpl::TextEdit> edits, const std::string &serverError) {
+            if (!serverError.empty()) {
+                pending->complete(
                     CommandArgs{{GlobalArguments::ErrorMessage,
-                                 tr("The file changed after this fix was offered. Try again.")}});
+                                 tr("The language server could not rename the symbol: %1")
+                                     .arg(QString::fromStdString(serverError))}});
+                return;
+            }
+            auto converted = QList<LspTextEdit>();
+            for (auto const &e : edits) {
+                converted.append(LspTextEdit{QString::fromStdString(e.file),
+                                             QString::fromStdString(e.newText), e.startLine,
+                                             e.startCharacter, e.endLine, e.endCharacter});
+            }
+            // Editors are GUI-only and this arrives on a reader thread.
+            QMetaObject::invokeMethod(
+                this,
+                [this, converted, newName, oldName, pending, fileName, content]() {
+                    // The ranges are positional and were computed against the text
+                    // the server held when the request went out. A whole-document
+                    // comparison here would refuse every rename where an unrelated
+                    // part of the file moved in flight, which is the common case
+                    // rather than the exception. applyRenameEdits() is the real
+                    // guard: it refuses any edit whose range does not cover the
+                    // symbol being renamed, so a reply for a different revision
+                    // cannot corrupt the file. This only reports, to show whether
+                    // the buffer is being touched at all.
+                    if (editorTextFor(fileName) != content) {
+                        qWarning() << "LspPlugin: buffer differs from request revision"
+                                   << "file:" << fileName << "requestedBytes:" << content.size();
+                    }
+                    auto files = applyTextEdits(converted, oldName, fileName);
+                    qDebug() << "LspPlugin: renamed to" << newName << "across" << files
+                             << "file(s)," << converted.size() << "edits";
+                    pending->complete(CommandArgs{});
+                },
+                Qt::QueuedConnection);
+        });
+}
+
+auto LspPlugin::overlappingDiagnostics(const QString &fileName, uint startLine, uint endLine) const
+    -> QList<lspDiagnostic::Diagnostic> {
+    auto out = QList<lspDiagnostic::Diagnostic>();
+    auto locker = QMutexLocker(&diagnosticsMutex);
+    // Every server's findings, since the server answers on what it was told
+    // regardless of which of them this request concerns.
+    for (auto owner = diagnostics.cbegin(); owner != diagnostics.cend(); ++owner) {
+        auto const perFile = owner.value().constFind(fileName);
+        if (perFile == owner.value().cend()) {
+            continue;
+        }
+        for (auto const &item : *perFile) {
+            auto const lastLine = std::max(item.endLine, item.line);
+            if (item.line <= endLine && lastLine >= startLine) {
+                out.append(item);
             }
         }
-        auto const changed = applyTextEdits(edits);
-        emit traceMessage(tr("LspPlugin: code action changed %1 file(s)").arg(changed));
+    }
+    return out;
+}
+
+/// Turns one server reply into the {Name, Type, Tags} entries the menu and the
+/// margin mark consume. Free-standing because the reply type is a nested struct
+/// of LspClientImpl, which the plugin header cannot name; `trace` is passed in
+/// so the drops can still be reported.
+static auto offerableActions(std::vector<LspClientImpl::CodeAction> actions, const QString &content,
+                             const std::function<void(QString)> &trace) -> QVariantList {
+    auto out = QVariantList();
+    out.reserve(static_cast<int>(actions.size()));
+
+    // The request carries every diagnostic on the line, and a server answers with
+    // one action per diagnostic - so "add the missing include" comes back once
+    // per problem it would fix. Same title means the same edit here, so only the
+    // first is kept.
+    auto seenTitles = QSet<QString>();
+
+    for (auto const &action : actions) {
+        // Each of these is a real gap, not a reason to hide the entry quietly, so
+        // each says what it would take. A menu entry that does nothing when
+        // clicked is worse than no entry at all.
+        if (action.needsResolve) {
+            trace(QObject::tr("LspPlugin: dropping \"%1\" [%2] - needs codeAction/resolve")
+                      .arg(QString::fromStdString(action.title),
+                           QString::fromStdString(action.kind)));
+            continue;
+        }
+        if (action.needsCommand) {
+            trace(QObject::tr("LspPlugin: dropping \"%1\" [%2] - needs executeCommand \"%3\"")
+                      .arg(QString::fromStdString(action.title),
+                           QString::fromStdString(action.kind),
+                           QString::fromStdString(action.commandName)));
+            continue;
+        }
+        if (action.edits.empty()) {
+            trace(QObject::tr("LspPlugin: dropping \"%1\" [%2] - no edits and no follow-up")
+                      .arg(QString::fromStdString(action.title),
+                           QString::fromStdString(action.kind)));
+            continue;
+        }
+
+        auto const title = QString::fromStdString(action.title);
+        if (seenTitles.contains(title)) {
+            continue;
+        }
+        seenTitles.insert(title);
+
+        auto edits = QVariantList();
+        edits.reserve(static_cast<int>(action.edits.size()));
+        for (auto const &edit : action.edits) {
+            edits.append(QVariant::fromValue(CommandArgs{
+                {GlobalArguments::FileName, QString::fromStdString(edit.file)},
+                {GlobalArguments::LineNumber, edit.startLine},
+                {GlobalArguments::ColumnNumber, edit.startCharacter},
+                {GlobalArguments::EndLineNumber, edit.endLine},
+                {GlobalArguments::EndColumnNumber, edit.endCharacter},
+                {GlobalArguments::NewName, QString::fromStdString(edit.newText)},
+            }));
+        }
+        out.append(QVariant::fromValue(CommandArgs{
+            {GlobalArguments::Name, title},
+            {GlobalArguments::Type, QString::fromStdString(action.kind)},
+            {GlobalArguments::Tags, edits},
+            {GlobalArguments::IsDefinition, action.isPreferred},
+            {GlobalArguments::ReadOnly, action.disabled},
+            {GlobalArguments::ErrorMessage, QString::fromStdString(action.disabledReason)},
+            // The text these ranges were computed against, so ApplyCodeAction can
+            // refuse rather than write a fix into a buffer that has since moved.
+            {GlobalArguments::Content, content},
+        }));
+    }
+    return out;
+}
+
+void LspPlugin::handleCodeActionRequest(const LspRequest &ctx, const CommandArgs &args,
+                                        std::shared_ptr<PendingRequest> pending) {
+    // Echoed back verbatim, `data` included: this is how the server recognises
+    // which of its own diagnostics it already handed us.
+    //
+    // When they are stale we send none. Sending them would have the server match
+    // its stored fix-its against ranges describing text it has already been told
+    // changed, which is how a fix gets offered for a line that no longer has the
+    // problem. An empty array is the honest answer: clangd still answers from the
+    // range, it just cannot attribute a specific diagnostic.
+    auto const stale = [&] {
+        auto locker = QMutexLocker(&diagnosticsMutex);
+        return staleDiagnostics.contains(ctx.fileName);
+    }();
+    auto overlapping = stale ? QList<lspDiagnostic::Diagnostic>()
+                             : overlappingDiagnostics(ctx.fileName, ctx.startLine, ctx.endLine);
+
+    auto sent = std::vector<lsp::Diagnostic>();
+    sent.reserve(static_cast<size_t>(overlapping.size()));
+    for (auto const &item : std::as_const(overlapping)) {
+        sent.push_back(lspDiagnostic::toItem(item));
+    }
+
+    if (stale) {
+        emit traceMessage(tr("LspPlugin: diagnostics for %1 are stale - sent none")
+                              .arg(QFileInfo(ctx.fileName).fileName()));
+    } else {
+        emit traceMessage(tr("LspPlugin: codeAction over %1:%2-%3:%4 with %5 diagnostic(s) sent")
+                              .arg(ctx.fileName)
+                              .arg(ctx.startLine)
+                              .arg(ctx.startCharacter)
+                              .arg(ctx.endLine)
+                              .arg(ctx.endCharacter)
+                              .arg(sent.size()));
+    }
+
+    // Empty asks for everything, which is what the menu wants. The margin mark
+    // sends "quickfix" instead: a refactoring is offered on most lines and would
+    // light every one of them.
+    auto kinds = std::vector<std::string>();
+    for (auto const &kind : args[GlobalArguments::OnlyCodeActionKinds].toStringList()) {
+        kinds.push_back(kind.toStdString());
+    }
+
+    auto const content = ctx.content;
+    ctx.server->requestCodeActions(
+        ctx.path, ctx.startLine, ctx.startCharacter, ctx.endLine, ctx.endCharacter, sent, kinds,
+        [this, pending, content](std::vector<LspClientImpl::CodeAction> actions) {
+            auto const out = offerableActions(std::move(actions), content, [this](QString message) {
+                emit traceMessage(message);
+            });
+            emit traceMessage(tr("LspPlugin: offering %1 action(s)").arg(out.size()));
+            pending->complete(CommandArgs{{GlobalArguments::Actions, out}});
+        });
+}
+
+QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
+                                                   const CommandArgs &args) {
+    // Handled entirely on this thread, so they answer before a server is even
+    // looked up - and each one returns a ready future.
+    if (command == GlobalCommands::ProjectLoaded) {
+        handleProjectLoaded(args);
+        return QtFuture::makeReadyValueFuture(CommandArgs{});
+    }
+    if (command == GlobalCommands::ProjectConfigChanged) {
+        handleProjectConfigChanged(args);
+        return QtFuture::makeReadyValueFuture(CommandArgs{});
+    }
+    if (command == GlobalCommands::ProjectRemoved) {
+        handleProjectRemoved(args);
+        return QtFuture::makeReadyValueFuture(CommandArgs{});
+    }
+    if (command == GlobalCommands::ShowReferences) {
+        handleShowReferences(args);
+        return QtFuture::makeReadyValueFuture(CommandArgs{});
+    }
+    if (command == GlobalCommands::ApplyCodeAction) {
+        // A refusal has to reach the caller, so unlike the others this one is not
+        // a ready future; the reason travels in the result either way.
+        handleApplyCodeAction(args);
         return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
-    auto fileName = args[GlobalArguments::FileName].toString();
-    auto server = serverForFile(fileName);
-    if (!server) {
+    auto ctx = LspRequest{};
+    ctx.fileName = args[GlobalArguments::FileName].toString();
+    ctx.server = serverForFile(ctx.fileName);
+    if (!ctx.server) {
         return QtFuture::makeReadyValueFuture(CommandArgs{});
     }
 
-    auto line = args[GlobalArguments::LineNumber].toInt();
-    auto column = args[GlobalArguments::ColumnNumber].toInt();
+    ctx.line = args[GlobalArguments::LineNumber].toInt();
+    ctx.column = args[GlobalArguments::ColumnNumber].toInt();
     // A range command falls back to the caret, so callers without a selection do
     // not have to send a zero-width range.
-    auto const startLine = static_cast<uint>(line);
-    auto const startCharacter = static_cast<uint>(column);
-    auto const endLine = args.contains(GlobalArguments::EndLineNumber)
-                             ? static_cast<uint>(args[GlobalArguments::EndLineNumber].toInt())
-                             : startLine;
-    auto const endCharacter =
-        args.contains(GlobalArguments::EndColumnNumber)
-            ? static_cast<uint>(args[GlobalArguments::EndColumnNumber].toInt())
-            : startCharacter;
-    auto content = args[GlobalArguments::Content].toString();
-    auto path = QFileInfo(fileName).absoluteFilePath().toStdString();
+    ctx.startLine = static_cast<uint>(ctx.line);
+    ctx.startCharacter = static_cast<uint>(ctx.column);
+    ctx.endLine = args.contains(GlobalArguments::EndLineNumber)
+                      ? static_cast<uint>(args[GlobalArguments::EndLineNumber].toInt())
+                      : ctx.startLine;
+    ctx.endCharacter = args.contains(GlobalArguments::EndColumnNumber)
+                           ? static_cast<uint>(args[GlobalArguments::EndColumnNumber].toInt())
+                           : ctx.startCharacter;
+    ctx.content = args[GlobalArguments::Content].toString();
+    ctx.path = QFileInfo(ctx.fileName).absoluteFilePath().toStdString();
 
     // The server must see the current buffer before it answers a positional
-    // question, otherwise the reply refers to a stale document. Full-text sync
-    // is expensive (the server re-parses on each didChange), so only push when
-    // the text actually differs from what the server last received.
-    if (syncedContent.isStale(fileName, content) && !syncDocument(fileName, content)) {
+    // question, otherwise the reply refers to a stale document. Full-text sync is
+    // expensive (the server re-parses on each didChange), so only push when the
+    // text actually differs from what the server last received.
+    if (syncedContent.isStale(ctx.fileName, ctx.content) &&
+        !syncDocument(ctx.fileName, ctx.content)) {
         // The push did not happen, so the server would answer about a document it
         // is not holding. Its ranges would be well-formed and wrong, and for a
         // rename that means writing the new name into the wrong places. Say so
         // instead of corrupting the buffer.
-        qWarning() << "LspPlugin: cannot reach the server for" << fileName
+        qWarning() << "LspPlugin: cannot reach the server for" << ctx.fileName
                    << "- request dropped rather than answered against a stale document";
         return QtFuture::makeReadyValueFuture(
             CommandArgs{{GlobalArguments::ErrorMessage,
@@ -1260,251 +1574,19 @@ QFuture<CommandArgs> LspPlugin::handleCommandAsync(const QString &command,
     // ExactMatch=false with a prefix, while "Follow symbol" sends ExactMatch=true
     // for the word under the cursor. The latter wants locations, not candidates.
     if (command == GlobalCommands::VariableInfo && args[GlobalArguments::ExactMatch].toBool()) {
-        auto symbol = args[GlobalArguments::RequestedSymbol].toString();
-        server->requestDefinition(
-            path, line, column, [pending, symbol](std::vector<LspClientImpl::Location> locations) {
-                auto tags = QVariantList();
-                for (auto const &location : locations) {
-                    auto file = QString::fromStdString(location.file);
-                    tags.append(QVariant::fromValue(CommandArgs{
-                        {GlobalArguments::FileName, file},
-                        {GlobalArguments::LineNumber, location.line + 1},
-                        {GlobalArguments::ColumnNumber, location.column + 1},
-                        {GlobalArguments::Name, symbol},
-                        {GlobalArguments::Value, symbol},
-                        {GlobalArguments::Raw, symbol},
-                        {GlobalArguments::Type, QStringLiteral("definition")},
-                        {GlobalArguments::Source, QStringLiteral("LSP")},
-                        {GlobalArguments::IsDefinition, true},
-                    }));
-                }
-                pending->complete(CommandArgs{
-                    {GlobalArguments::Symbol, symbol},
-                    {GlobalArguments::Tags, tags},
-                });
-            });
+        handleDefinition(ctx, args, pending);
     } else if (command == GlobalCommands::VariableInfo) {
-        server->requestCompletion(
-            path, line, column, [pending, fileName](std::vector<lsp::CompletionItem> items) {
-                auto tags = QVariantList();
-                tags.reserve(static_cast<int>(items.size()));
-                for (auto const &item : items) {
-                    auto detail =
-                        item.detail.has_value() ? QString::fromStdString(*item.detail) : QString();
-                    tags.append(QVariant::fromValue(CommandArgs{
-                        {GlobalArguments::Name, insertTextFor(item)},
-                        {GlobalArguments::Value, QString::fromStdString(item.label)},
-                        {GlobalArguments::Type, detail},
-                        {GlobalArguments::Source, QStringLiteral("LSP")},
-                    }));
-                }
-                pending->complete(CommandArgs{{GlobalArguments::Tags, tags}});
-            });
+        handleCompletion(ctx, pending);
     } else if (command == GlobalCommands::CodeAction) {
-        auto overlapping = QList<lspDiagnostic::Diagnostic>();
-        auto stale = false;
-        {
-            auto locker = QMutexLocker(&diagnosticsMutex);
-            stale = staleDiagnostics.contains(fileName);
-            if (!stale) {
-                for (auto owner = diagnostics.cbegin(); owner != diagnostics.cend(); ++owner) {
-                    auto const perFile = owner.value().constFind(fileName);
-                    if (perFile == owner.value().cend()) {
-                        continue;
-                    }
-                    for (auto const &item : *perFile) {
-                        auto const lastLine = std::max(item.endLine, item.line);
-                        if (item.line <= endLine && lastLine >= startLine) {
-                            overlapping.append(item);
-                        }
-                    }
-                }
-            }
-        }
-        auto sent = std::vector<lsp::Diagnostic>();
-        sent.reserve(static_cast<size_t>(overlapping.size()));
-        for (auto const &item : std::as_const(overlapping)) {
-            sent.push_back(lspDiagnostic::toItem(item));
-        }
-
-        if (stale) {
-            emit traceMessage(tr("LspPlugin: diagnostics for %1 are stale - sent none")
-                                  .arg(QFileInfo(fileName).fileName()));
-        } else {
-            emit traceMessage(tr("LspPlugin: codeAction over %1:%2-%3:%4 with %5 diagnostic(s) "
-                                 "sent")
-                                  .arg(fileName)
-                                  .arg(startLine)
-                                  .arg(startCharacter)
-                                  .arg(endLine)
-                                  .arg(endCharacter)
-                                  .arg(sent.size()));
-        }
-
-        // Asking for everything and filtering here keeps one request shape and
-        // one code path, at the cost of actions the editor then hides by kind.
-        server->requestCodeActions(
-            path, startLine, startCharacter, endLine, endCharacter, sent, {},
-            [this, pending, content](std::vector<LspClientImpl::CodeAction> actions) {
-                auto out = QVariantList();
-                out.reserve(static_cast<int>(actions.size()));
-                for (auto const &action : actions) {
-                    // Each of these is a real gap, not a reason to hide the entry
-                    // quietly, so each says what it would take. Showing them would
-                    // be worse than not showing them.
-                    if (action.needsResolve) {
-                        emit traceMessage(
-                            tr("LspPlugin: dropping \"%1\" [%2] - needs codeAction/resolve")
-                                .arg(QString::fromStdString(action.title),
-                                     QString::fromStdString(action.kind)));
-                        continue;
-                    }
-                    if (action.needsCommand) {
-                        emit traceMessage(
-                            tr("LspPlugin: dropping \"%1\" [%2] - needs executeCommand \"%3\"")
-                                .arg(QString::fromStdString(action.title),
-                                     QString::fromStdString(action.kind),
-                                     QString::fromStdString(action.commandName)));
-                        continue;
-                    }
-                    if (action.edits.empty()) {
-                        emit traceMessage(
-                            tr("LspPlugin: dropping \"%1\" [%2] - no edits and no follow-up")
-                                .arg(QString::fromStdString(action.title),
-                                     QString::fromStdString(action.kind)));
-                        continue;
-                    }
-                    auto edits = QVariantList();
-                    edits.reserve(static_cast<int>(action.edits.size()));
-                    for (auto const &edit : action.edits) {
-                        edits.append(QVariant::fromValue(CommandArgs{
-                            {GlobalArguments::FileName, QString::fromStdString(edit.file)},
-                            {GlobalArguments::LineNumber, edit.startLine},
-                            {GlobalArguments::ColumnNumber, edit.startCharacter},
-                            {GlobalArguments::EndLineNumber, edit.endLine},
-                            {GlobalArguments::EndColumnNumber, edit.endCharacter},
-                            {GlobalArguments::NewName, QString::fromStdString(edit.newText)},
-                        }));
-                    }
-                    out.append(QVariant::fromValue(CommandArgs{
-                        {GlobalArguments::Name, QString::fromStdString(action.title)},
-                        {GlobalArguments::Type, QString::fromStdString(action.kind)},
-                        {GlobalArguments::Tags, edits},
-                        {GlobalArguments::IsDefinition, action.isPreferred},
-                        {GlobalArguments::ReadOnly, action.disabled},
-                        {GlobalArguments::ErrorMessage,
-                         QString::fromStdString(action.disabledReason)},
-                        // The text these ranges were computed against. Carried so
-                        // ApplyCodeAction can refuse rather than write the fix
-                        // into a buffer that has since moved.
-                        {GlobalArguments::Content, content},
-                    }));
-                }
-                emit traceMessage(tr("LspPlugin: %1 of %2 action(s) offered")
-                                      .arg(out.size())
-                                      .arg(actions.size()));
-                pending->complete(CommandArgs{{GlobalArguments::Actions, out}});
-            });
+        handleCodeActionRequest(ctx, args, pending);
     } else if (command == GlobalCommands::SignatureHelp) {
-        server->requestSignatureHelp(path, line, column, [pending](lsp::SignatureHelp help) {
-            pending->complete(CommandArgs{{GlobalArguments::Tooltip, renderSignatureHelp(help)}});
-        });
+        handleSignatureHelp(ctx, pending);
     } else if (command == GlobalCommands::FindReferences) {
-        auto symbol = args[GlobalArguments::RequestedSymbol].toString();
-        server->requestReferences(
-            path, line, column, true,
-            [pending, symbol](std::vector<LspClientImpl::Location> locations) {
-                auto tags = QVariantList();
-                tags.reserve(static_cast<int>(locations.size()));
-                for (auto const &location : locations) {
-                    auto const file = QString::fromStdString(location.file);
-                    tags.append(QVariant::fromValue(CommandArgs{
-                        {GlobalArguments::FileName, file},
-                        {GlobalArguments::LineNumber, location.line + 1},
-                        {GlobalArguments::ColumnNumber, location.column + 1},
-                        {GlobalArguments::Name, symbol},
-                        {GlobalArguments::Value, symbol},
-                        {GlobalArguments::Raw, symbol},
-                        {GlobalArguments::Type, QStringLiteral("reference")},
-                        {GlobalArguments::Source, QStringLiteral("LSP")},
-                        {GlobalArguments::IsDefinition, false},
-                    }));
-                }
-                pending->complete(CommandArgs{
-                    {GlobalArguments::Symbol, symbol},
-                    {GlobalArguments::Tags, tags},
-                });
-            });
+        handleFindReferences(ctx, args, pending);
     } else if (command == GlobalCommands::RenameSymbol) {
-        // The editor owns the prompt and supplies the name; all that is left is
-        // the round trip to the server and applying the edits it returns.
-        auto newName = args[GlobalArguments::NewName].toString();
-        // Resolved from the text the editor sent, so the reply can be checked
-        // against the symbol this request was actually about.
-        auto oldName = lspRename::identifierAt(content, line, column);
-        server->requestRename(
-            path, line, column, newName.toStdString(),
-            [this, newName, oldName, pending, fileName,
-             content](std::vector<LspClientImpl::TextEdit> edits, const std::string &serverError) {
-                if (!serverError.empty()) {
-                    pending->complete(
-                        CommandArgs{{GlobalArguments::ErrorMessage,
-                                     tr("The language server could not rename the symbol: %1")
-                                         .arg(QString::fromStdString(serverError))}});
-                    return;
-                }
-                auto converted = QList<LspTextEdit>();
-                for (auto const &e : edits) {
-                    converted.append(LspTextEdit{
-                        QString::fromStdString(e.file),
-                        QString::fromStdString(e.newText),
-                        e.startLine,
-                        e.startCharacter,
-                        e.endLine,
-                        e.endCharacter,
-                    });
-                }
-                // Editors are GUI-only and this arrives on a reader thread.
-                QMetaObject::invokeMethod(
-                    this,
-                    [this, converted, newName, oldName, pending, fileName, content]() {
-                        // The ranges are positional and were computed against the
-                        // text the server held when the request went out. A
-                        // whole-document comparison here would refuse every rename
-                        // where an unrelated part of the file moved in flight,
-                        // which is the common case rather than the exception.
-                        // applyRenameEdits() is the real guard: it refuses any edit
-                        // whose range does not cover the symbol being renamed, so a
-                        // reply for a different revision cannot corrupt the file.
-                        // This only reports, to show whether the buffer is being
-                        // touched at all.
-                        auto current = editorTextFor(fileName);
-                        if (current != content) {
-                            auto manager = getManager();
-                            auto editor = manager ? dynamic_cast<qmdiEditor *>(
-                                                        manager->clientForFileName(fileName))
-                                                  : nullptr;
-                            qWarning()
-                                << "LspPlugin: buffer differs from request revision"
-                                << "file:" << fileName << "editorFound:" << (editor != nullptr)
-                                << "requestedBytes:" << content.size()
-                                << "currentBytes:" << current.size();
-                        }
-                        auto files = applyTextEdits(converted, oldName, fileName);
-                        qDebug() << "LspPlugin: renamed to" << newName << "across" << files
-                                 << "file(s)," << converted.size() << "edits";
-                        pending->complete(CommandArgs{});
-                    },
-                    Qt::QueuedConnection);
-            });
+        handleRename(ctx, args, pending);
     } else {
-        server->requestHover(path, line, column, [pending](std::string text) {
-            auto result = CommandArgs{};
-            if (!text.empty()) {
-                result[GlobalArguments::Tooltip] = QString::fromStdString(text);
-            }
-            pending->complete(result);
-        });
+        handleHover(ctx, pending);
     }
 
     return future;

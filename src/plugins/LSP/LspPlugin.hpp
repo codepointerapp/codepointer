@@ -27,6 +27,26 @@ class LspDebugWidget;
 class LspReferencesWidget;
 struct PendingRequest;
 
+/// Everything a positional request needs, resolved once by the dispatcher.
+/// One parameter per handler instead of the same six derived values threaded
+/// through every branch.
+struct LspRequest {
+    QString fileName;
+    LspClientImpl *server = nullptr;
+    /// Absolute path, 0-based as LSP states it.
+    std::string path;
+    int line = 0;
+    int column = 0;
+    /// The requested range. Defaults to the caret when the caller sent no end.
+    uint startLine = 0;
+    uint startCharacter = 0;
+    uint endLine = 0;
+    uint endCharacter = 0;
+    /// Buffer text as of the request, used to refuse a reply the buffer has
+    /// outgrown.
+    QString content;
+};
+
 /// One language server as configured: which binary, how to launch it, and which
 /// file suffixes it serves. Serialised as an array of these, in the shape of
 /// `src/plugins/LSP/servers.json`.
@@ -229,6 +249,30 @@ class LspPlugin : public IPlugin {
     /// refused rather than half-applied. It is only meaningful for the file the
     /// rename started in; leave it empty for the other files and for ordinary
     /// edits, which have no symbol to check against.
+    /// One handler per command. The dispatcher resolves the server, syncs the
+    /// buffer and makes the promise; these only talk to it.
+    void handleProjectLoaded(const CommandArgs &args);
+    void handleProjectConfigChanged(const CommandArgs &args);
+    void handleProjectRemoved(const CommandArgs &args);
+    void handleShowReferences(const CommandArgs &args);
+    void handleApplyCodeAction(const CommandArgs &args);
+    void handleDefinition(const LspRequest &ctx, const CommandArgs &args,
+                          std::shared_ptr<PendingRequest> pending);
+    void handleCompletion(const LspRequest &ctx, std::shared_ptr<PendingRequest> pending);
+    void handleCodeActionRequest(const LspRequest &ctx, const CommandArgs &args,
+                                 std::shared_ptr<PendingRequest> pending);
+    void handleSignatureHelp(const LspRequest &ctx, std::shared_ptr<PendingRequest> pending);
+    void handleFindReferences(const LspRequest &ctx, const CommandArgs &args,
+                              std::shared_ptr<PendingRequest> pending);
+    void handleRename(const LspRequest &ctx, const CommandArgs &args,
+                     std::shared_ptr<PendingRequest> pending);
+    void handleHover(const LspRequest &ctx, std::shared_ptr<PendingRequest> pending);
+    /// Diagnostics on this file intersecting the requested range, for
+    /// context.diagnostics. Empty when they describe a revision the buffer has
+    /// since left behind.
+    auto overlappingDiagnostics(const QString &fileName, uint startLine,
+                                uint endLine) const -> QList<lspDiagnostic::Diagnostic>;
+
     int applyTextEdits(const QList<struct LspTextEdit> &edits, const QString &expectedOldName = {},
                        const QString &renameOriginFile = {});
 

@@ -1,3 +1,5 @@
+#include <optional>
+
 #include <QDir>
 #include <QFileInfo>
 #include <QHeaderView>
@@ -11,15 +13,25 @@
 //       us eventually be able to replace the editorplugin.
 #include "widgets/qmdieditor.h"
 
-auto typeToStatus(const QString &name) -> int {
+// Owner for everything this widget reports. Scoped so a build's marks clear as a
+// group, the way clangd's do, rather than only ever being added.
+constexpr auto BuildOwner = "build";
+
+/// The severity of a compiler status line, or nothing when the line names no
+/// severity we recognise. Optional rather than a default: compiler output is
+/// arbitrary text, and inventing an error for every line we fail to parse would
+/// mark whole files wrong.
+auto typeToStatus(const QString &name) -> std::optional<Qutepart::DiagnosticSeverity> {
     if (name.contains("error", Qt::CaseInsensitive)) {
-        return Qutepart::ERROR_BIT;
-    } else if (name.compare("warning", Qt::CaseInsensitive) == 0) {
-        return Qutepart::WARNING_BIT;
-    } else if (name.contains("info", Qt::CaseInsensitive) == 0) {
-        return Qutepart::INFO_BIT;
+        return Qutepart::DiagnosticSeverity::Error;
     }
-    return 0;
+    if (name.compare("warning", Qt::CaseInsensitive) == 0) {
+        return Qutepart::DiagnosticSeverity::Warning;
+    }
+    if (name.contains("info", Qt::CaseInsensitive) == 0) {
+        return Qutepart::DiagnosticSeverity::Information;
+    }
+    return std::nullopt;
 }
 
 CompileStatusModel::CompileStatusModel(QObject *parent)
@@ -43,8 +55,14 @@ QVariant CompileStatusModel::data(const QModelIndex &index, int role) const {
     auto const &status = filteredStatuses.at(index.row());
 
     if (index.column() == 0 && role == Qt::DecorationRole) {
+        auto const severity = typeToStatus(status.type);
+        if (!severity) {
+            return {};
+        }
+        // Keyed by the bit because that is what iconForStatus wants, and the bit
+        // is derived rather than stored - the severity is the real thing.
+        auto const iconType = Qutepart::diagnosticBit(*severity);
         auto static iconCache = QHash<int, QIcon>();
-        auto iconType = typeToStatus(status.type);
         if (!iconCache.contains(iconType)) {
             iconCache[iconType] = Qutepart::iconForStatus(iconType);
         }
@@ -219,7 +237,13 @@ ProjectIssuesWidget::ProjectIssuesWidget(PluginManager *parent)
             [this]() { this->model->setWarningsVisible(this->ui->warningsButton->isChecked()); });
     connect(ui->othersButton, &QPushButton::clicked, this,
             [this]() { this->model->setOthersVisible(this->ui->othersButton->isChecked()); });
-    connect(ui->clearButton, &QPushButton::clicked, this, [this]() { this->model->clearAll(); });
+    // Both halves: clearing the list without clearing the editors would leave marks
+    // on the page that the list no longer knows about, and the next decorateClient
+    // would not bring them back either.
+    connect(ui->clearButton, &QPushButton::clicked, this, [this]() {
+        this->model->clearAll();
+        this->clearEditorStatuses();
+    });
     connect(ui->issuesList, &QTableView::clicked, this, [this](const QModelIndex &index) {
         auto item = this->model->getItem(index);
         if (!item.fileName.isEmpty()) {
@@ -240,21 +264,11 @@ auto static setEditorStatus(qmdiEditor *editor, const CompileStatus &status) {
     if (editor->isEmpty()) {
         return;
     }
-
-    editor->setMetaDataMessage(status.row, status.message);
-    switch (typeToStatus(status.type)) {
-    case Qutepart::ERROR_BIT:
-        editor->setLineError(status.row, true);
-        break;
-    case Qutepart::WARNING_BIT:
-        editor->setLineWarning(status.row, true);
-        break;
-    case Qutepart::INFO_BIT:
-        editor->setLineInfo(status.row, true);
-        break;
-    default:
-        break;
+    auto const severity = typeToStatus(status.type);
+    if (!severity) {
+        return;
     }
+    editor->setDiagnostic(status.row, Qutepart::Diagnostic{BuildOwner, *severity, status.message});
 }
 
 void ProjectIssuesWidget::processLine(const QString &rawLines, int lineNumber,
@@ -272,6 +286,14 @@ void ProjectIssuesWidget::processLine(const QString &rawLines, int lineNumber,
                 setEditorStatus(editor, item);
                 editor->update();
             }
+        }
+    }
+}
+
+void ProjectIssuesWidget::clearEditorStatuses() {
+    for (auto i = 0; i < static_cast<int>(manager->visibleTabs()); ++i) {
+        if (auto editor = dynamic_cast<qmdiEditor *>(manager->getMdiClient(i))) {
+            editor->clearDiagnostics(BuildOwner);
         }
     }
 }

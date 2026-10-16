@@ -284,6 +284,13 @@ class qmdiEditor : public QWidget, public qmdiClient {
     /// server answers, shows the actions in a popup at the caret. Does nothing
     /// when there is no server for the file or it offers nothing.
     void requestCodeActions();
+    /// The quiet half: asks the same question but only moves the marker in the
+    /// margin, never opens a menu. Fired on a debounce after the caret moves,
+    /// which is what every editor surveyed does.
+    void probeCodeActions();
+    /// Moves or removes the availability mark. Only ever one line holds it, so
+    /// clearing cannot strand a stale mark on a line an edit has moved.
+    void setCodeActionMark(int line, bool available);
     /// Turns a {Name, Type, Tags} entry from that reply into menu entries and
     /// applies whichever one is picked.
     void showCodeActionMenu(const CommandArgs &result);
@@ -414,6 +421,14 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QTimer *signatureHelpTimer = nullptr;
     QFutureWatcher<CommandArgs> signatureHelpWatcher;
     QFutureWatcher<CommandArgs> codeActionWatcher;
+    QTimer *codeActionTimer = nullptr;
+    /// Distinguishes the debounced probe from a user pressing Alt+Return: the
+    /// probe answers with a marker, the shortcut with a menu.
+    bool codeActionProbe = false;
+    int codeActionProbeLine = -1;
+    /// The one line currently marked, or -1. Tracked so clearing does not need
+    /// to remember anything about lines that may since have shifted.
+    int codeActionMarkLine = -1;
     // True while a call tip is expected: cleared when the caret leaves a call.
     // Plain cursor moves only retrigger while this is set, so moving through an
     // argument list refreshes an open tip without asking the server about text
