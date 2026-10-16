@@ -119,6 +119,11 @@ inline constexpr const char *Position = "Position";
 // with no selection does not have to spell out a zero-width range.
 inline constexpr const char *EndLineNumber = "EndLineNumber";
 inline constexpr const char *EndColumnNumber = "EndColumnNumber";
+// CodeActionKinds the caller wants, narrowing the LSP `context.only` field.
+// Absent or empty asks for everything, which is right for the menu but wrong for
+// the margin marker: a refactoring such as "extract to function" is available on
+// most lines and would light every one.
+inline constexpr const char *OnlyCodeActionKinds = "OnlyCodeActionKinds";
 inline constexpr const char *FoldTopLevel = "FoldTopLevel";
 inline constexpr const char *IsDefinition = "IsDefinition";
 inline constexpr const char *ExitCode = "ExitCode";

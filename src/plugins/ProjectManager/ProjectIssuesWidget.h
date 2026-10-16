@@ -67,6 +67,10 @@ class ProjectIssuesWidget : public QWidget {
     void changeEvent(QEvent *e);
     void decorateClient(qmdiClient *client);
 
+    /// Drops this widget's marks from every open editor. Scoped by owner, so
+    /// clangd's diagnostics on the same lines survive.
+    void clearEditorStatuses();
+
   private:
     PluginManager *manager;
     CompileStatusModel *model;
