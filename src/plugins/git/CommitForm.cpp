@@ -261,7 +261,9 @@ bool GitStatusTableModel::hasAnyChecked() const {
 CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
     : QWidget(parent), ui(new Ui::CommitForm) {
     ui->setupUi(this);
-    mdiClientName = tr("Commit");
+
+    auto fi = QFileInfo(dir);
+    mdiClientName = tr("Commit: %1").arg(fi.baseName());
     repoRoot = dir;
     git = plugin;
 
