@@ -35,12 +35,15 @@ jobs:
             tag="${GITHUB_SHA::7}"
           fi
           echo "version=${tag}" >> $GITHUB_OUTPUT
-          mac_version="0.0.0"
+          # Only a tag names a release. Anything else is deliberately left empty, so
+          # that passing it through lets CMake fall back to the version in
+          # src/main.cpp - which is what a branch build or a pull request wants.
+          # A 0.0.0 fallback here would override that good value.
+          # No validation either: CFBundleShortVersionString wants numbers and dots,
+          # and CMake already reduces a tag to its numeric core.
+          mac_version=""
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            candidate="${tag#v}"
-            if [[ "${candidate}" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
-              mac_version="${candidate}"
-            fi
+            mac_version="${tag#v}"
           fi
           echo "mac_version=${mac_version}" >> $GITHUB_OUTPUT
 
@@ -163,6 +166,8 @@ jobs:
           -DCMAKE_C_COMPILER=${{ matrix.config.cc }}
           -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }}
           -DBUILD_VERSION=OFFICIAL
+          # Empty unless this is a tag build, which is what makes cmake read the
+          # version out of src/main.cpp instead.
           -DCODEPOINTER_VERSION=${{ needs.version.outputs.mac_version }}
       - name: Build
         run: cmake --build build/${{ matrix.config.build_dir }} --parallel --verbose

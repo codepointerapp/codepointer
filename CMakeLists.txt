@@ -19,19 +19,74 @@ else()
     set(BUILD_APP_NAME "codepointer")
 endif()
 
-# Marketing version for the macOS bundle. Deliberately separate from BUILD_VERSION,
-# which selects a flavour (DEV/CE/OFFICIAL) and not a release number.
-set(CODEPOINTER_VERSION "0.0.0" CACHE STRING "Version reported by the macOS bundle")
+# Version the macOS bundle reports. Left empty by default on purpose: it is then
+# read out of src/main.cpp, which is the one file bump-version.py already keeps in
+# step with every other version in the project. A fifth copy to maintain would be a
+# fifth thing to forget. CI passes the release tag, which outranks all of them.
+set(CODEPOINTER_VERSION "" CACHE STRING "Version reported by the macOS bundle (default: from src/main.cpp)")
 
-# Apple requires CFBundleShortVersionString to be dot-separated integers. CI
-# derives its value from a git tag or, failing that, a short SHA - neither of
-# which is a legal version, so a malformed one is replaced rather than shipped:
-# the bundle still installs, it just reports 0.0.0.
-if(NOT CODEPOINTER_VERSION MATCHES "^[0-9]+(\\.[0-9]+)*$")
-    message(WARNING "CODEPOINTER_VERSION='${CODEPOINTER_VERSION}' is not a legal macOS "
-                    "version (expected numbers separated by dots); using 0.0.0")
-    set(CODEPOINTER_VERSION "0.0.0")
+if(NOT CODEPOINTER_VERSION)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" CODEPOINTER_MAIN_CPP)
+    string(REGEX MATCH "setApplicationVersion\\(\"([^\"]+)\"\\)" CODEPOINTER_VERSION_MATCH
+           "${CODEPOINTER_MAIN_CPP}")
+    set(CODEPOINTER_VERSION "${CMAKE_MATCH_1}")
+    if(NOT CODEPOINTER_VERSION)
+        message(WARNING "Could not find setApplicationVersion() in src/main.cpp")
+    endif()
 endif()
+
+# Reduced to two values, because the bundle reports a version and a build number and
+# they are not the same string.
+#
+# A release is split at its first "-" into a numeric core and a suffix:
+#
+#   0.9.2          core 0.9.2, build 0.9.2    - no suffix, nothing to add
+#   0.9.2-3        core 0.9.2, build 0.9.2.3  - third build of 0.9.2
+#   0.9.2-alpha5   core 0.9.2, build 0.9.2.0  - a prerelease, pinned to build 0
+#
+# That keeps the build numbers increasing across prereleases (0.9.2.0 < 0.9.2.3 <
+# 0.9.3.0), which is what an updater compares, while the version stays a plain
+# three-integer string as CFBundleShortVersionString requires.
+string(REGEX REPLACE "^v" "" _raw_version "${CODEPOINTER_VERSION}")
+
+string(FIND "${_raw_version}" "-" _dash_at)
+if(_dash_at EQUAL -1)
+    set(_core "${_raw_version}")
+    set(_suffix "")
+else()
+    string(SUBSTRING "${_raw_version}" 0 ${_dash_at} _core)
+    math(EXPR _suffix_at "${_dash_at} + 1")
+    string(SUBSTRING "${_raw_version}" ${_suffix_at} -1 _suffix)
+endif()
+
+# The core has to end up numeric. Trailing junk is dropped rather than rejected, so
+# a version written as 0.1.9beta still gives 0.1.9 - but with nothing numeric at all
+# there is no sensible core and the whole thing falls back below.
+string(REGEX REPLACE "[^0-9.].*$" "" _core "${_core}")
+
+if(NOT _core MATCHES "^[0-9]+(\\.[0-9]+)*$")
+    message(WARNING "'${CODEPOINTER_VERSION}' has no numeric version part to use; "
+                    "the macOS bundle will report 0.0.0")
+    set(_core "0.0.0")
+    set(_suffix "")
+endif()
+
+if(_suffix STREQUAL "")
+    set(_build "${_core}")
+elseif(_suffix MATCHES "^[0-9]+$")
+    set(_build "${_core}.${_suffix}")
+else()
+    # Not a build number, just a word - alpha, rc, beta. Build 0, and the version
+    # it belongs to is carried by the core.
+    set(_build "${_core}.0")
+endif()
+
+set(CODEPOINTER_APP_VERSION "${_core}")
+set(CODEPOINTER_BUILD_NUMBER "${_build}")
+
+# Printed on every platform, not just macOS, so a CI log says what went into the
+# bundle without having to open the plist.
+message(STATUS "App version: ${CODEPOINTER_APP_VERSION} (build ${CODEPOINTER_BUILD_NUMBER})")
 
 set(CODEPOINTER_APP_NAME "${BUILD_APP_NAME}")
 set(CODEPOINTER_BINARY "codepointer${APP_SUFFIX}")
@@ -339,8 +394,8 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/Info.plist
         MACOSX_BUNDLE_BUNDLE_NAME ${CODEPOINTER_APP_NAME}
         MACOSX_BUNDLE_GUI_IDENTIFIER org.codepointer.${CODEPOINTER_APP_NAME}
-        MACOSX_BUNDLE_BUNDLE_VERSION ${CODEPOINTER_VERSION}
-        MACOSX_BUNDLE_SHORT_VERSION_STRING ${CODEPOINTER_VERSION})
+        MACOSX_BUNDLE_BUNDLE_VERSION ${CODEPOINTER_BUILD_NUMBER}
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${CODEPOINTER_APP_VERSION})
 endif()
 
 if(MSVC)

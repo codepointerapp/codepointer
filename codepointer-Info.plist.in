@@ -22,12 +22,12 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>@CODEPOINTER_VERSION@</string>
+  <string>@CODEPOINTER_APP_VERSION@</string>
   <key>CFBundleVersion</key>
-  <string>@CODEPOINTER_VERSION@</string>
+  <string>@CODEPOINTER_BUILD_NUMBER@</string>
   <!-- The build flavour, so a dev build is distinguishable in Finder. -->
   <key>CFBundleGetInfoString</key>
-  <string>@CODEPOINTER_APP_NAME@ (@CODEPOINTER_VERSION@, @CODEPOINTER_BUILD_FLAVOUR@)</string>
+  <string>@CODEPOINTER_APP_NAME@ (@CODEPOINTER_APP_VERSION@, build @CODEPOINTER_BUILD_NUMBER@, @CODEPOINTER_BUILD_FLAVOUR@)</string>
 @CODEPOINTER_ICNS_KEY@
   <!-- Qt draws on a Retina display without this; without it the window is
        rendered at 1x and upscaled. -->
