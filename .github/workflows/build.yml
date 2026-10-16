@@ -82,7 +82,7 @@ jobs:
             ${{ env.APP_ID }}
 
       - name: Upload Flatpak bundle
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ env.APP_ID }}-${{ needs.version.outputs.version }}-x86_64.flatpak
           path: ${{ env.APP_ID }}-${{ needs.version.outputs.version }}-x86_64.flatpak
@@ -206,14 +206,14 @@ jobs:
 
       - name: Upload AppImage (Linux)
         if: matrix.config.os == 'ubuntu-22.04' && matrix.config.cc == 'gcc'
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.AppImage
           path: build/${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.AppImage
 
       - name: Upload TGZ archive (Linux)
         if: matrix.config.os == 'ubuntu-22.04' && matrix.config.cc == 'gcc'
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ env.APP_NAME }}-${{ matrix.config.build_dir }}-qt${{ matrix.qt_version }}-${{ needs.version.outputs.version }}.tar.gz
           path: dist/${{ env.APP_NAME }}-${{ matrix.config.build_dir }}-qt${{ matrix.qt_version }}-${{ needs.version.outputs.version }}.tar.gz
@@ -239,8 +239,7 @@ jobs:
 
       - name: Upload renamed setup (Windows)
         if: matrix.config.os == 'windows-2022' && matrix.config.cc == 'cl'
-        uses: actions/upload-artifact@v8
-
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.exe
           path: dist/${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.exe
@@ -320,7 +319,7 @@ jobs:
 
       - name: Upload DMG (macOS)
         if: matrix.config.os == 'macos-latest'
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ steps.dmg.outputs.name }}
           path: ${{ steps.dmg.outputs.file }}
