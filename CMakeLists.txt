@@ -288,13 +288,10 @@ configure_file(org.codepointer.codepointer.appdata.xml.in
     ${CMAKE_BINARY_DIR}/org.codepointer.${CODEPOINTER_APP_NAME}.appdata.xml @ONLY)
 # MACOSX_BUNDLE is what produces a .app. Without it macOS gets a bare executable
 # in bin/, which no installer can wrap - the CI macdeployqt step expects a bundle.
-if(APPLE)
-    add_executable(codepointer WIN32 MACOSX_BUNDLE ${codepointer_sources} codepointer.rc
-        indenters.json)
-else()
-    add_executable(codepointer WIN32 ${codepointer_sources} codepointer.rc
-        indenters.json)
-endif()
+# MACOSX_BUNDLE and WIN32 are both documented as no-ops on other platforms, so no
+# if(APPLE) is needed around either. codepointer.rc and indenters.json are already
+# in ${codepointer_sources}, so repeating them here would only duplicate the list.
+add_executable(codepointer WIN32 MACOSX_BUNDLE ${codepointer_sources})
 
 # NOTE: this used to read `if (!MINGW)`. CMake has no `!` operator - it treated
 # "!MINGW" as the name of an undefined variable, so the branch never ran and LTO
@@ -381,21 +378,77 @@ if(APPLE)
         if(CODEPOINTER_RSVG)
             message(STATUS "macOS bundle icon: from the SVG at every size (librsvg)")
         else()
-            message(STATUS "macOS bundle icon: from the .ico, 256px ceiling "
-                           "(install librsvg for the SVG)")
+            message(STATUS "macOS bundle icon: no rsvg-convert, so from qlmanage or "
+                           "the .ico (install librsvg for a native render at every size)")
         endif()
     else()
         message(STATUS "macOS bundle icon: no rasteriser and no sips, using the generic icon")
     endif()
 
+    # The bundle identifier has to be in the plist itself. Setting the
+    # MACOSX_BUNDLE_GUI_IDENTIFIER property below does not put it there, because
+    # cmake only merges that property into a plist it generates itself - hand it a
+    # MACOSX_BUNDLE_INFO_PLIST and your file is used as-is.
+    #
+    # It matters beyond cosmetic reasons: QTBUG-135882 - macOS declines to present
+    # NSOpenPanel and NSSavePanel for an application with no identifier, so every
+    # file dialog silently did nothing. That is why this was left to an undefined
+    # @CODEPOINTER_BUNDLE_ID@ and configure_file substituted it with nothing.
+    set(CODEPOINTER_BUNDLE_ID "org.codepointer.${CODEPOINTER_APP_NAME}")
+    set(CODEPOINTER_BUILD_FLAVOUR "${BUILD_VERSION}")
+
     configure_file(codepointer-Info.plist.in ${CMAKE_BINARY_DIR}/Info.plist @ONLY)
+
+    # Check what configure_file actually produced. Two ways this has gone wrong, both
+    # silent: a placeholder nobody defined, and an identifier that rendered empty.
+    # Either leaves macOS with an application it will not present NSOpenPanel for,
+    # so every file dialog does nothing and nothing says why (QTBUG-135882).
+    file(READ "${CMAKE_BINARY_DIR}/Info.plist" CODEPOINTER_GENERATED_PLIST)
+
+    # Whitespace is removed before matching because the plist is indented across
+    # lines, and a pattern of spaces does not cover the newline between the key and
+    # its value - which makes a perfectly good plist look broken.
+    string(REGEX REPLACE "[ \t\r\n]" "" CODEPOINTER_FLAT_PLIST
+           "${CODEPOINTER_GENERATED_PLIST}")
+
+    if(CODEPOINTER_FLAT_PLIST MATCHES "@[A-Z_]+@")
+        string(REGEX MATCHALL "@[A-Z_]+@" CODEPOINTER_LEFTOVER
+               "${CODEPOINTER_GENERATED_PLIST}")
+        list(REMOVE_DUPLICATES CODEPOINTER_LEFTOVER)
+        message(FATAL_ERROR
+            "Info.plist still contains unsubstituted placeholders: ${CODEPOINTER_LEFTOVER}. "
+            "Each needs a set() in this file, or configure_file substituted it with nothing.")
+    endif()
+    if(NOT CODEPOINTER_FLAT_PLIST MATCHES
+       "<key>CFBundleIdentifier</key><string>[^<]+</string>")
+        message(FATAL_ERROR
+            "Info.plist has an empty CFBundleIdentifier. macOS will not present native "
+            "file dialogs for an application without one, so File > Open and Save As "
+            "would silently do nothing (QTBUG-135882).")
+    endif()
+
+    message(STATUS "Info.plist: bundle id ${CODEPOINTER_BUNDLE_ID}, version "
+                   "${CODEPOINTER_APP_VERSION} (build ${CODEPOINTER_BUILD_NUMBER})")
     set_target_properties(codepointer PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/Info.plist
         MACOSX_BUNDLE_BUNDLE_NAME ${CODEPOINTER_APP_NAME}
         MACOSX_BUNDLE_GUI_IDENTIFIER org.codepointer.${CODEPOINTER_APP_NAME}
         MACOSX_BUNDLE_BUNDLE_VERSION ${CODEPOINTER_BUILD_NUMBER}
-        MACOSX_BUNDLE_SHORT_VERSION_STRING ${CODEPOINTER_APP_VERSION})
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${CODEPOINTER_APP_VERSION}
+        # The frameworks macdeployqt copies live in Contents/Frameworks and the
+        # executable in Contents/MacOS, so the search path is one level up from the
+        # loader. @loader_path rather than @executable_path because it resolves
+        # relative to whichever binary is loading - the app itself or a plugin.
+        INSTALL_RPATH "@loader_path/../Frameworks")
+
+    # Qt 6 sets up rpaths and deployment from inside qt_add_executable(). This target
+    # is declared with plain add_executable(), which does not do that, so without this
+    # call nothing records an LC_RPATH and the app dies at launch with "Library not
+    # loaded: @rpath/QtWidgets.framework" even though macdeployqt put the frameworks
+    # right there. Only on Apple: the Windows build drives windeployqt itself from
+    # build.bat and the CI workflow, and this would change what that produces.
+    qt_finalize_executable(codepointer)
 endif()
 
 if(MSVC)
@@ -418,6 +471,18 @@ if(APPLE)
     # destination to give.
     install(TARGETS codepointer
             BUNDLE DESTINATION .)
+
+    # After the bundle, and that ordering is the whole point: cmake runs install
+    # rules in declaration order, so installing the icon first wrote it into a
+    # Contents/Resources the bundle had not created yet, and installing the bundle
+    # then filled that directory from the build tree and threw the icon away.
+    #
+    # CFBundleIconFile in the plist only names the icon, it does not put it in the
+    # bundle. MACOSX_BUNDLE_ICON_FILE would have embedded it at build time, but that
+    # property resolves against the source directory while the icns is generated
+    # into the build tree, hence an explicit install into the finished bundle.
+    install(FILES "${CODEPOINTER_ICNS}"
+            DESTINATION ${CODEPOINTER_BINARY}.app/Contents/Resources)
 else()
     install(TARGETS codepointer
             RUNTIME DESTINATION bin)

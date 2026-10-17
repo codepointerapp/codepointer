@@ -298,6 +298,10 @@ jobs:
           # archive: the user drags the app across it and it lands installed.
           cp -R "$APP" "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
+          # Finder reads .VolumeIcon.icns from the image root, but only honours it on
+          # HFS+ with the custom-icon flag set - APFS ignores both, hence -fs below.
+          cp "$APP/Contents/Resources/${{ env.APP_NAME }}.icns" "$STAGE/.VolumeIcon.icns"
+          SetFile -a C "$STAGE"
 
           # A release is named by its version. Anything else has no version to put in
           # the name, so it is named after where it came from - and that emptiness is
@@ -308,9 +312,30 @@ jobs:
             NAME="${{ env.APP_NAME }}-${{ steps.macarch.outputs.arch }}-${GITHUB_SHA::7}.dmg"
           fi
 
+          # A volume icon takes three steps, not one. SetFile -a C has to be applied
+          # to the mounted volume, because the custom-icon flag lives on the volume
+          # root and does not survive being set on a staging folder before the image
+          # exists. Build a writable image, mount it, flag the volume, unmount, then
+          # compress. HFS+ throughout, since a volume icon is not honoured on APFS.
+          UDRW="$STAGE-rw.dmg"
           hdiutil create -volname "${{ env.APP_NAME }}" -srcfolder "$STAGE" \
-            -ov -format UDZO "build/$NAME"
-          rm -rf "$STAGE"
+            -fs HFS+ -ov -format UDRW "$UDRW"
+          # Parsed by taking everything from /Volumes/ to end of line, not by awk's
+          # $NF: a volume name containing a space splits into several whitespace
+          # fields, so $NF returned only the last word and SetFile then failed with
+          # "File Not Found".
+          MOUNT_POINT=$(hdiutil attach "$UDRW" -readwrite -noverify -noautoopen \
+            | sed -n 's|.*\(/Volumes/.*\)|\1|p' | head -1)
+          if [ -z "$MOUNT_POINT" ]; then
+            echo "could not mount $UDRW to set the volume icon" >&2
+            exit 1
+          fi
+          SetFile -a C "$MOUNT_POINT"
+          sync
+          hdiutil detach "$MOUNT_POINT"
+          rm -f "build/$NAME"
+          hdiutil convert "$UDRW" -format UDZO -o "build/$NAME"
+          rm -rf "$STAGE" "$UDRW"
           # Handed to the upload step instead of being recomputed there, so the
           # artifact name and the file on disk cannot disagree.
           echo "file=build/$NAME" >> $GITHUB_OUTPUT

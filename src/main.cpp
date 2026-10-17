@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <QApplication>
+#include <QtGlobal>
 #include <QCommandLineParser>
 #include <QDir>
 #include <QIcon>
@@ -82,6 +83,22 @@ class ThemeProxyStyle : public QProxyStyle {
 int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(qutepart_syntax_files);
     Q_INIT_RESOURCE(qutepart_theme_data);
+
+    // File dialogs come up blank on some macOS setups - a virtualised machine, where
+    // the AppKit open and save panels are never presented at all. Nothing here can fix
+    // that, so the way round it is to stop asking AppKit and let Qt draw its own
+    // dialog, which lives inside the window and so cannot go missing.
+    //
+    // Opt-in through the environment rather than unconditional: the native panel is
+    // better where it works (it integrates with Quick Look, Tags and the system
+    // places sidebar), so it stays the default and only this opt out.
+    //
+    //   CODEPOINTER_QT_FILE_DIALOGS=1 ./codepointer
+    //
+    // Must be set before QApplication exists, since that is when Qt reads it.
+    if (!qEnvironmentVariableIsEmpty("CODEPOINTER_QT_FILE_DIALOGS")) {
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    }
 
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);

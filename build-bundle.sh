@@ -50,6 +50,61 @@ if [ -z "${APP_VERSION}" ]; then
     exit 1
 fi
 
+# A non-interactive ssh session gets macOS's default PATH, which leaves out
+# Homebrew - so cmake, ninja and brew are all missing on a machine that has them.
+# Added here rather than left to the caller, because run from an interactive shell
+# the script works fine and fails only over ssh, which is the confusing way round.
+for extra in /opt/homebrew/bin /usr/local/bin; do
+    if [ -d "$extra" ]; then
+        PATH="$PATH:$extra"
+    fi
+done
+export PATH
+
+# Pick an SDK the linker can actually parse, rather than trusting the toolchain's own
+# default. A Command Line Tools install can ship an SDK newer than its own clang:
+# MacOSX27.0.sdk lists arm64e.x1-macos in libSystem.tbd, which the bundled tapi
+# linker rejects as a malformed file, so every link fails at the project() compiler
+# check. xcrun reports that broken SDK as the default, so asking it is no help.
+#
+# The MacOSX.sdk symlink is the better guide - it points at 26.5 on such a machine,
+# which matches the macOS 26 kernel and does not carry that architecture. An explicit
+# SDKROOT still wins, so a broken install can be worked around without editing.
+sdk_is_usable() {
+    [ -n "$1" ] && [ -f "$1/usr/lib/libSystem.tbd" ] &&
+        ! grep -q "arm64e\.x1" "$1/usr/lib/libSystem.tbd"
+}
+
+SDKROOT="${SDKROOT:-}"
+if ! sdk_is_usable "$SDKROOT"; then
+    _link_target=$(readlink /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk 2>/dev/null || true)
+    if sdk_is_usable "/Library/Developer/CommandLineTools/SDKs/${_link_target}"; then
+        SDKROOT="/Library/Developer/CommandLineTools/SDKs/${_link_target}"
+    elif sdk_is_usable "$(xcrun --show-sdk-path 2>/dev/null || true)"; then
+        SDKROOT=$(xcrun --show-sdk-path)
+    else
+        # Neither the symlink nor xcrun pointed at anything that links. Take any SDK
+        # that does rather than none: an older-but-working SDK beats a build that
+        # cannot start.
+        for candidate in /Library/Developer/CommandLineTools/SDKs/MacOSX*.sdk; do
+            if sdk_is_usable "$candidate"; then
+                SDKROOT="$candidate"
+                break
+            fi
+        done
+    fi
+fi
+if [ -n "$SDKROOT" ]; then
+    export SDKROOT
+    echo "SDK: ${SDKROOT}" >&2
+fi
+
+if ! command -v cmake >/dev/null 2>&1; then
+    echo "Could not find cmake in PATH." >&2
+    echo "PATH is $PATH" >&2
+    exit 1
+fi
+
 # Qt is not in one fixed place on macOS: the online installer puts it under ~/Qt,
 # Homebrew somewhere else again. QTDIR overrides both.
 if [ -z "${QTDIR}" ]; then
@@ -75,11 +130,13 @@ if [ ! -x "${MACDEPLOYQT}" ]; then
     exit 1
 fi
 
-# Only affects icon sharpness: without librsvg cmake falls back to converting the
-# .ico, whose largest entry is 256px, so the 512 and 1024 sizes get upsampled.
+# Not fatal and not a real problem: without librsvg the icon is rendered from the
+# SVG at 1024 with the macOS built-in and downscaled, which still traces every size
+# to the SVG. librsvg re-renders each size natively, so it is sharper at the small
+# end.
 if ! command -v rsvg-convert >/dev/null 2>&1; then
-    echo "NOTE: rsvg-convert not found, the app icon will be generated from the .ico." >&2
-    echo "      'brew install librsvg' renders it from the SVG at every size." >&2
+    echo "NOTE: rsvg-convert not found; the icon will come from the SVG via qlmanage." >&2
+    echo "      'brew install librsvg' renders each size natively instead." >&2
 fi
 
 # Mirrors the macOS matrix entry, so the build directory matches what CI uses.
@@ -102,6 +159,28 @@ if [ ! -d "${APP}" ]; then
     exit 1
 fi
 
+# The bundle icon is generated at build time and then installed into the bundle.
+# Neither step failing stops anything - the app builds, installs and runs perfectly
+# well with the generic macOS icon - so both are checked here instead of being
+# discovered in Finder. The two checks are separate because they have different
+# causes: no file at all is a generator problem, a file in the build tree but not in
+# the bundle is a missing install rule or the wrong install order.
+BUILT_ICNS="build/${BUILD_DIR}/${BUNDLE_NAME}.icns"
+BUNDLED_ICNS="${APP}/Contents/Resources/${BUNDLE_NAME}.icns"
+
+if [ ! -f "${BUILT_ICNS}" ]; then
+    echo "ERROR: ${BUILT_ICNS} was not generated, so there is no icon to install." >&2
+    echo "  Needs rsvg-convert or qlmanage - see the 'macOS bundle icon' cmake line." >&2
+    exit 1
+fi
+if [ ! -f "${BUNDLED_ICNS}" ]; then
+    echo "ERROR: ${BUNDLED_ICNS} is missing, so the bundle ships without its icon." >&2
+    echo "  ${BUILT_ICNS} was built, so this is a missing install rule or the wrong" >&2
+    echo "  install order rather than a generator problem: CMakeLists.txt needs an" >&2
+    echo "  install() of the icns into Contents/Resources, declared AFTER the bundle." >&2
+    exit 1
+fi
+
 # Copy Qt frameworks and the platform plugins inside the bundle, so the result runs
 # on a machine with no Qt installed.
 "${MACDEPLOYQT}" "${APP}" -verbose=1
@@ -121,9 +200,43 @@ STAGE=$(mktemp -d)
 cp -R "${APP}" "${STAGE}/"
 ln -s /Applications "${STAGE}/Applications"
 
-hdiutil create -volname "${BUNDLE_NAME}" -srcfolder "${STAGE}" \
-    -ov -format UDZO "${DMG}"
-rm -rf "${STAGE}"
+# Finder reads .VolumeIcon.icns out of the image root, and only honours it once the
+# custom-icon flag is set on the volume itself - see the attach/detach dance below.
+cp "${BUNDLED_ICNS}" "${STAGE}/.VolumeIcon.icns"
+
+# A volume icon takes three steps, not one. SetFile -a C has to be applied to the
+# mounted volume, because the custom-icon flag lives on the volume root and does not
+# survive being set on a staging folder before the image is created - which is why
+# the flag was being set on a directory that stopped existing. So: build a writable
+# image, mount it, flag the volume, unmount, then compress to UDZO.
+#
+# HFS+ rather than APFS throughout, since a volume icon is not honoured on APFS.
+# Includes the version on purpose. Finder caches volume icons by volume name, so a
+# name reused across builds keeps serving the cached icon no matter what the image
+# actually contains - which is why a rebuilt DMG can look unchanged. A per-build name
+# misses that cache, and showing the version on the mounted volume is useful anyway.
+VOLUME_NAME="${BUNDLE_NAME} ${APP_VERSION}"
+UDRW="${STAGE}-rw.dmg"
+
+hdiutil create -volname "${VOLUME_NAME}" -srcfolder "${STAGE}" \
+    -fs HFS+ -ov -format UDRW "${UDRW}"
+
+# Parsed by taking everything from /Volumes/ to end of line, not by awk's $NF: a
+# volume name containing a space splits into several whitespace fields, so $NF
+# returned only the last word and SetFile then failed with "File Not Found".
+MOUNT_POINT=$(hdiutil attach "${UDRW}" -readwrite -noverify -noautoopen \
+    | sed -n 's|.*\(/Volumes/.*\)|\1|p' | head -1)
+if [ -z "${MOUNT_POINT}" ]; then
+    echo "ERROR: could not mount ${UDRW} to set the volume icon" >&2
+    exit 1
+fi
+SetFile -a C "${MOUNT_POINT}"
+sync
+hdiutil detach "${MOUNT_POINT}"
+
+rm -f "${DMG}"
+hdiutil convert "${UDRW}" -format UDZO -o "${DMG}"
+rm -rf "${STAGE}" "${UDRW}"
 
 set +x
 echo "Created ${DMG}"
