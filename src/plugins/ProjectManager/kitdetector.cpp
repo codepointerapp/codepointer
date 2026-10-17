@@ -349,11 +349,7 @@ static auto findCompilerToolsWindows(std::vector<KitDetector::ExtraPath> &detect
         extraPath.name = "CMake (x86)";
         extraPath.compiler_path =
             (std::filesystem::path(programFiles86) / "CMake" / "bin").string();
-<<<<<<< HEAD
         extraPath.comment = "@rem Found CMake (x86)";
-=======
-        extraPath.comment = "rem Found CMake (x86)";
->>>>>>> 6d5f6930 (Kits: use same code to configure on cmake in all platforms.)
         extraPath.command = "set \"PATH=" + extraPath.compiler_path + ";%PATH%\"";
         detected.push_back(extraPath);
     }
