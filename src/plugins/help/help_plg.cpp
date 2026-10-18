@@ -639,6 +639,7 @@ void HelpPlugin::actionAbout_triggered() {
     <li><a href="https://github.com/palacaze/image-viewer">image-viewer</a></li>
     <li><a href="https://github.com/Dax89/QHexView">QHexView</a></li>
     <li><a href="https://github.com/alex-spataru/QSimpleUpdater">QSimpleUpdater</a></li>
+    <li><a href="https://github.com/leon-bckl/lsp-framework">lsp-framework</a></li>
 </ul>
 
 <p>Copyright © 2024-2026 <a href="mailto:diegoiast@gmail.com">Diego Iastrubni</a></p>
