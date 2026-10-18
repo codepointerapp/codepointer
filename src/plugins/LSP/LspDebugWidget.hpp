@@ -31,6 +31,7 @@ class LspDebugWidget : public QWidget {
     void runCompletion();
     void runHover();
     void runSync();
+    void refreshDetails();
 
   public:
     QTimer *refreshTimer = nullptr;
@@ -57,4 +58,8 @@ class LspDebugWidget : public QWidget {
     QPushButton *syncButton = nullptr;
     QCheckBox *traceCheck = nullptr;
     QPlainTextEdit *logView = nullptr;
+
+    /// Guards against re-entering refreshState() from the selection signals it
+    /// itself provokes through setRowCount()/selectRow().
+    bool refreshing = false;
 };
