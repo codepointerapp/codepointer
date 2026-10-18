@@ -603,6 +603,12 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
                     });
             }
 
+            runProcess.setProperty("runningTask", {});
+            runProcess.setProperty("runningProject", {});
+            if (!project) {
+                return;
+            }
+
             auto compileCommands = project->expand("${build_directory}/compile_commands.json");
             compileCommands = QDir::toNativeSeparators(compileCommands);
             qDebug() << "Checking for " << compileCommands;
@@ -622,9 +628,6 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
             } else {
                 hideBanner();
             }
-
-            runProcess.setProperty("runningTask", {});
-            runProcess.setProperty("runningProject", {});
         });
 #if defined(USE_TTY_FOR_TASKS)
     connect(&runProcess, &QProcess::finished, this, [this](int, QProcess::ExitStatus) {
@@ -1427,7 +1430,7 @@ void ProjectManagerPlugin::runTask_clicked() {
     }
     auto manager = getManager();
     auto count = manager->visibleTabs();
-    for (auto i = 0u; i < count; i++) {
+    for (auto i = 0; i < count; i++) {
         auto client = manager->getMdiClient(i);
         if (auto editor = dynamic_cast<qmdiEditor *>(client)) {
             editor->removeMetaData();
@@ -1501,10 +1504,11 @@ void ProjectManagerPlugin::projectFile_modified(const QString &path) {
     // along so restarted servers are not handed a stale build directory.
     auto changedSourceDir = inMemoryConfig->expand(inMemoryConfig->sourceDir);
     auto changedBuildDir = inMemoryConfig->expand(inMemoryConfig->buildDir);
-    getManager()->handleCommandAsync(GlobalCommands::ProjectConfigChanged, {
-        {GlobalArguments::SourceDirectory, changedSourceDir},
-        {GlobalArguments::BuildDirectory, changedBuildDir},
-    });
+    getManager()->handleCommandAsync(GlobalCommands::ProjectConfigChanged,
+                                     {
+                                         {GlobalArguments::SourceDirectory, changedSourceDir},
+                                         {GlobalArguments::BuildDirectory, changedBuildDir},
+                                     });
 
     qDebug("Config file modified - %s", path.toStdString().data());
 }
