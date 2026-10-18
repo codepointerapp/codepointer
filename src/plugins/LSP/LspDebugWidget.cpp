@@ -122,7 +122,8 @@ LspDebugWidget::LspDebugWidget(LspPlugin *plugin, QWidget *parent)
     connect(syncButton, &QPushButton::clicked, this, &LspDebugWidget::runSync);
     connect(completionButton, &QPushButton::clicked, this, &LspDebugWidget::runCompletion);
     connect(hoverButton, &QPushButton::clicked, this, &LspDebugWidget::runHover);
-    connect(serversTable, &QTableWidget::itemSelectionChanged, this, &LspDebugWidget::refreshState);
+    connect(serversTable, &QTableWidget::itemSelectionChanged, this,
+            &LspDebugWidget::refreshDetails);
 
     refreshTimer = new QTimer(this);
     refreshTimer->setInterval(1000);
@@ -160,6 +161,17 @@ void LspDebugWidget::appendTrace(const QString &message) {
 }
 
 void LspDebugWidget::refreshState() {
+    // setRowCount() and selectRow() both emit itemSelectionChanged. When the
+    // server list shrinks past the selected row, that emission happens from
+    // inside QTableModel::endRemoveRows(), so a re-entrant refreshState() would
+    // read the pre-removal row count and call setRowCount() with it - re-inserting
+    // the rows that are being removed. The model and the view then disagree about
+    // how many rows exist and setRowCount() segfaults.
+    if (refreshing) {
+        return;
+    }
+    refreshing = true;
+
     auto const infos = plugin->serverInfos();
 
     // Keep the selected root across refreshes, otherwise the 1s timer would fight
@@ -196,6 +208,14 @@ void LspDebugWidget::refreshState() {
         serversTable->selectRow(rowToSelect);
     }
 
+    refreshing = false;
+    refreshDetails();
+}
+
+/// Rebuilds only the panels that depend on the current selection. Kept separate
+/// from refreshState() so that a user click never re-enters the table rebuild that
+/// would otherwise emit the selection signal that caused it.
+void LspDebugWidget::refreshDetails() {
     auto root = QString();
     if (auto *item = serversTable->item(serversTable->currentRow(), 0)) {
         root = item->data(Qt::UserRole).toString();
