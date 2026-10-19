@@ -16,7 +16,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMutexLocker>
+#include <QNetworkReply>
 #include <QPromise>
 #include <QSaveFile>
 #include <QStandardPaths>
@@ -74,19 +76,43 @@ namespace {
 /// be called to `fopen()` the file - and do your loading/parsing from there.
 /// That same callback will be called when the file gets modified.
 ///
+/// A save is not one event. qmdiEditor opens the target WriteOnly - truncating
+/// it - and pumps the event loop before it writes anything, so a single Ctrl-S
+/// raises fileChanged twice: once for the truncate, where the file reads back
+/// empty, and once for the write. Reloading on the first parses nothing, and for
+/// a definitions file that reads as "no servers configured" rather than as a
+/// transient state. The reload is therefore debounced, so one save is one load
+/// and the load happens once the new contents are on disk.
+///
 /// FIXME: move to a shared place
 auto autoReloadFile(QObject *parent, const QString &path, std::function<bool(QString)> loadFile)
-    -> QFileSystemWatcher {
+    -> QFileSystemWatcher * {
+    /// How long to wait for a save to settle before reading a watched file back.
+    /// Has to outlast the gap between a writer truncating the file and writing the
+    /// new contents, which is not instantaneous - see autoReloadFile().
+    auto const ReloadDebounceMs = 300;
     auto w = new QFileSystemWatcher(parent);
-    auto reloadFile = [loadFile](const QString &path) {
+    auto debounce = new QTimer(parent);
+    debounce->setSingleShot(true);
+    debounce->setInterval(ReloadDebounceMs);
+
+    auto scheduleReload = [debounce](const QString &) { debounce->start(); };
+    auto reloadNow = [w, path, loadFile] {
+        if (!w->files().contains(path)) {
+            w->addPath(path);
+        }
         if (!loadFile(path)) {
             qDebug() << "Reloading failed" << path;
         }
+        if (!w->files().contains(path)) {
+            w->addPath(path);
+        }
     };
 
+    debounce->connect(debounce, &QTimer::timeout, parent, reloadNow);
     w->addPath(path);
-    w->connect(w, &QFileSystemWatcher::fileChanged, parent, reloadFile);
-    reloadFile(path);
+    w->connect(w, &QFileSystemWatcher::fileChanged, parent, scheduleReload);
+    reloadNow();
     return w;
 }
 
@@ -360,14 +386,6 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
         });
     });
 
-    auto userDataDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    auto userDataFile = userDataDir + QDir::separator() + "lsp-servers.json";
-    autoReloadFile(this, userDataFile, [this](const QString &s) {
-        this->userDefinitions = loadDefinitionsFromFile(s);
-        this->stopAllServers();
-        return this->userDefinitions.size() != 0;
-    });
-
 #ifdef Q_OS_WIN
     auto systemDataDir = QDir(QCoreApplication::applicationDirPath() + "/share/" +
                               QCoreApplication::applicationName())
@@ -377,12 +395,116 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
                               QCoreApplication::applicationName())
                              .absolutePath();
 #endif
-    auto systemataFile =
-        QDir::toNativeSeparators(systemDataDir) + QDir::separator() + "lsp-servers.json";
-    autoReloadFile(this, systemataFile, [this](const QString &s) {
+
+    auto userDataDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    auto userDataFile = userDataDir + QDir::separator() + "lsp-servers.json";
+    autoReloadFile(this, userDataFile, [this](const QString &s) {
+        this->userDefinitions = loadDefinitionsFromFile(s);
+        this->stopAllServers();
+        this->onServersDefinitionsLoaded(false);
+        return this->userDefinitions.size() != 0;
+    });
+
+    auto systemFile =
+        QDir::toNativeSeparators(systemDataDir) + QDir::separator() + "lsp-serversa.json";
+    autoReloadFile(this, systemFile, [this](const QString &s) {
         this->systemDefinitions = loadDefinitionsFromFile(s);
         this->stopAllServers();
+        this->onServersDefinitionsLoaded(true);
         return this->systemDefinitions.size() != 0;
+    });
+}
+
+/// Records that one of the two lsp-servers.json files has been loaded, and offers
+/// to download the shipped copy once both have reported in with nothing defined.
+///
+/// The wait for both matters: on a first run the user file is often absent, and
+/// judging the setup from it alone would offer a download while the system file
+/// that already names every server has not been read yet.
+void LspPlugin::onServersDefinitionsLoaded(bool isSystem) {
+    if (isSystem) {
+        systemDefinitionsLoaded = true;
+    } else {
+        userDefinitionsLoaded = true;
+    }
+    if (!userDefinitionsLoaded || !systemDefinitionsLoaded) {
+        return;
+    }
+
+    qDebug() << "LspPlugin:" << userDefinitions.size() << "user and" << systemDefinitions.size()
+             << "system definitions";
+    if (!userDefinitions.isEmpty() || !systemDefinitions.isEmpty()) {
+        return;
+    }
+
+    QTimer::singleShot(0, this, [this]() {
+        auto messageBox = QMessageBox(getManager());
+        messageBox.setText(tr("You are missing <code>lsp-servers.json</code>."));
+        messageBox.setInformativeText(
+            tr("This file is needed to configure which LSP servers can be used. Without it the IDE "
+               "will not be fully functional. We can download and install the file automatically "
+               "for you."));
+        messageBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+        if (messageBox.exec() == QMessageBox::Yes) {
+            downloadServersDefinitions();
+        }
+    });
+}
+
+/// Fetches the lsp-servers.json the project ships and installs it into the user
+/// config directory, then opens it so the result can be reviewed.
+void LspPlugin::downloadServersDefinitions() {
+    auto const url = QUrl("https://raw.githubusercontent.com/codepointerapp/codepointer/"
+                          "55-project-manager-support-for-lsp/src/plugins/LSP/lsp-servers.json");
+    auto const userDataFile = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
+                              QDir::separator() + "lsp-servers.json";
+    auto *networkManager = new QNetworkAccessManager(this);
+    auto *reply = networkManager->get(QNetworkRequest(url));
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, networkManager, userDataFile]() {
+        // Safe to defer the delete and keep using both objects below: deleteLater()
+        // only schedules destruction once control returns to the event loop.
+        reply->deleteLater();
+        networkManager->deleteLater();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            QMessageBox::warning(
+                nullptr, tr("Download failed"),
+                tr("Could not download lsp-servers.json: %1").arg(reply->errorString()));
+            return;
+        }
+
+        // QSaveFile writes a temporary next to the target and renames it
+        // into place. This file is watched and reloaded, so a truncated
+        // one would be read back as "no servers configured".
+        auto file = QSaveFile(userDataFile);
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::warning(nullptr, tr("Save failed"),
+                                 tr("Could not save lsp-servers.json: %1").arg(file.errorString()));
+            return;
+        }
+
+        auto const data = reply->readAll();
+        if (file.write(data) != data.size()) {
+            QMessageBox::warning(
+                nullptr, tr("Save failed"),
+                tr("Could not write lsp-servers.json: %1").arg(file.errorString()));
+            file.cancelWriting();
+            return;
+        }
+
+        if (!file.commit()) {
+            QMessageBox::warning(
+                nullptr, tr("Save failed"),
+                tr("Could not commit lsp-servers.json: %1").arg(file.errorString()));
+            return;
+        }
+
+        // The watcher reloads the file on its own; opening it is only so
+        // the user can see what was installed.
+        if (auto manager = getManager()) {
+            manager->openFile(userDataFile);
+        }
     });
 }
 
@@ -751,7 +873,7 @@ void LspPlugin::updateEditorCompletionMode() {
 
     auto exclusive = 0;
     auto editors = 0;
-    for (auto i = 0u; i < manager->visibleTabs(); ++i) {
+    for (auto i = 0; i < manager->visibleTabs(); ++i) {
         auto editor = dynamic_cast<qmdiEditor *>(manager->getMdiClient(i));
         if (!editor) {
             continue;

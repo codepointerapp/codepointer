@@ -195,6 +195,17 @@ class LspPlugin : public IPlugin {
     /// PATH. Returns an empty string when it cannot be found.
     QString resolveServerBinary(const QString &binary) const;
 
+    /// Records that one of the two lsp-servers.json files has been loaded. Once
+    /// both have reported in and neither defined a server, offers to download the
+    /// copy the project ships and opens it for review. Until both have reported
+    /// in, "no definitions" is only a file still to come.
+    void onServersDefinitionsLoaded(bool isSystem);
+
+    /// Downloads the shipped lsp-servers.json into the user config directory. The
+    /// system-wide copy is left alone - it belongs to the install, and the user's
+    /// override is the one they own.
+    void downloadServersDefinitions();
+
     // project source directory -> server id -> client
     QHash<QString, QHash<QString, std::shared_ptr<LspClientImpl>>> servers;
 
@@ -212,6 +223,10 @@ class LspPlugin : public IPlugin {
     mutable QList<LspServerDefinition> systemDefinitions;
     mutable QList<LspServerDefinition> userDefinitions;
     mutable QMutex serversMutex;
+
+    // Which of the two definition files have reported in at least once.
+    bool userDefinitionsLoaded = false;
+    bool systemDefinitionsLoaded = false;
 
     // Written from reader threads, read on the GUI thread.
     //
@@ -265,13 +280,13 @@ class LspPlugin : public IPlugin {
     void handleFindReferences(const LspRequest &ctx, const CommandArgs &args,
                               std::shared_ptr<PendingRequest> pending);
     void handleRename(const LspRequest &ctx, const CommandArgs &args,
-                     std::shared_ptr<PendingRequest> pending);
+                      std::shared_ptr<PendingRequest> pending);
     void handleHover(const LspRequest &ctx, std::shared_ptr<PendingRequest> pending);
     /// Diagnostics on this file intersecting the requested range, for
     /// context.diagnostics. Empty when they describe a revision the buffer has
     /// since left behind.
-    auto overlappingDiagnostics(const QString &fileName, uint startLine,
-                                uint endLine) const -> QList<lspDiagnostic::Diagnostic>;
+    auto overlappingDiagnostics(const QString &fileName, uint startLine, uint endLine) const
+        -> QList<lspDiagnostic::Diagnostic>;
 
     int applyTextEdits(const QList<struct LspTextEdit> &edits, const QString &expectedOldName = {},
                        const QString &renameOriginFile = {});
