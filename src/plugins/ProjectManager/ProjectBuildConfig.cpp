@@ -536,6 +536,11 @@ std::shared_ptr<ProjectBuildConfig> ProjectBuildConfig::buildFromFile(const QStr
 
 std::shared_ptr<ProjectBuildConfig>
 ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
+    auto fi = QFileInfo(jsonFileName);
+    if (fi.fileName().toLower() != "codepointer.json") {
+        return {};
+    }
+
     auto file = QFile();
     file.setFileName(jsonFileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -543,7 +548,6 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
     }
 
     auto value = std::shared_ptr<ProjectBuildConfig>();
-    auto fi = QFileInfo(jsonFileName);
     auto json = QJsonDocument::fromJson(file.readAll());
     file.close();
 
@@ -657,6 +661,12 @@ ProjectBuildConfig::buildFromJsonFile(const QString &jsonFileName) {
     } else {
         qDebug() << "ProjectBuildConfig::buildFromFile: Loading file failed, malformed JSON?"
                  << jsonFileName;
+    }
+    if (!value) {
+        return {};
+    }
+    if (value->executables.isEmpty() || value->tasksInfo.isEmpty()) {
+        return {};
     }
     return value;
 }
