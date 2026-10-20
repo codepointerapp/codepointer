@@ -70,7 +70,7 @@ struct PendingRequest {
 
 namespace {
 
-/// \@breif function to load a file, and reload it on change
+/// \@brief function to load a file, and reload it on change
 ///
 /// This function should be used to load a file. You pass to it the function to
 /// be called to `fopen()` the file - and do your loading/parsing from there.
@@ -87,9 +87,6 @@ namespace {
 /// FIXME: move to a shared place
 auto autoReloadFile(QObject *parent, const QString &path, std::function<bool(QString)> loadFile)
     -> QFileSystemWatcher * {
-    /// How long to wait for a save to settle before reading a watched file back.
-    /// Has to outlast the gap between a writer truncating the file and writing the
-    /// new contents, which is not instantaneous - see autoReloadFile().
     auto const ReloadDebounceMs = 300;
     auto w = new QFileSystemWatcher(parent);
     auto debounce = new QTimer(parent);
