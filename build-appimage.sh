@@ -32,9 +32,9 @@ fi
 # export NO_STRIP=true
 
 # Some distros use ccache on differnt locations, arch vs debian/ubuntu
-if [ -x /usr/lib/ccache/clang-21 ] && [ -x /usr/lib/ccache/clang++-21 ]; then
-    export CC="/usr/lib/ccache/clang-21"
-    export CXX="/usr/lib/ccache/clang++-21"
+if [ -x /usr/lib/ccache/clang-22 ] && [ -x /usr/lib/ccache/clang++-22 ]; then
+    export CC="/usr/lib/ccache/clang-22"
+    export CXX="/usr/lib/ccache/clang++-22"
 elif [ -x /usr/lib/ccache/bin/clang ] && [ -x /usr/lib/ccache/bin/clang++ ]; then
     export CC="/usr/lib/ccache/bin/clang"
     export CXX="/usr/lib/ccache/bin/clang++"
