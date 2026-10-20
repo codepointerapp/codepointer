@@ -7,7 +7,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <QApplication>
-#include <QtGlobal>
 #include <QCommandLineParser>
 #include <QDir>
 #include <QIcon>
@@ -16,6 +15,7 @@
 #include <QStandardPaths>
 #include <QStyleOptionDockWidget>
 #include <QToolButton>
+#include <QtGlobal>
 
 #include "pluginmanager.h"
 #include "plugins/CTags/CTagsPlugin.hpp"
