@@ -619,6 +619,7 @@ static const char *default_x11_icon_xpm[] = {
     "                                                                ",
     "                                                                ",
     "                                                                ",
+    "                                                                ",
     "                                                                "};
 
 void HelpPlugin::actionAbout_triggered() {
