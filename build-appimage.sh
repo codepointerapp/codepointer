@@ -63,11 +63,25 @@ mkdir -p "dist/${matrix_config_build_dir}/usr/plugins/iconengines/"
 mkdir -p "dist/${matrix_config_build_dir}/usr/plugins/platforms/"
 cp -arv $QTDIR/plugins/iconengines/* "dist/${matrix_config_build_dir}/usr/plugins/iconengines/" || true;
 cp -arv $QTDIR/plugins/platforms/*.so "dist/${matrix_config_build_dir}/usr/plugins/platforms/" || true
-cp -arv $QTDIR/plugins/platforms/wayland-* "dist/${matrix_config_build_dir}/usr/plugins/" || true
 cp -arv $QTDIR/plugins/platform-themes/*.so "dist/${matrix_config_build_dir}/usr/plugins/platform-themes/" || true
+
+# Bundle the Wayland platform plugin and the Qt Wayland client module, so the
+# AppImage runs natively on Wayland instead of falling back to XWayland.
+# Qt 6.10+ ships a single "libqwayland.so" platform plugin; Qt 5 used
+# "libqwayland-egl.so;libqwayland-generic.so".
+export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
+export EXTRA_QT_MODULES="waylandclient"
+
+# libwayland-client.so.0 is on linuxdeploy's default exclude list, force it in.
+WAYLAND_CLIENT_LIB="$(find /usr/lib -name 'libwayland-client.so.0' 2>/dev/null | head -n1 || true)"
 
 wget -nc --no-verbose "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
 wget -nc --no-verbose "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
 chmod +x linuxdeploy*.AppImage
 
-./linuxdeploy-x86_64.AppImage --appdir "dist/${matrix_config_build_dir}" --plugin qt --output appimage
+if [ -n "${WAYLAND_CLIENT_LIB}" ]; then
+    ./linuxdeploy-x86_64.AppImage --appdir "dist/${matrix_config_build_dir}" --plugin qt --output appimage \
+        --library "${WAYLAND_CLIENT_LIB}"
+else
+    ./linuxdeploy-x86_64.AppImage --appdir "dist/${matrix_config_build_dir}" --plugin qt --output appimage
+fi
