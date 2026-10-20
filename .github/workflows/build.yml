@@ -199,7 +199,9 @@ jobs:
           sudo apt install -y fuse libxkbcommon-x11-0 libxcb-cursor-dev libxkbcommon-dev
           mkdir -p dist/${{ matrix.config.build_dir }}/usr/plugins/{iconengines,platforms}
           cp -av ${QT_ROOT_DIR}/plugins/iconengines/* dist/${{ matrix.config.build_dir }}/usr/plugins/iconengines/
-          cp -av ${QT_ROOT_DIR}/plugins/platforms/libqwayland*.so dist/${{ matrix.config.build_dir }}/usr/plugins/platforms/
+          WAYLAND_CLIENT_LIB="$(find /usr/lib -name 'libwayland-client.so.0' 2>/dev/null | head -n1 || true)"
+          export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
+          export EXTRA_QT_MODULES="waylandclient"
           export LD_LIBRARY_PATH=dist/${{ matrix.config.build_dir }}/usr/lib:$LD_LIBRARY_PATH
           export OUTPUT=build/${{ env.APP_NAME }}-${{ needs.version.outputs.version }}-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
@@ -208,7 +210,8 @@ jobs:
           ./linuxdeploy-x86_64.AppImage \
             --appdir dist/${{ matrix.config.build_dir }} \
             --plugin qt \
-            --output appimage
+            --output appimage \
+            --library "${WAYLAND_CLIENT_LIB}"
 
       - name: Upload AppImage (Linux)
         if: matrix.config.os == 'ubuntu-24.04' && matrix.config.cc == 'gcc'
