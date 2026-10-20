@@ -403,7 +403,7 @@ void LspPlugin::on_client_merged(qmdiHost *host) {
     });
 
     auto systemFile =
-        QDir::toNativeSeparators(systemDataDir) + QDir::separator() + "lsp-serversa.json";
+        QDir::toNativeSeparators(systemDataDir) + QDir::separator() + "lsp-servers.json";
     autoReloadFile(this, systemFile, [this](const QString &s) {
         this->systemDefinitions = loadDefinitionsFromFile(s);
         this->stopAllServers();
