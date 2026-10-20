@@ -451,8 +451,8 @@ void LspPlugin::onServersDefinitionsLoaded(bool isSystem) {
 /// Fetches the lsp-servers.json the project ships and installs it into the user
 /// config directory, then opens it so the result can be reviewed.
 void LspPlugin::downloadServersDefinitions() {
-    auto const url = QUrl("https://raw.githubusercontent.com/codepointerapp/codepointer/"
-                          "55-project-manager-support-for-lsp/src/plugins/LSP/lsp-servers.json");
+    auto const url = QUrl("https://raw.githubusercontent.com/codepointerapp/codepointer/refs/heads/"
+                          "main/src/plugins/LSP/lsp-servers.json");
     auto const userDataFile = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
                               QDir::separator() + "lsp-servers.json";
     auto *networkManager = new QNetworkAccessManager(this);
