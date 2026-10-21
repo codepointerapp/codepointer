@@ -26,4 +26,4 @@ Major changes:
 * kitdetector: lots of fixes for windows - 8aafdc58342934a0a2940273dbadd71140ae4225
 * qutepart: Minimap: wrong scroll direction, no scroll at all - <https://github.com/diegoiast/qutepart-cpp/issues/77>
 * AppImage: AppImage is X11 <https://github.com/codepointerapp/codepointer/issues/233>
-*
+* AppImage: Contains no update information <https://github.com/codepointerapp/codepointer/issues/227>

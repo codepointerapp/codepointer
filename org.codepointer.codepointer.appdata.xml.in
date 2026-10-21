@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>org.codepointer.@CODEPOINTER_APP_NAME@</id>
-
   <name>codepointer</name>
   <summary>IDE for Rust, Go, C++ and more</summary>
 
@@ -14,9 +13,8 @@
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-2.0-or-later</project_license>
-  <developer_name>CodePointer Developers</developer_name>
   <developer id="org.codepointerapp">
-    <name>CodePointer Developers</name>
+      <name>Diego Iastrubni</name>
   </developer>
 
   <url type="homepage">https://github.com/codepointerapp/codepointer/issues/</url>
@@ -36,5 +34,57 @@
     org.codepointer.@CODEPOINTER_APP_NAME@.desktop
   </launchable>
 
-  <content_rating type="oars-1.1"/>
+    <screenshots>
+        <screenshot type="default">
+            <caption>The main window</caption>
+            <image>https://github.com/codepointerapp/codepointer/raw/main/codepointer.png</image>
+        </screenshot>
+        <screenshot type="default">
+            <caption>Git support</caption>
+            <image>https://github.com/codepointerapp/codepointer/blob/main/docs/codepointer-v0.1.2-commit.png</image>
+        </screenshot>
+    </screenshots>
+
+
+    <releases>
+        <release version="0.1.9" date="2026-11-01">
+            <url type="details">https://github.com/codepointerapp/codepointer/releases/tag/v0.1.9</url>
+            <description>
+                <p>LSP support. Better indenter</p>
+                <ul>
+                    <li>Git: command tabs should note the repository dir</li>
+                    <li>qmdilib: Open non existing files</li>
+                    <li>qutepart: Indenter does not work on single line comments</li>
+                    <li>Help: about shows platform icons</li>
+                    <li>macOS support (WIP)</li>
+                    <li>kitdetector: lots of fixes for windows</li>
+                    <li>qutepart: Minimap: wrong scroll direction, no scroll at all</li>
+                    <li>AppImage: AppImage is X11</li>
+                </ul>
+            </description>
+        </release>
+        <release version="0.1.8.2" date="2026-09-01">
+            <description>
+                <p>Painly performance upgrades.</p>
+            </description>
+        </release>
+        <release version="0.1.7" date="2026-08-01">
+            <url type="details">https://github.com/codepointerapp/codepointer/releases/tag/v0.1.8.2</url>
+            <description>
+                <p>Git commit updates, async completions, faster editor loading, and a new command palette.</p>
+                <ul>
+                    <li>Git commit form: automatically hide diffs on small displays; add a checkbox to show or hide diffs; open a diff in a new tab by double-clicking a filename.</li>
+                    <li>Git commit form: improve staged-file support, allow deleting untracked and staged files and directories, and show modified files in completion results.</li>
+                    <li>Qutepart: improve performance. Loading a 90 KB file with 50,000 lines decreased from 1,400 ms to 1,050 ms on my laptop.</li>
+                    <li>Command palette: refresh the appearance and improve result sorting.</li>
+                    <li>Tree-sitter now runs asynchronously, making editing more responsive.</li>
+                </ul>
+            </description>
+        </release>
+    </releases>
+
+    <branding>
+      <color type="primary" scheme_preference="light">#41cd52</color>
+      <color type="primary" scheme_preference="dark">#41cd52</color>
+    </branding>
 </component>
