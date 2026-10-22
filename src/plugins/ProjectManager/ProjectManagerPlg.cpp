@@ -609,24 +609,25 @@ void ProjectManagerPlugin::on_client_merged(qmdiHost *host) {
                 return;
             }
 
-            auto compileCommands = project->expand("${build_directory}/compile_commands.json");
-            compileCommands = QDir::toNativeSeparators(compileCommands);
-            qDebug() << "Checking for " << compileCommands;
-            auto fileInfo = QFileInfo(compileCommands);
-            if (!fileInfo.exists() || !fileInfo.isFile() || !fileInfo.isReadable()) {
-                auto text = tr("compile_commands.json is missing");
-                auto tooltip =
-                    tr("completion is not going to work properly, this is needed for the "
-                       "completion model to work properly. Fix the build system.\n\n"
-                       "on CMake, pass -DCMAKE_EXPORT_COMPILE_COMMANDS=ON, or "
-                       "set(CMAKE_EXPORT_COMPILE_COMMANDS ON). Cargo and go should auto detect.");
-                auto color = projectDock->palette().color(QPalette::Highlight);
-                color = "red";
-                auto message = QString("<div style=\"color: %1;\">%2</div>")
-                                   .arg(color.name(), text.toHtmlEscaped());
-                showBanner(message, tooltip);
-            } else {
-                hideBanner();
+            hideBanner();
+            if (project->projectType == ProjectType::cmake) {
+                auto compileCommands = project->expand("${build_directory}/compile_commands.json");
+                compileCommands = QDir::toNativeSeparators(compileCommands);
+                qDebug() << "Checking for " << compileCommands;
+                auto fileInfo = QFileInfo(compileCommands);
+                if (!fileInfo.exists() || !fileInfo.isFile() || !fileInfo.isReadable()) {
+                    auto text = tr("compile_commands.json is missing");
+                    auto tooltip = tr(
+                        "completion is not going to work properly, this is needed for the "
+                        "completion model to work properly. Fix the build system.\n\n"
+                        "on CMake, pass -DCMAKE_EXPORT_COMPILE_COMMANDS=ON, or "
+                        "set(CMAKE_EXPORT_COMPILE_COMMANDS ON). Cargo and go should auto detect.");
+                    auto color = projectDock->palette().color(QPalette::Highlight);
+                    color = "red";
+                    auto message = QString("<div style=\"color: %1;\">%2</div>")
+                                       .arg(color.name(), text.toHtmlEscaped());
+                    showBanner(message, tooltip);
+                }
             }
         });
 #if defined(USE_TTY_FOR_TASKS)
@@ -1780,7 +1781,8 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
 
     project = ProjectBuildConfig::buildFromFile(filename);
 
-    // Try to find correnponding JSon file in the same dir as the project's that has been requested
+    // Try to find correnponding JSon file in the same dir as the project's that has been
+    // requested
     {
         auto fn = dir + QDir::separator() + PROJECT_FILENAME;
         if (auto p = this->projectModel->findConfigFile(fn)) {
