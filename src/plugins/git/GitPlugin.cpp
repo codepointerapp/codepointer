@@ -154,23 +154,20 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     form->listView->setViewMode(QListView::ListMode);
     form->listView->setAlternatingRowColors(true);
     form->branchListCombo->setItemDelegate(new BoldItemDelegate(form->branchListCombo));
-    form->diffBranchButton->setEnabled(false);
     form->newBranchButton->setEnabled(false);
     form->deleteBranchButton->setEnabled(false);
 
     auto delegate = new CommitDelegate(form->listView);
     form->listView->setItemDelegate(delegate);
     form->listView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    connect(form->branchListCombo, &QComboBox::currentIndexChanged, this,
+            &GitPlugin::checkoutHandler);
     connect(form->listView, &QAbstractItemView::activated, this, &GitPlugin::on_gitCommitClicked);
     connect(form->listView, &QAbstractItemView::clicked, this, &GitPlugin::on_gitCommitClicked);
     connect(form->listView, &QAbstractItemView::doubleClicked, this,
             &GitPlugin::on_gitCommitDoubleClicked);
     connect(form->refreshBranchesButton, &QToolButton::clicked, this,
             &GitPlugin::refreshBranchesHandler);
-    connect(form->diffBranchButton, &QPushButton::clicked, this, &GitPlugin::diffBranchHandler);
-    connect(form->newBranchButton, &QPushButton::clicked, this, &GitPlugin::newBranchHandler);
-    connect(form->deleteBranchButton, &QPushButton::clicked, this, &GitPlugin::deleteBranchHandler);
-    form->checkoutBranchButton->setEnabled(false);
     gitDock = manager->createNewPanel(Panels::East, "gitpanel", tr("Git"), w);
 }
 
@@ -304,9 +301,10 @@ void GitPlugin::refreshBranchesHandler() {
     runGit({"-C", repoRoot, "branch", "-a"})
         .then(this, [this](const std::tuple<QString, int> &res) {
             form->gitLoading->stop();
+            form->branchListCombo->clear();
+
             auto [output, exitCode] = res;
             auto branches = output.split('\n', Qt::SkipEmptyParts);
-            form->branchListCombo->clear();
             auto activeIndex = -1;
             auto delegate = static_cast<BoldItemDelegate *>(form->branchListCombo->itemDelegate());
             for (auto const &line : std::as_const(branches)) {
@@ -326,39 +324,8 @@ void GitPlugin::refreshBranchesHandler() {
             if (activeIndex != -1) {
                 form->branchListCombo->setCurrentIndex(activeIndex);
             }
-            form->diffBranchButton->setEnabled(true);
             form->newBranchButton->setEnabled(true);
             form->deleteBranchButton->setEnabled(true);
-            form->checkoutBranchButton->setEnabled(true);
-        });
-}
-
-void GitPlugin::diffBranchHandler() {
-    auto manager = getManager();
-    auto client = manager->getMdiServer()->getCurrentClient();
-    if (!client) {
-        return;
-    }
-    auto filename = client->mdiClientFileName();
-    auto repoRoot = QFileInfo(filename).absolutePath();
-    auto branch = form->branchListCombo->currentText();
-    form->gitLoading->start();
-    runGit({"diff", branch})
-        .then(this, [this, branch, repoRoot](const std::tuple<QString, int> &res) {
-            form->gitLoading->stop();
-            auto [diff, exitCode] = res;
-            if (diff.isEmpty()) {
-                return;
-            }
-
-            CommandArgs args = {
-                {GlobalArguments::FileName, QString("diff-%1.diff").arg(branch)},
-                {GlobalArguments::Content, diff},
-                {GlobalArguments::ReadOnly, true},
-                {GlobalArguments::FoldTopLevel, true},
-                {GlobalArguments::SourceDirectory, repoRoot},
-            };
-            getManager()->handleCommandAsync(GlobalCommands::DisplayText, args);
         });
 }
 
@@ -390,11 +357,6 @@ void GitPlugin::deleteBranchHandler() {
         runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
             form->gitLoading->stop();
             auto [output, exitCode] = res;
-            if (exitCode != 0) {
-                // TODO - display this error
-                qDebug() << "Command failed. Error" << exitCode << output;
-                return;
-            }
             form->gitOutput->setText(output);
             form->gitOutput->setToolTip(output);
             refreshBranchesHandler();
@@ -424,6 +386,24 @@ void GitPlugin::commitHandler() {
         auto url = QString("git:" + repoRoot);
         manager->openFile(url);
     });
+}
+
+void GitPlugin::checkoutHandler() {
+    auto newBranch = form->branchListCombo->currentText();
+    auto lastDir = getConfig().getGitLastDir();
+
+    form->gitLoading->start();
+    runGit({"-C", lastDir, "checkout", newBranch})
+        .then(this, [this](const std::tuple<QString, int> &res) {
+            auto [output, exitCode] = res;
+            form->gitLoading->stop();
+            if (exitCode != 0) {
+                form->gitOutput->setText(output);
+                form->gitOutput->setToolTip(output);
+                return;
+            }
+            logProjectHandler();
+        });
 }
 
 void GitPlugin::commitAmendHandler() {
@@ -483,7 +463,6 @@ void GitPlugin::logHandler(GitLog log, const QString &filename) {
         auto [repoRoot, exitCode] = res;
         if (exitCode != 0 || repoRoot.isEmpty()) {
             form->label->setText(tr("No commits or not a git repo"));
-            form->diffBranchButton->setEnabled(true);
             form->newBranchButton->setEnabled(true);
             form->deleteBranchButton->setEnabled(true);
             return;
@@ -519,7 +498,9 @@ void GitPlugin::logHandler(GitLog log, const QString &filename) {
 
             auto model = new CommitModel(this);
             model->setContent(output);
+            auto i = model->index(0);
             form->listView->setModel(model);
+            form->listView->setCurrentIndex(i);
             gitDock->raise();
             gitDock->show();
         });
@@ -593,6 +574,7 @@ void GitPlugin::on_gitCommitDoubleClicked(const QModelIndex &mi) {
 }
 
 QFuture<std::tuple<QString, int>> GitPlugin::runGit(const QStringList &args) {
+    // qDebug() << "Running git" << args.join(" ");
     return QtConcurrent::run([this, args] {
         QProcess p;
         p.setProcessChannelMode(QProcess::ProcessChannelMode::MergedChannels);

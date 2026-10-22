@@ -125,29 +125,6 @@
      <property name="rightMargin">
       <number>6</number>
      </property>
-     <item>
-      <widget class="QPushButton" name="checkoutBranchButton">
-       <property name="enabled">
-        <bool>true</bool>
-       </property>
-       <property name="toolTip">
-        <string>Checkout the selected branch</string>
-       </property>
-       <property name="text">
-        <string>Checkout</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="diffBranchButton">
-       <property name="toolTip">
-        <string>diff current branch against selected branch</string>
-       </property>
-       <property name="text">
-        <string>Diff...</string>
-       </property>
-      </widget>
-     </item>
     </layout>
    </item>
   </layout>
