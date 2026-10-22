@@ -2,10 +2,10 @@
 #include "plugins/git/GitPlugin.hpp"
 #include "ui_CreateGitBranch.h"
 
+#include <QAbstractButton>
+#include <QApplication>
 #include <QLineEdit>
 #include <QStyle>
-#include <qabstractbutton.h>
-#include <qapplication.h>
 
 auto static isLightPalette() -> bool {
     QPalette palette = QApplication::palette();
@@ -40,6 +40,7 @@ void CreateGitBranch::changeEvent(QEvent *e) {
 
 void CreateGitBranch::verifyBranchName(const QString &newText) {
     QColor searchNotFoundBackgroundColor;
+    // FIXME: use colors from theme
     if (isLightPalette()) {
         searchNotFoundBackgroundColor = QColor(0xFFAAAA);
     } else {
