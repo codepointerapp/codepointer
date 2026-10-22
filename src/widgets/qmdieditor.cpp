@@ -2822,6 +2822,18 @@ void qmdiEditor::updateInternalMappings(const QString &baseDir) {
     }
 }
 
+void qmdiEditor::mapAllLinesToFile(const QString &fileName) {
+    diffMetadata.mappings.clear();
+    diffMetadata.baseDir = QFileInfo(fileName).absolutePath();
+
+    auto lines = textEditor->lines();
+    for (auto it = lines.begin(); it != lines.end(); ++it) {
+        auto line = *it;
+        auto i = line.lineNumber();
+        diffMetadata.mappings[i] = {fileName, -1, i + 1};
+    }
+}
+
 /**
  * @brief qmdiEditor::updateFileDetails
  *

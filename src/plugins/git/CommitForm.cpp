@@ -563,7 +563,8 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     auto highlighter = QString{"diff.xml"};
     auto fullFilePath = repoRoot + "/" + filename;
 
-    auto updateEditor = [this](const QString &output, const QString &highlighter) {
+    auto updateEditor = [this](const QString &output, const QString &highlighter,
+                               const QString &fileForMapping = {}) {
         ui->diffPreview->setPlainText(output);
 
         // FIXME: this looks way too ugly,
@@ -577,7 +578,11 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
             //        interface with has implementation as Qutepart of QSCintilla or
             //        something different completely.
             editor->setHighlighter(highlighter);
-            editor->updateInternalMappings(repoRoot);
+            if (fileForMapping.isEmpty()) {
+                editor->updateInternalMappings(repoRoot);
+            } else {
+                editor->mapAllLinesToFile(fileForMapping);
+            }
         } else {
             qDebug() << "Double click on diff will not work";
         }
@@ -646,7 +651,10 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         if (langInfo.isValid()) {
             highlighter = langInfo.id;
         }
-        updateEditor(output, highlighter);
+        // The preview shows the raw file content, not a diff, so there are no
+        // diff headers to parse. Map every displayed line back to the file to
+        // make double-clicking open it at the corresponding line.
+        updateEditor(output, highlighter, fullFilePath);
         break;
     }
     default:

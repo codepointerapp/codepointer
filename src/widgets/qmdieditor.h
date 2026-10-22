@@ -174,6 +174,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void chooseIndenter(const QAction *action);
     void findText(const QString &text);
     void updateInternalMappings(const QString &baseDir);
+    void mapAllLinesToFile(const QString &fileName);
 
   private slots:
     void updateFileDetails();
