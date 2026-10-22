@@ -795,20 +795,21 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
             menu->addAction(action);
         }
 
-        if (unique.size() > shown) {
-            auto const more = new QAction(
-                QObject::tr("More results from %1").arg(QFileInfo(fileName).fileName()), menu);
-            auto const fileRows = unique;
-            QObject::connect(more, &QAction::triggered, menu, [symbol, fileRows, manager]() {
-                if (!manager) {
-                    return;
-                }
-                manager->handleCommandAsync(
-                    GlobalCommands::ShowReferences,
-                    {{GlobalArguments::Symbol, symbol}, {GlobalArguments::Tags, fileRows}});
-            });
-            menu->addAction(more);
+        auto l = QObject::tr("More results from %1").arg(QFileInfo(fileName).fileName());
+        if (unique.size() <= shown) {
+            l = QObject::tr("Show all results in a panel");
         }
+        auto const more = new QAction(l, menu);
+        auto const fileRows = unique;
+        QObject::connect(more, &QAction::triggered, menu, [symbol, fileRows, manager]() {
+            if (!manager) {
+                return;
+            }
+            manager->handleCommandAsync(
+                GlobalCommands::ShowReferences,
+                {{GlobalArguments::Symbol, symbol}, {GlobalArguments::Tags, fileRows}});
+        });
+        menu->addAction(more);
     }
 
     if (unreached > 0) {
