@@ -14,6 +14,7 @@
 #include <QString>
 #include <QTimer>
 
+#include "codeeditorinterface.h"
 #include "textoperationsadapter.h"
 
 class QWidget;
@@ -32,6 +33,7 @@ class TextOperationsWidget : public QStackedWidget {
 
   public:
     TextOperationsWidget(QWidget *parent, QWidget *editor);
+    TextOperationsWidget(QWidget *parent, CodeEditorInterface *editor);
     void initSearchWidget();
     void initReplaceWidget();
     void initGotoLineWidget();

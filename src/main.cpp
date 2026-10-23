@@ -24,6 +24,7 @@
 #include "plugins/hexviewer/hexviewer_plg.h"
 #include "plugins/imageviewer/imageviewer_plg.h"
 #include "plugins/texteditor/texteditor_plg.h"
+#include "widgets/quteparteditorfactory.h"
 #include "winui3style/winui3style.h"
 
 int main(int argc, char *argv[]) {
@@ -77,7 +78,7 @@ int main(int argc, char *argv[]) {
     auto iniFilePath = filePath + QString("/%1.ini").arg(CODEPOINTER_APP_NAME);
     auto windowIcon = QIcon(CODEPOINTER_ICON);
     auto helpPlugin = new HelpPlugin;
-    auto textEditorPlugin = new TextEditorPlugin;
+    auto textEditorPlugin = new TextEditorPlugin(new QutepartEditorFactory);
     auto split = new SplitTabsPlugin(textEditorPlugin);
 
     QCommandLineParser parser;

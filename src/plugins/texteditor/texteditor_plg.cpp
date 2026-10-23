@@ -5,6 +5,7 @@
 #include <QChar>
 #include <QCoreApplication>
 #include <QFile>
+#include <QFontDatabase>
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QString>
@@ -20,18 +21,17 @@
 #include "AnsiToHTML.hpp"
 #include "GlobalCommands.hpp"
 #include "texteditor_plg.h"
-#include "thememanager.h"
 #include "widgets/HistoryLineEdit.h"
+#include "widgets/codeeditorfactory.h"
 #include "widgets/qmdieditor.h"
 
-TextEditorPlugin::TextEditorPlugin() {
+TextEditorPlugin::TextEditorPlugin(CodeEditorFactory *factory) : editorFactory(factory) {
     name = "TextEditorPlugin";
     author = tr("Diego Iastrubni <diegoiast@gmail.com>");
     iVersion = 0;
     sVersion = "0.0.1";
     autoEnabled = true;
     alwaysEnabled = false;
-    themeManager = new Qutepart::ThemeManager();
     historyModel = new SharedHistoryModel(this);
 
     /*
@@ -195,7 +195,7 @@ TextEditorPlugin::TextEditorPlugin() {
                                      .build());
 }
 
-TextEditorPlugin::~TextEditorPlugin() {}
+TextEditorPlugin::~TextEditorPlugin() { delete editorFactory; }
 
 void TextEditorPlugin::on_client_merged(qmdiHost *) {
     auto manager = getManager();
@@ -215,10 +215,11 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
 
         newThemeSelected = false;
         chooseTheme->setDisabled(true);
+
+        auto themeFiles = editorFactory->themes();
         auto list = QStringList(tr("System colors"));
-        for (auto &t : themeManager->getLoadedFiles()) {
-            auto m = themeManager->getThemeMetaData(t);
-            list.append(m.name);
+        for (auto const &themeFile : std::as_const(themeFiles)) {
+            list.append(editorFactory->themeDisplayName(themeFile));
         }
         list.sort(Qt::CaseSensitive);
 
@@ -227,21 +228,20 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
         p->setDataModel(model);
         p->show();
 
-        connect(p, &CommandPalette::didSelectItem, this, [editor, this](auto index, auto *) {
-            auto newTheme = const_cast<Qutepart::Theme *>(editor->getEditorTheme());
-            if (newTheme != this->theme) {
-                delete newTheme;
-            }
-            newTheme = nullptr;
-            auto themeDescription = index.data(Qt::DisplayRole).toString();
-            auto themeFileName = themeManager->getNameFromDesc(themeDescription);
-            auto themeMetaData = themeManager->getThemeMetaData(themeFileName);
-            if (!themeMetaData.name.isEmpty()) {
-                newTheme = new Qutepart::Theme();
-                const_cast<Qutepart::Theme *>(newTheme)->loadTheme(themeFileName);
-            }
-            editor->setEditorTheme(newTheme);
-        });
+        connect(p, &CommandPalette::didSelectItem, this,
+                [editor, this, themeFiles](auto index, auto *) {
+                    auto themeDescription = index.data(Qt::DisplayRole).toString();
+                    pendingThemeFile.clear();
+                    if (themeDescription != tr("System colors")) {
+                        for (auto const &themeFile : std::as_const(themeFiles)) {
+                            if (editorFactory->themeDisplayName(themeFile) == themeDescription) {
+                                pendingThemeFile = themeFile;
+                                break;
+                            }
+                        }
+                    }
+                    editor->setEditorThemeFile(pendingThemeFile);
+                });
         connect(p, &CommandPalette::didChooseItem, this, [p, editor, this]() {
             // we do need to save it
             newThemeSelected = true;
@@ -249,12 +249,11 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
         connect(p, &CommandPalette::didHide, this, [p, this, editor]() {
             if (!newThemeSelected) {
                 // Restore current editor's theme from the Plugin's theme
-                editor->setEditorTheme(this->theme);
+                editor->setEditorThemeFile(this->currentThemeFile);
                 editor->setEditorHighlighter(editor->getSyntaxID());
             } else {
-                auto newTheme = const_cast<Qutepart::Theme *>(editor->getEditorTheme());
-                delete this->theme;
-                this->theme = newTheme;
+                this->currentThemeFile = this->pendingThemeFile;
+                getConfig().setTheme(this->currentThemeFile);
 
                 // Theme - apply it globally
                 for (auto i = 0; i < mdiServer->getClientsCount(); i++) {
@@ -263,14 +262,7 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
                     if (!e) {
                         continue;
                     }
-                    e->setEditorTheme(this->theme);
-                }
-                if (newTheme) {
-                    auto themeFileName =
-                        themeManager->getNameFromDesc(newTheme->getMetaData().name);
-                    getConfig().setTheme(themeFileName);
-                } else {
-                    getConfig().setTheme("");
+                    e->setEditorThemeFile(this->currentThemeFile);
                 }
             }
             p->deleteLater();
@@ -287,18 +279,14 @@ void TextEditorPlugin::showAbout() {
 
 void TextEditorPlugin::loadConfig(QSettings &settings) {
     IPlugin::loadConfig(settings);
-    themeManager->loadFromDir(":/qutepart/themes/");
 
     auto themeFileName = getConfig().getTheme();
-    delete this->theme;
-    if (!themeFileName.isEmpty()) {
-        this->theme = new Qutepart::Theme();
-        if (!this->theme->loadTheme(themeFileName)) {
-            qDebug() << "Failed loading theme " << themeFileName;
-            delete this->theme;
-            this->theme = nullptr;
-        }
+    if (!themeFileName.isEmpty() && !QFile::exists(themeFileName)) {
+        qDebug() << "Failed loading theme " << themeFileName;
+        themeFileName.clear();
+        getConfig().setTheme(themeFileName);
     }
+    currentThemeFile = themeFileName;
     auto history = getConfig().getSeachHistory();
     historyModel->setHistory(history);
 }
@@ -333,8 +321,8 @@ QFuture<CommandArgs> TextEditorPlugin::handleCommandAsync(const QString &command
         clientPosition = -1;
     }
 
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), themeManager);
-    auto langInfo = ::Qutepart::chooseLanguage({}, {}, fileName);
+    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), editorFactory);
+    auto langInfo = editorFactory->languageForFile(fileName);
     if (langInfo.isValid()) {
         editor->setEditorHighlighter(langInfo.id);
     }
@@ -472,7 +460,7 @@ int TextEditorPlugin::canOpenFile(const QString &fileName) {
 }
 
 qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, int zoom) {
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), themeManager);
+    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), editorFactory);
 
     // In the future - the zoom, will be used to set state to the lines, if the value is really
     // large. I will assume that font size bigger than 500 is not really existent.
@@ -482,7 +470,7 @@ qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, in
         editor->setFont(f);
     }
 
-    auto langInfo = ::Qutepart::chooseLanguage({}, {}, fileName);
+    auto langInfo = editorFactory->languageForFile(fileName);
     if (langInfo.isValid()) {
         editor->setEditorHighlighter(langInfo.id);
     }
@@ -513,9 +501,9 @@ qmdiClient *TextEditorPlugin::navigateFile(qmdiClient *client, int x, int y, int
 
 void TextEditorPlugin::applySettings(qmdiEditor *editor) {
     if (getConfig().getWrapLines()) {
-        editor->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+        editor->setLineWrapMode(CodeEditor::WrapMode::WidgetWidth);
     } else {
-        editor->setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor->setLineWrapMode(CodeEditor::WrapMode::NoWrap);
     }
 
     auto newFont = QFont();
@@ -538,8 +526,8 @@ void TextEditorPlugin::applySettings(qmdiEditor *editor) {
     editor->setEditorFont(newFont);
     editor->repaint();
 
-    if (this->theme != editor->getEditorTheme()) {
-        editor->setEditorTheme(this->theme);
+    if (editor->editorThemeFile() != currentThemeFile) {
+        editor->setEditorThemeFile(currentThemeFile);
     }
 }
 
@@ -560,7 +548,7 @@ void TextEditorPlugin::fileNew() {
 }
 
 qmdiClient *TextEditorPlugin::fileNewEditor() {
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), themeManager);
+    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), editorFactory);
     editor->setHistoryModel(historyModel);
     applySettings(editor);
     return editor;

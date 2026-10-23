@@ -47,14 +47,7 @@
         </widget>
        </item>
        <item>
-        <widget class="QPlainTextEdit" name="commitMessage">
-         <property name="tabChangesFocus">
-          <bool>true</bool>
-         </property>
-         <property name="placeholderText">
-          <string>full commit message here...</string>
-         </property>
-        </widget>
+        <widget class="QWidget" name="commitMessage" native="true"/>
        </item>
        <item>
         <widget class="QLabel" name="gitOutput">
@@ -216,7 +209,7 @@
         <widget class="LoadingWidget" name="diffLoading" native="true"/>
        </item>
        <item>
-        <widget class="QPlainTextEdit" name="diffPreview"/>
+        <widget class="QWidget" name="diffPreview" native="true"/>
        </item>
       </layout>
      </widget>
@@ -233,22 +226,4 @@
   </customwidget>
  </customwidgets>
  <resources/>
- <connections>
-  <connection>
-   <sender>diffPreview</sender>
-   <signal>modificationChanged(bool)</signal>
-   <receiver>commitButton</receiver>
-   <slot>setEnabled(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>552</x>
-     <y>162</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>76</x>
-     <y>466</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
 </ui>

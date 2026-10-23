@@ -7,6 +7,7 @@ namespace Ui {
 class CommitForm;
 }
 
+class CodeEditorInterface;
 class GitPlugin;
 class GitStatusTableModel;
 
@@ -38,6 +39,8 @@ class CommitForm : public QWidget, public qmdiClient {
 
   private:
     Ui::CommitForm *ui;
+    CodeEditorInterface *commitMessageEditor = nullptr;
+    CodeEditorInterface *diffPreviewEditor = nullptr;
     GitStatusTableModel *model;
     GitPlugin *git;
     QString repoRoot;
