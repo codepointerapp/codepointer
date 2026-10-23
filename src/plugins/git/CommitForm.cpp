@@ -302,6 +302,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
             if (auto e = dynamic_cast<qmdiEditor *>(client)) {
                 e->setLineNumbersVisible(false);
                 e->setReadOnly(true);
+                e->setMarkAreaVisible(false);
                 e->setMinimapVisible(false);
                 e->setHighlighter("diff.xml");
                 e->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -314,6 +315,8 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
             client2->mdiServer = git->mdiServer;
             if (auto e = dynamic_cast<qmdiEditor *>(client2)) {
                 e->setLineNumbersVisible(false);
+                e->setMarkAreaVisible(false);
+                e->setFoldingAreaVisible(false);
                 e->setMinimapVisible(false);
                 e->setHighlighter("markdown.xml");
                 e->setIndentAlgorithm(Qutepart::INDENT_ALG_MARKDOWN);

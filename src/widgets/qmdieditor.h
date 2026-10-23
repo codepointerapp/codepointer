@@ -244,6 +244,10 @@ class qmdiEditor : public QWidget, public qmdiClient {
         return textEditor->document()->isEmpty();
     }
     inline void foldTopLevel() const { textEditor->foldTopLevelBlocks(); }
+    inline void setMarkAreaVisible(bool value) const { textEditor->setMarkAreaVisible(value); }
+    inline void setFoldingAreaVisible(bool value) const {
+        textEditor->setFoldingAreaVisible(value);
+    }
     inline void setMinimapVisible(bool value) const { textEditor->setMinimapVisible(value); }
     void setReadOnly(bool b);
     inline QPlainTextEdit *getEditor() const { return textEditor; }
