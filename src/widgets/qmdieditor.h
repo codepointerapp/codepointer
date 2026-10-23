@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include <QFuture>
 #include <QFutureWatcher>
 #include <QMap>
@@ -18,9 +20,7 @@
 #include <pluginmanager.h>
 #include <qmdiclient.h>
 
-// FIXME: I would like qutepart to be an implementation detail, and not exposed.
-#include <qutepart/qutepart.h>
-
+#include "codeeditorinterface.h"
 #include "endlinestyle.h"
 
 class QFileSystemWatcher;
@@ -31,13 +31,10 @@ class QLineEdit;
 class TextPreview;
 class TextOperationsWidget;
 class SharedHistoryModel;
+class CodeEditorFactory;
 
 namespace Ui {
 class BannerMessage;
-}
-
-namespace Qutepart {
-class ThemeManager;
 }
 
 /**
@@ -51,7 +48,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     Q_OBJECT
 
   public:
-    qmdiEditor(QWidget *p, Qutepart::ThemeManager *theme);
+    qmdiEditor(QWidget *p, CodeEditorFactory *factory);
     ~qmdiEditor();
 
     virtual bool saveClientContent() override;
@@ -67,9 +64,9 @@ class qmdiEditor : public QWidget, public qmdiClient {
     inline bool getModificationsLookupEnabled() const { return fileModifications; }
     void setModificationsLookupEnabled(bool);
     void setEditorFont(const QFont &newFont);
-    inline const Qutepart::Theme *getEditorTheme() { return textEditor->getTheme(); }
-    inline void setEditorTheme(const Qutepart::Theme *theme) { textEditor->setTheme(theme); }
     void setEditorHighlighter(QString id);
+    void setEditorThemeFile(const QString &themeFile);
+    QString editorThemeFile() const;
     inline void setEditorMarkWord(bool b) { textEditor->setMarkCurrentWord(b); }
 
     bool isLocalToolbarVisible() const;
@@ -100,15 +97,10 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QString getContent() const;
     /// Cursor position, or the selection when there is one. All values 0-based,
     /// matching LSP ranges.
-    struct Range {
-        int startLine = 0, startCharacter = 0, endLine = 0, endCharacter = 0;
-    };
+    using Range = CodeEditor::TextRange;
     Range selectionRange() const;
     /// A replacement within this document. 0-based, matching LSP ranges.
-    struct TextEdit {
-        int startLine = 0, startCharacter = 0, endLine = 0, endCharacter = 0;
-        QString newText;
-    };
+    using TextEdit = CodeEditor::TextEdit;
     /// Applies replacements as one undoable action. The caller must have sorted
     /// them bottom-up; ranges are stated against the current document.
     ///
@@ -126,8 +118,8 @@ class qmdiEditor : public QWidget, public qmdiClient {
     // Attributed diagnostics, forwarded to qutepart. `owner` is a logical name -
     // "clangd", "clang-tidy" - so a server that restarts keeps its identity and
     // cannot strand the marks of the run it replaced.
-    using Diagnostic = Qutepart::Diagnostic;
-    using DiagnosticSeverity = Qutepart::DiagnosticSeverity;
+    using Diagnostic = CodeEditor::Diagnostic;
+    using DiagnosticSeverity = CodeEditor::DiagnosticSeverity;
     inline void setDiagnostic(int line, const Diagnostic &diagnostic) {
         textEditor->setDiagnostic(line, diagnostic);
     }
@@ -135,12 +127,14 @@ class qmdiEditor : public QWidget, public qmdiClient {
     /// Drops every attributed diagnostic, leaving the unowned setLineError marks
     /// that ProjectManager paints onto the same editor untouched.
     inline void clearAllDiagnostics() { textEditor->clearAllDiagnostics(); }
-    inline auto diagnosticsOn(int line) const { return textEditor->diagnosticsOn(line); }
+    inline QList<Diagnostic> diagnosticsOn(int line) const {
+        return textEditor->diagnosticsOn(line);
+    }
 
     /// When set, the completion provider is the only source of suggestions -
     /// keywords and words scraped from the buffer are suppressed.
     inline void setCompletionExclusive(bool exclusive) {
-        textEditor->setCustomCompletionsExclusive(exclusive);
+        textEditor->setCompletionExclusive(exclusive);
     }
 
   signals:
@@ -198,19 +192,13 @@ class qmdiEditor : public QWidget, public qmdiClient {
 
     // No longer inheriting Qutepart, instead use "static inheritance"
     void goTo(int x, int y);
-    inline void setLineWrapMode(QPlainTextEdit::LineWrapMode mode) {
-        textEditor->setLineWrapMode(mode);
-    }
+    inline void setLineWrapMode(CodeEditor::WrapMode mode) { textEditor->setLineWrapMode(mode); }
     inline void setDrawAnyWhitespace(bool b) { textEditor->setDrawAnyWhitespace(b); }
-    inline void setDrawIndentations(bool b) {
-        textEditor->setDrawIndentations(b);
-        textEditor->setDrawIncorrectIndentation(b);
-    }
+    inline void setDrawIndentations(bool b) { textEditor->setDrawIndentations(b); }
     inline void setBracketHighlightingEnabled(bool b) {
         textEditor->setBracketHighlightingEnabled(b);
     }
     inline void setSoftLineWrapping(bool value) { textEditor->setSoftLineWrapping(value); }
-    inline bool softLineWrapping() const { return textEditor->softLineWrapping(); }
     inline void setLineNumbersVisible(bool b) { textEditor->setLineNumbersVisible(b); }
     inline void setSmartHomeEnd(bool b) { textEditor->setSmartHomeEnd(b); }
     inline void setDrawSolidEdge(bool b) { textEditor->setDrawSolidEdge(b); }
@@ -237,24 +225,21 @@ class qmdiEditor : public QWidget, public qmdiClient {
     inline void setLineExecuting(int lineNumber, bool value) {
         textEditor->setLineExecuting(lineNumber, value);
     }
-    inline bool isEmpty() const {
-        if (!textEditor->document()) {
-            return true;
-        }
-        return textEditor->document()->isEmpty();
-    }
-    inline void foldTopLevel() const { textEditor->foldTopLevelBlocks(); }
+    inline bool isEmpty() const { return textEditor->isEmpty(); }
+    inline void foldTopLevel() const { textEditor->foldTopLevel(); }
     inline void setMarkAreaVisible(bool value) const { textEditor->setMarkAreaVisible(value); }
     inline void setFoldingAreaVisible(bool value) const {
         textEditor->setFoldingAreaVisible(value);
     }
     inline void setMinimapVisible(bool value) const { textEditor->setMinimapVisible(value); }
     void setReadOnly(bool b);
-    inline QPlainTextEdit *getEditor() const { return textEditor; }
+    inline CodeEditorInterface *getCodeEditor() const { return textEditor.get(); }
     inline void setHighlighter(const QString &languageId) {
         textEditor->setHighlighter(languageId);
     }
-    inline void setIndentAlgorithm(Qutepart::IndentAlg alg) { textEditor->setIndentAlgorithm(alg); }
+    inline void setIndentAlgorithm(CodeEditor::IndentAlgorithm alg) {
+        textEditor->setIndentAlgorithm(alg);
+    }
 
   protected:
     virtual void focusInEvent(QFocusEvent *event) override;
@@ -267,7 +252,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QFuture<CommandArgs> getSuggestionsForCurrentWord(const QPoint &localPosition);
     QFuture<CommandArgs> getReferencesForCurrentWord(const QPoint &localPosition);
     QFuture<CommandArgs> getTooltipsForPosition(const QPoint &localPosition);
-    QFuture<QSet<Qutepart::CompletionItem>>
+    QFuture<QSet<CodeEditor::CompletionItem>>
     getTagCompletions(const QString &prefix, const QString &previousWord, const QString &separator);
 
     /// Called on text edits and cursor moves. Restarts the debounce timer while
@@ -331,8 +316,8 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void loadBackup();
     void deleteBackup();
 
-    Qutepart::ThemeManager *themeManager = nullptr;
-    Qutepart::Qutepart *textEditor = nullptr;
+    CodeEditorFactory *editorFactory = nullptr;
+    std::unique_ptr<CodeEditorInterface> textEditor;
     TextOperationsWidget *operationsWidget = nullptr;
     QString syntaxLangID;
     QString indentationID;

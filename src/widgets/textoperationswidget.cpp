@@ -65,6 +65,11 @@ TextOperationsWidget::TextOperationsWidget(QWidget *parent, QWidget *e) : QStack
     setAdapter(new QtTextOperationsAdapter(editor, this));
 }
 
+TextOperationsWidget::TextOperationsWidget(QWidget *parent, CodeEditorInterface *codeEditor)
+    : TextOperationsWidget(parent, codeEditor->widget()) {
+    setAdapter(codeEditor->createOperationsAdapter(this));
+}
+
 void TextOperationsWidget::setAdapter(TextOperationsAdapter *adapter) {
     if (m_adapter && m_adapter->parent() == this) {
         delete m_adapter;

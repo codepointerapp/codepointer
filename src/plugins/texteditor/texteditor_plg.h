@@ -8,14 +8,10 @@
 
 #pragma once
 
-namespace Qutepart {
-class ThemeManager;
-class Theme;
-} // namespace Qutepart
-
 #include "iplugin.h"
 #include "widgets/endlinestyle.h"
 
+class CodeEditorFactory;
 class qmdiEditor;
 class SharedHistoryModel;
 
@@ -46,12 +42,12 @@ class TextEditorPlugin : public IPlugin {
         static Config configObject{&this->config};
         return configObject;
     }
-    Qutepart::ThemeManager *themeManager;
-    Qutepart::Theme *theme = nullptr;
+    CodeEditorFactory *editorFactory;
+    QString currentThemeFile;
 
     Q_OBJECT
   public:
-    TextEditorPlugin();
+    explicit TextEditorPlugin(CodeEditorFactory *factory);
     ~TextEditorPlugin();
 
     virtual void on_client_merged(qmdiHost *host) override;
@@ -68,6 +64,7 @@ class TextEditorPlugin : public IPlugin {
     qmdiClient *openFile(const QString &fileName, int x = -1, int y = -1, int z = -1) override;
     qmdiClient *navigateFile(qmdiClient *client, int x, int y, int z) override;
     void applySettings(qmdiEditor *editor);
+    CodeEditorFactory *getEditorFactory() const { return editorFactory; }
 
   public slots:
     virtual void configurationHasBeenModified() override;
@@ -77,4 +74,5 @@ class TextEditorPlugin : public IPlugin {
   private:
     QAction *chooseTheme;
     SharedHistoryModel *historyModel;
+    QString pendingThemeFile;
 };

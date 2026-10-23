@@ -730,13 +730,13 @@ void LspPlugin::applyDiagnostics(const QString &fileName) {
     auto shown = 0;
     for (auto it = byOwner.cbegin(); it != byOwner.cend(); ++it) {
         for (auto const &item : it.value()) {
-            auto severity = Qutepart::DiagnosticSeverity::Information;
+            auto severity = CodeEditor::DiagnosticSeverity::Information;
             switch (item.severity) {
             case lspDiagnostic::Severity::Error:
-                severity = Qutepart::DiagnosticSeverity::Error;
+                severity = CodeEditor::DiagnosticSeverity::Error;
                 break;
             case lspDiagnostic::Severity::Warning:
-                severity = Qutepart::DiagnosticSeverity::Warning;
+                severity = CodeEditor::DiagnosticSeverity::Warning;
                 break;
             case lspDiagnostic::Severity::Information:
             case lspDiagnostic::Severity::Hint:
@@ -745,7 +745,7 @@ void LspPlugin::applyDiagnostics(const QString &fileName) {
             // The one place the protocol type meets the editor's: every line
             // based API here takes an int block number.
             editor->setDiagnostic(static_cast<int>(item.line),
-                                  Qutepart::Diagnostic{it.key(), severity, item.message});
+                                  CodeEditor::Diagnostic{it.key(), severity, item.message});
             shown++;
         }
     }

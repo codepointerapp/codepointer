@@ -57,15 +57,12 @@
 #include <qmdiserver.h>
 
 #include "GlobalCommands.hpp"
-#include "plugins/texteditor/thememanager.h"
 #include "widgets/BoldItemDelegate.hpp"
-#include "widgets/lsp_rename_geometry.h"
+#include "widgets/codeeditorfactory.h"
 #include "widgets/qmdieditor.h"
 #include "widgets/textoperationswidget.h"
 #include "widgets/textpreview.h"
 #include "widgets/ui_bannermessage.h"
-
-#define PLAIN_TEXT_HIGHIGHTER "Plain text"
 
 #if defined(WIN32)
 #define PLATFORM_LINE_ENDING "\r\n"
@@ -260,82 +257,37 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
     }
 }
 
-class PlainTextEditStateGuard {
+class EditorStateGuard {
   public:
-    explicit PlainTextEditStateGuard(QPlainTextEdit *editor) : m_editor(editor) {
-        if (!m_editor) {
-            return;
-        }
-
-        auto cursor = m_editor->textCursor();
-        m_line = cursor.blockNumber();
-        m_column = cursor.positionInBlock();
-        if (cursor.anchor() >= cursor.position()) {
-            m_anchorLine = cursor.blockNumber();
-            m_anchorColumn = cursor.positionInBlock();
-        } else {
-            auto block = m_editor->document()->findBlock(cursor.anchor());
-            m_anchorLine = block.blockNumber();
-            m_anchorColumn = cursor.anchor() - block.position();
+    explicit EditorStateGuard(CodeEditorInterface *editor) : m_editor(editor) {
+        if (m_editor) {
+            m_state = m_editor->cursorState();
         }
     }
 
-    ~PlainTextEditStateGuard() { restore(); }
+    ~EditorStateGuard() { restore(); }
 
     void restore() {
         if (!m_editor || m_restored) {
             return;
         }
-
         m_restored = true;
-
-        auto doc = m_editor->document();
-        auto newCursor = QTextCursor(doc);
-        auto maxLine = doc->blockCount() - 1;
-        auto caretLine = std::min(m_line, maxLine);
-        auto caretBlock = doc->findBlockByNumber(caretLine);
-        newCursor.setPosition(caretBlock.position());
-
-        auto caretMaxColumn = caretBlock.length() - 1;
-        newCursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor,
-                               std::min(m_column, caretMaxColumn));
-
-        auto anchorMaxLine = doc->blockCount() - 1;
-        auto selLine = std::min(m_anchorLine, anchorMaxLine);
-        auto anchorBlock = doc->findBlockByNumber(selLine);
-        auto anchorMaxColumn = anchorBlock.length() - 1;
-        auto anchorPos = anchorBlock.position() + std::min(m_anchorColumn, anchorMaxColumn);
-
-        newCursor.setPosition(anchorPos, QTextCursor::KeepAnchor);
-        m_editor->setTextCursor(newCursor);
+        m_editor->setCursorState(m_state);
     }
 
-    PlainTextEditStateGuard(const PlainTextEditStateGuard &) = delete;
-    PlainTextEditStateGuard &operator=(const PlainTextEditStateGuard &) = delete;
+    EditorStateGuard(const EditorStateGuard &) = delete;
+    EditorStateGuard &operator=(const EditorStateGuard &) = delete;
 
   private:
-    QPlainTextEdit *m_editor = nullptr;
-    int m_line = 0;
-    int m_column = 0;
-    int m_anchorLine = 0;
-    int m_anchorColumn = 0;
+    CodeEditorInterface *m_editor = nullptr;
+    CodeEditor::CursorState m_state;
     bool m_restored = false;
 };
 
-namespace Qutepart {
-QStringList getAvailableHighlihters() {
-    extern QMap<QString, QString> languageNameToXmlFileName;
-    auto l = QList<QString>();
-    l.append(PLAIN_TEXT_HIGHIGHTER);
-    l.append(languageNameToXmlFileName.keys());
-    return l;
-}
-} // namespace Qutepart
-
-qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
-    : QWidget(p), themeManager(themes) {
-    textEditor = new Qutepart::Qutepart(this);
-    operationsWidget = new TextOperationsWidget(this, textEditor);
+qmdiEditor::qmdiEditor(QWidget *p, CodeEditorFactory *factory)
+    : QWidget(p), editorFactory(factory) {
+    textEditor = editorFactory->createEditor(this);
+    operationsWidget = new TextOperationsWidget(this, textEditor.get());
     mdiClientName = tr("NO NAME");
     fileSystemWatcher = new QFileSystemWatcher(this);
     toolbar = new QWidget(this);
@@ -346,7 +298,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     textEditor->setCompletionCallback(
         [this](const QString &prefix, const QString &previousWord, const QString &separator) {
             if (prefix.length() < 2 && separator.isEmpty()) {
-                return QFuture<QSet<Qutepart::CompletionItem>>();
+                return QFuture<QSet<CodeEditor::CompletionItem>>();
             }
             return this->getTagCompletions(prefix, previousWord, separator);
         });
@@ -372,15 +324,16 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     textPreview = new TextPreview(this);
     textPreview->setVisible(false);
 
-    textEditor->setFrameStyle(QFrame::NoFrame);
-    splitter->addWidget(textEditor);
+    textEditor->setFrameVisible(false);
+    splitter->addWidget(textEditor->widget());
     splitter->addWidget(textPreview);
 
-    connect(textEditor, &QPlainTextEdit::cursorPositionChanged, this, [this, staticLabel]() {
-        QTextCursor cursor = textEditor->textCursor();
-        int line = cursor.blockNumber() + 1;
-        int column = cursor.columnNumber() + 1;
-        staticLabel->setText(QString("%1:%2").arg(line).arg(column));
+    textEditor->setCursorPositionChangedCallback([this, staticLabel]() {
+        staticLabel->setText(
+            QString("%1:%2").arg(textEditor->cursorLine() + 1).arg(textEditor->cursorColumn() + 1));
+        maybeScheduleSignatureHelp(false);
+        setCodeActionMark(-1, false);
+        codeActionTimer->start();
     });
 
     // LSP signature help: qutepart hides the call tip on any caret move or text
@@ -409,11 +362,6 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
             textEditor->showCallTip(tooltip);
         }
     });
-    connect(textEditor, &QPlainTextEdit::textChanged, this,
-            [this]() { maybeScheduleSignatureHelp(true); });
-    connect(textEditor, &QPlainTextEdit::cursorPositionChanged, this,
-            [this]() { maybeScheduleSignatureHelp(false); });
-
     // The availability probe. The mark is dropped the instant the caret moves
     // rather than waiting out the debounce: a hint that trails the cursor is
     // worse than no hint, and it points at a line the user has already left.
@@ -425,15 +373,12 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     // line is ignored - the caret is already where the mark is, and a right-click
     // style move would fight qutepart's own click handling.
     textEditor->setCodeActionCallback([this](int) { requestCodeActions(); });
-    connect(textEditor, &QPlainTextEdit::cursorPositionChanged, this, [this]() {
+    textEditor->setTextChangedCallback([this]() {
+        maybeScheduleSignatureHelp(true);
         setCodeActionMark(-1, false);
         codeActionTimer->start();
-    });
-    connect(textEditor, &QPlainTextEdit::textChanged, this, [this]() {
-        // The server has not seen this text yet, so its previous answer no
-        // longer describes anything.
-        setCodeActionMark(-1, false);
-        codeActionTimer->start();
+        onTextModified();
+        autoSaveTimer->start();
     });
 
     // The reply arrives on a reader thread; the watcher brings it back here
@@ -465,7 +410,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     fnt.setPointSize(14);
     setEditorFont(fnt);
 
-    textEditor->setLineWrapMode(QPlainTextEdit::LineWrapMode::NoWrap);
+    textEditor->setLineWrapMode(CodeEditor::WrapMode::NoWrap);
 
     auto reformatCodeAction = new QAction(tr("Reformat code"), this);
     connect(reformatCodeAction, &QAction::triggered, this, &qmdiEditor::reformatContent);
@@ -486,38 +431,38 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
 
     textOperationsMenu = new QMenu(tr("Text actions"), this);
     textOperationsMenu->setObjectName("qmdiEditor::textOperationsMenu");
-    textOperationsMenu->addAction(textEditor->deleteLineAction());
-    textOperationsMenu->addAction(textEditor->cutLineAction());
-    textOperationsMenu->addAction(textEditor->copyLineAction());
-    textOperationsMenu->addAction(textEditor->pasteLineAction());
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::DeleteLine));
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::CutLine));
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::CopyLine));
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::PasteLine));
     textOperationsMenu->addSeparator();
     textOperationsMenu->addAction(actionCapitalize);
     textOperationsMenu->addAction(actionLowerCase);
     textOperationsMenu->addAction(actionChangeCase);
-    textOperationsMenu->addAction(textEditor->joinLinesAction());
-    textOperationsMenu->addAction(textEditor->duplicateSelectionAction());
-    textOperationsMenu->addAction(textEditor->deleteLineAction());
-    textOperationsMenu->addAction(textEditor->moveLineUpAction());
-    textOperationsMenu->addAction(textEditor->moveLineDownAction());
-    textOperationsMenu->addAction(textEditor->toggleCommentAction());
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::JoinLines));
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::DuplicateSelection));
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::DeleteLine));
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::MoveLineUp));
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::MoveLineDown));
+    textOperationsMenu->addAction(textEditor->action(CodeEditor::Action::ToggleComment));
     textOperationsMenu->addSeparator();
     textOperationsMenu->addAction(reformatCodeAction);
     textOperationsMenu->addAction(actionToggleHeader);
 
     bookmarksMenu = new QMenu(tr("Bookmarks"), this);
     bookmarksMenu->setObjectName("qmdiEditor::bookmarksMenu");
-    bookmarksMenu->addAction(textEditor->toggleBookmarkAction());
+    bookmarksMenu->addAction(textEditor->action(CodeEditor::Action::ToggleBookmark));
     bookmarksMenu->addSeparator();
-    bookmarksMenu->addAction(textEditor->nextBookmarkAction());
-    bookmarksMenu->addAction(textEditor->prevBookmarkAction());
+    bookmarksMenu->addAction(textEditor->action(CodeEditor::Action::NextBookmark));
+    bookmarksMenu->addAction(textEditor->action(CodeEditor::Action::PreviousBookmark));
 
     foldingMenu = new QMenu(tr("Folding"), this);
     foldingMenu->setObjectName("foldingMenu");
-    foldingMenu->addAction(textEditor->foldAction());
-    foldingMenu->addAction(textEditor->unfoldAction());
-    foldingMenu->addAction(textEditor->foldTopLevelAction());
-    foldingMenu->addAction(textEditor->unfoldAllAction());
-    foldingMenu->addAction(textEditor->toggleFoldAction());
+    foldingMenu->addAction(textEditor->action(CodeEditor::Action::Fold));
+    foldingMenu->addAction(textEditor->action(CodeEditor::Action::Unfold));
+    foldingMenu->addAction(textEditor->action(CodeEditor::Action::FoldTopLevel));
+    foldingMenu->addAction(textEditor->action(CodeEditor::Action::UnfoldAll));
+    foldingMenu->addAction(textEditor->action(CodeEditor::Action::ToggleFold));
 
     this->menus["&File"]->addAction(actionSave);
     this->menus["&File"]->addAction(actionSaveAs);
@@ -532,7 +477,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     this->menus["&Edit"]->addMenu(bookmarksMenu);
     this->menus["&Edit"]->addMenu(foldingMenu);
     this->menus["&Edit"]->addAction(actionTogglePreview);
-    this->menus["&Edit"]->addAction(textEditor->findMatchingBracketAction());
+    this->menus["&Edit"]->addAction(textEditor->action(CodeEditor::Action::FindMatchingBracket));
     this->menus["&Edit"]->addAction(reformatCodeAction);
 
     this->menus["&Search"]->addAction(actionFind);
@@ -556,7 +501,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     this->contextMenu.addAction(actionCopyFilePath);
 
     this->installEventFilter(this);
-    this->textEditor->setMouseTracking(true);
+    this->textEditor->widget()->setMouseTracking(true);
     this->textEditor->viewport()->installEventFilter(this);
 
     this->originalLineEnding = PLATFORM_LINE_ENDING;
@@ -565,7 +510,6 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     autoSaveTimer->setSingleShot(true);
     autoSaveTimer->setInterval(5000);
     connect(autoSaveTimer, &QTimer::timeout, this, &qmdiEditor::autoSave);
-    connect(textEditor, &QPlainTextEdit::textChanged, this, [this]() { autoSaveTimer->start(); });
 
     // Why a timer for on change?
     // If we issue a "git checkout" - we get notification when git resets the
@@ -580,7 +524,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
             return;
         }
 
-        auto isModified = textEditor->document()->isModified();
+        auto isModified = textEditor->isModified();
         if (!isModified) {
             reload();
             return;
@@ -618,7 +562,7 @@ bool qmdiEditor::saveClientContent() {
     if (textEditor->isReadOnly()) {
         return true;
     }
-    if (!textEditor->document()->isModified()) {
+    if (!textEditor->isModified()) {
         return true;
     }
     deleteBackup();
@@ -629,7 +573,7 @@ bool qmdiEditor::reloadClientContent() {
     if (textEditor->isReadOnly()) {
         return true;
     }
-    if (!textEditor->document()->isModified()) {
+    if (!textEditor->isModified()) {
         return true;
     }
 
@@ -651,13 +595,13 @@ bool qmdiEditor::canCloseClient(CloseReason reason) {
         return true;
     }
 
-    if (!textEditor->document()->isModified()) {
+    if (!textEditor->isModified()) {
         deleteBackup();
         return true;
     }
 
     if (reason == CloseReason::ApplicationQuit) {
-        if (textEditor->document()->isModified()) {
+        if (textEditor->isModified()) {
             saveBackup();
         }
         return true;
@@ -868,8 +812,7 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
     auto fixAction = new QAction(tr("Fix available..."), menu);
     menu->insertAction(firstAction, fixAction);
     QObject::connect(fixAction, &QAction::triggered, this, [this, localPosition]() {
-        auto cursor = textEditor->cursorForPosition(localPosition);
-        textEditor->setTextCursor(cursor);
+        textEditor->setCursorPosition(textEditor->positionAt(localPosition));
         requestCodeActions();
     });
 
@@ -945,17 +888,15 @@ void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &glob
  * @return row, column,  zoom
  */
 std::optional<std::tuple<int, int, int>> qmdiEditor::get_coordinates() const {
-    auto cursor = textEditor->textCursor();
-    auto row = textEditor->document()->findBlock(cursor.position()).blockNumber();
-    auto col = cursor.columnNumber();
+    auto row = textEditor->cursorLine();
+    auto col = textEditor->cursorColumn();
     auto zoom = font().pointSize();
     return std::make_tuple(row, col, zoom);
 }
 
 qmdiClientState qmdiEditor::getState() const {
-    auto cursor = textEditor->textCursor();
-    auto row = textEditor->document()->findBlock(cursor.position()).blockNumber();
-    auto col = cursor.columnNumber();
+    auto row = textEditor->cursorLine();
+    auto col = textEditor->cursorColumn();
     auto zoom = font().pointSize();
     auto state = qmdiClientState();
     state[StateConstants::COLUMN] = col;
@@ -968,9 +909,9 @@ qmdiClientState qmdiEditor::getState() const {
         state[StateConstants::UUID] = uid;
     }
 
-    if (cursor.hasSelection()) {
-        state[StateConstants::SEL_ANCHOR] = cursor.anchor();
-        state[StateConstants::SEL_POSITION] = cursor.position();
+    if (textEditor->hasSelection()) {
+        state[StateConstants::SEL_ANCHOR] = textEditor->selectionStart();
+        state[StateConstants::SEL_POSITION] = textEditor->selectionEnd();
     } else {
         state.remove(StateConstants::SEL_ANCHOR);
         state.remove(StateConstants::SEL_POSITION);
@@ -1011,10 +952,7 @@ void qmdiEditor::setState(const qmdiClientState &state) {
         state.contains(StateConstants::SEL_POSITION)) {
         auto anchor = state[StateConstants::SEL_ANCHOR].toInt();
         auto position = state[StateConstants::SEL_POSITION].toInt();
-        auto cursor = textEditor->textCursor();
-        cursor.setPosition(anchor, QTextCursor::MoveAnchor);
-        cursor.setPosition(position, QTextCursor::KeepAnchor);
-        textEditor->setTextCursor(cursor);
+        textEditor->setSelection(anchor, position);
     }
 
     if (state.contains(StateConstants::READ_ONLY)) {
@@ -1110,7 +1048,10 @@ void qmdiEditor::setupActions() {
     actionCodeActions->setShortcut(QKeySequence(Qt::AltModifier | Qt::Key_Return));
     actionCodeActions->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 
-    auto highlighters = Qutepart::getAvailableHighlihters();
+    auto highlighters = QStringList();
+    for (auto const &language : editorFactory->languages()) {
+        highlighters.append(language.names.isEmpty() ? language.id : language.names.first());
+    }
     comboChangeHighlighter->setObjectName("qmdiEditor::comboChangeHighlighter");
     comboChangeHighlighter->addItems(highlighters);
     BoldItemDelegate *delegate = new BoldItemDelegate(comboChangeHighlighter);
@@ -1158,9 +1099,10 @@ void qmdiEditor::setupActions() {
     actionToggleHeader->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     actionTogglePreview->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 
-    connect(textEditor, &QPlainTextEdit::undoAvailable, actionUndo, &QAction::setEnabled);
-    connect(textEditor, &QPlainTextEdit::redoAvailable, actionRedo, &QAction::setEnabled);
-    connect(textEditor, &QPlainTextEdit::textChanged, this, &qmdiEditor::onTextModified);
+    textEditor->setUndoAvailableCallback(
+        [this](bool available) { actionUndo->setEnabled(available); });
+    textEditor->setRedoAvailableCallback(
+        [this](bool available) { actionRedo->setEnabled(available); });
 
     connect(actionCopyFileName, &QAction::triggered, actionCopyFileName, [this]() {
         auto c = QApplication::clipboard();
@@ -1196,11 +1138,11 @@ void qmdiEditor::setupActions() {
     connect(actionSave, &QAction::triggered, this, [this](){ doSave(); });
     connect(actionSaveAs, &QAction::triggered, this, [this](){ doSaveAs(); });
     connect(actionSaveNoFormat, &QAction::triggered, this, &qmdiEditor::doSaveNoFormat);
-    connect(actionUndo, &QAction::triggered, textEditor, &QPlainTextEdit::undo);
-    connect(actionRedo, &QAction::triggered, textEditor, &QPlainTextEdit::redo);
-    connect(actionCopy, &QAction::triggered, textEditor, &Qutepart::Qutepart::multipleCursorCopy);
-    connect(actionCut, &QAction::triggered, textEditor, &Qutepart::Qutepart::multipleCursorCut);
-    connect(actionPaste, &QAction::triggered, textEditor, &Qutepart::Qutepart::multipleCursorPaste);
+    connect(actionUndo, &QAction::triggered, this, [this]() { textEditor->undo(); });
+    connect(actionRedo, &QAction::triggered, this, [this]() { textEditor->redo(); });
+    connect(actionCopy, &QAction::triggered, this, [this]() { textEditor->copy(); });
+    connect(actionCut, &QAction::triggered, this, [this]() { textEditor->cut(); });
+    connect(actionPaste, &QAction::triggered, this, [this]() { textEditor->paste(); });
     connect(actionFind, &QAction::triggered, operationsWidget, &TextOperationsWidget::showSearch);
     connect(actionFindNext, &QAction::triggered, operationsWidget,
             &TextOperationsWidget::searchNext);
@@ -1219,7 +1161,7 @@ void qmdiEditor::setupActions() {
     connect(actionCodeActions, &QAction::triggered, this, &qmdiEditor::requestCodeActions);
 
     // default is control+b - which we want to use for build
-    textEditor->toggleBookmarkAction()->setShortcut(QKeySequence());
+    textEditor->action(CodeEditor::Action::ToggleBookmark)->setShortcut(QKeySequence());
 }
 
 void qmdiEditor::setModificationsLookupEnabled(bool value) {
@@ -1234,9 +1176,15 @@ void qmdiEditor::setModificationsLookupEnabled(bool value) {
 }
 
 void qmdiEditor::setEditorFont(const QFont &newFont) {
-    textEditor->setFont(newFont);
+    textEditor->setEditorFont(newFont);
     operationsWidget->setTextFont(newFont);
 }
+
+void qmdiEditor::setEditorThemeFile(const QString &themeFile) {
+    textEditor->setThemeFile(themeFile);
+}
+
+QString qmdiEditor::editorThemeFile() const { return textEditor->themeFile(); }
 
 void qmdiEditor::setEditorHighlighter(QString id) {
     if (this->syntaxLangID == id) {
@@ -1292,7 +1240,7 @@ void qmdiEditor::on_fileChanged(const QString &filename) {
 }
 
 void qmdiEditor::reload() {
-    PlainTextEditStateGuard guard(textEditor);
+    EditorStateGuard guard(textEditor.get());
 
     documentHasBeenLoaded = false;
     loadContent(false);
@@ -1321,7 +1269,7 @@ void qmdiEditor::updateClientName() {
 
     auto action = contextMenu.findActionNamed("runScript");
     auto baseName = getShortFileName();
-    auto isModified = textEditor->document()->isModified();
+    auto isModified = textEditor->isModified();
     auto newName = baseName;
     auto isExecutable = (action != nullptr);
     auto canOpenPreview = hasPreview();
@@ -1358,73 +1306,33 @@ void qmdiEditor::goTo(int x, int y) {
     }
 }
 
-QString qmdiEditor::getContent() const { return textEditor->toPlainText(); }
+QString qmdiEditor::getContent() const { return textEditor->text(); }
 
-qmdiEditor::Range qmdiEditor::selectionRange() const {
-    auto cursor = textEditor->textCursor();
-    auto range = Range{};
-    auto document = textEditor->document();
-    auto startBlock = document->findBlock(cursor.selectionStart());
-    auto endBlock = document->findBlock(cursor.selectionEnd());
-    range.startLine = startBlock.blockNumber();
-    range.startCharacter = cursor.selectionStart() - startBlock.position();
-    range.endLine = endBlock.blockNumber();
-    range.endCharacter = cursor.selectionEnd() - endBlock.position();
-    return range;
-}
+qmdiEditor::Range qmdiEditor::selectionRange() const { return textEditor->selectionRange(); }
 
 bool qmdiEditor::applyTextEdits(const QList<TextEdit> &edits, const QString &expectedOldName) {
     if (edits.isEmpty()) {
         return false;
     }
 
-    // The mapping and the application live in lspRename so they can be tested
-    // without a widget; the state guard is the only part that needs the editor.
-    auto converted = QList<lspRename::Edit>();
-    converted.reserve(edits.size());
-    for (auto const &edit : edits) {
-        converted.append(lspRename::Edit{edit.startLine, edit.startCharacter, edit.endLine,
-                                         edit.endCharacter, edit.newText});
-    }
-
-    auto rejected = QStringList();
-    auto applied = expectedOldName.isEmpty()
-                       ? lspRename::applyEdits(textEditor->document(), converted)
-                       : lspRename::applyRenameEdits(textEditor->document(), converted,
-                                                     expectedOldName, &rejected);
-    if (!rejected.isEmpty()) {
+    auto applied = textEditor->applyTextEdits(edits, expectedOldName);
+    if (!applied && !expectedOldName.isEmpty()) {
         // The buffer moved while the server was working, so its ranges no longer
         // describe this document. Applying them would rename the symbol in some
         // places and not others, so nothing is applied - which means the rename
         // silently did nothing unless it is said out loud.
-        //
-        // TODO: a rejection is not necessarily the buffer moving. The ranges can
-        // also fail to cover expectedOldName because the server resolved the
-        // symbol differently than we did - a different overload, a macro, or a
-        // symbol in an inactive preprocessor branch. Both cases land here with
-        // the same message, so the banner can be wrong about the cause.
-        // Separating them means carrying the request-time text down here and
-        // comparing it against the current buffer: if they match, nothing moved
-        // and the disagreement is on the server's side. Until then this is the
-        // safe behaviour, just a blunt one.
-        qWarning() << "LspPlugin: refused" << rejected.size() << "rename edit(s):"
-                   << rejected.join(QStringLiteral("; "));
         displayBannerMessage(
             tr("Cannot rename: the file changed after the request was sent. Try again."), 60);
     }
-    return applied > 0;
+    return applied;
 }
 
-QString qmdiEditor::getSelectedText() const
-{
-    auto cursor = textEditor->textCursor();
-    return cursor.selectedText();
-}
+QString qmdiEditor::getSelectedText() const { return textEditor->selectedText(); }
 
 void qmdiEditor::focusInEvent(QFocusEvent *event) {
 
     QWidget::focusInEvent(event);
-    textEditor->setFocus();
+    textEditor->widget()->setFocus();
 }
 
 bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
@@ -1448,7 +1356,7 @@ bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
                 auto name = renameEdit->text();
                 auto line = renameLine;
                 auto column = renameColumn;
-                auto content = textEditor->toPlainText();
+                auto content = textEditor->text();
                 hideInlineRename();
                 applyInlineRename(name, line, column, content);
                 return true;
@@ -1493,11 +1401,9 @@ bool qmdiEditor::eventFilter(QObject *watched, QEvent *event) {
         if (event->type() == QEvent::MouseButtonDblClick) {
             auto mouseEvent = static_cast<QMouseEvent *>(event);
             auto pos = mouseEvent->position().toPoint();
-            auto cursor = textEditor->cursorForPosition(pos);
-            auto block  = cursor.block();
-            if (block.isValid()) {
-                auto blockNumber = block.blockNumber();
-                auto text = block.text();
+            auto position = textEditor->positionAt(pos);
+            auto blockNumber = textEditor->lineAt(position);
+            if (blockNumber >= 0 && blockNumber < textEditor->lineCount()) {
                 if (diffMetadata.mappings.contains(blockNumber)) {
                     auto l = diffMetadata.mappings[blockNumber];
                     auto pluginManager = mdiServer ?
@@ -1542,7 +1448,7 @@ void qmdiEditor::handleTabDeselected() {
     loadingTimer = nullptr;
 }
 
-QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QString &prefix, const QString &previousWord,
+QFuture<QSet<CodeEditor::CompletionItem>> qmdiEditor::getTagCompletions(const QString &prefix, const QString &previousWord,
                                              const QString &separator) {
     if (!mdiServer || !mdiServer->mdiHost) {
         return {};
@@ -1556,13 +1462,12 @@ QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QStr
     CommandArgs args;
     args[GlobalArguments::RequestedSymbol] = prefix;
     args[GlobalArguments::FileName] = mdiClientFileName();
-    args[GlobalArguments::Content] = textEditor->toPlainText();
+    args[GlobalArguments::Content] = textEditor->text();
     args[GlobalArguments::ExactMatch] = false;
 
-    auto cursor = textEditor->textCursor();
-    args[GlobalArguments::LineNumber] = cursor.blockNumber();
-    args[GlobalArguments::ColumnNumber] = cursor.columnNumber();
-    args[GlobalArguments::Position] = cursor.position();
+    args[GlobalArguments::LineNumber] = textEditor->cursorLine();
+    args[GlobalArguments::ColumnNumber] = textEditor->cursorColumn();
+    args[GlobalArguments::Position] = textEditor->cursorPosition();
 
     if (!previousWord.isEmpty()) {
         args[GlobalArguments::PreviousWord] = previousWord;
@@ -1577,11 +1482,11 @@ QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QStr
     // label is noise on every row. Read the flag here, on the GUI thread: the
     // continuation below has no context object and runs on whichever thread
     // completes the future.
-    auto const singleSource = textEditor->customCompletionsExclusive();
+    auto const singleSource = textEditor->completionExclusive();
 
     return future.then(
-        [singleSource](const QFuture<CommandArgs> &f) -> QSet<Qutepart::CompletionItem> {
-        auto completions = QSet<Qutepart::CompletionItem>();
+        [singleSource](const QFuture<CommandArgs> &f) -> QSet<CodeEditor::CompletionItem> {
+        auto completions = QSet<CodeEditor::CompletionItem>();
         if (!f.isFinished() || !f.isValid()) {
             return completions;
         }
@@ -1614,7 +1519,7 @@ QFuture<QSet<Qutepart::CompletionItem>> qmdiEditor::getTagCompletions(const QStr
                             }
                         }
                     }
-                    completions.insert(Qutepart::CompletionItem(name, sourceInfo));
+                    completions.insert(CodeEditor::CompletionItem(name, sourceInfo));
                 }
             }
         }
@@ -1631,7 +1536,7 @@ void qmdiEditor::handleWordTooltip(const QPoint &localPosition, const QPoint &gl
                     auto res = watcher->result();
                     auto tooltip = res[GlobalArguments::Tooltip].toString();
                     if (!tooltip.isEmpty()) {
-                        QToolTip::showText(globalPosition, tooltip, textEditor);
+                        QToolTip::showText(globalPosition, tooltip, textEditor->widget());
                     }
                 }
                 watcher->deleteLater();
@@ -1644,56 +1549,56 @@ QFuture<CommandArgs> qmdiEditor::getCommandForLocation(const QPoint &localPositi
     if (!mdiServer || !mdiServer->mdiHost) {
         return {};
     }
-    auto cursor = textEditor->cursorForPosition(localPosition);
-    cursor.select(QTextCursor::WordUnderCursor);
-
-    if (cursor.selectedText().isEmpty()) {
-        return {};
-    }
-
     auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     if (!pluginManager) {
         return {};
     }
 
-    auto symbol = cursor.selectedText();
-    int lineNumber = cursor.blockNumber();
-    int columnNumber = cursor.selectionStart() - cursor.block().position();
+    auto position = textEditor->positionAt(localPosition);
+    auto range = textEditor->wordRangeAt(position);
+    if (range.startLine != range.endLine) {
+        return {};
+    }
+
+    auto line = textEditor->lineText(range.startLine);
+    auto const length = range.endCharacter - range.startCharacter;
+    if (length <= 0) {
+        return {};
+    }
+
+    auto symbol = line.mid(range.startCharacter, length);
+    int lineNumber = range.startLine;
+    int columnNumber = range.startCharacter;
 
     QString previousWord;
     QString separator;
 
-    auto contextCursor = cursor;
-    contextCursor.setPosition(cursor.selectionStart());
-
     // Check for "->" or "::" or "."
-    contextCursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, 2);
-    auto twoChar = contextCursor.selectedText();
-    if (twoChar == "->" || twoChar == "::") {
-        separator = twoChar;
-    } else {
-        contextCursor.setPosition(cursor.selectionStart());
-        contextCursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, 1);
-        auto oneChar = contextCursor.selectedText();
+    if (range.startCharacter >= 2) {
+        auto twoChar = line.mid(range.startCharacter - 2, 2);
+        if (twoChar == "->" || twoChar == "::") {
+            separator = twoChar;
+        }
+    }
+    if (separator.isEmpty() && range.startCharacter >= 1) {
+        auto oneChar = line.mid(range.startCharacter - 1, 1);
         if (oneChar == "." || oneChar == ":") {
             separator = oneChar;
         }
     }
 
     if (!separator.isEmpty()) {
-        contextCursor.setPosition(cursor.selectionStart() - separator.length());
-
-        // Skip whitespace
-        while (contextCursor.position() > contextCursor.block().position() &&
-               contextCursor.document()->characterAt(contextCursor.position() - 1).isSpace()) {
-            contextCursor.movePosition(QTextCursor::Left);
+        auto endOfPrevWord = range.startCharacter - separator.length();
+        while (endOfPrevWord > 0 && line.at(endOfPrevWord - 1).isSpace()) {
+            --endOfPrevWord;
         }
-
-        auto endOfPrevWord = contextCursor.position();
-        contextCursor.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor);
-        contextCursor.select(QTextCursor::WordUnderCursor);
-        if (contextCursor.selectionEnd() == endOfPrevWord) {
-            previousWord = contextCursor.selectedText();
+        auto wordStart = endOfPrevWord;
+        while (wordStart > 0 && (line.at(wordStart - 1).isLetterOrNumber() ||
+                                 line.at(wordStart - 1) == QLatin1Char('_'))) {
+            --wordStart;
+        }
+        if (wordStart < endOfPrevWord) {
+            previousWord = line.mid(wordStart, endOfPrevWord - wordStart);
         }
     }
 
@@ -1704,7 +1609,7 @@ QFuture<CommandArgs> qmdiEditor::getCommandForLocation(const QPoint &localPositi
         {GlobalArguments::ExactMatch, true },
         {GlobalArguments::LineNumber, lineNumber },
         {GlobalArguments::ColumnNumber, columnNumber },
-        {GlobalArguments::Content, textEditor->toPlainText() },
+        {GlobalArguments::Content, textEditor->text() },
         {GlobalArguments::PreviousWord, previousWord },
         {GlobalArguments::Separator, separator },
     });
@@ -1741,11 +1646,7 @@ void qmdiEditor::maybeScheduleSignatureHelp(bool textEdited) {
 }
 
 bool qmdiEditor::isInsideCall() const {
-    auto document = textEditor->document();
-    if (!document) {
-        return false;
-    }
-    auto caret = textEditor->textCursor().position();
+    auto caret = textEditor->cursorPosition();
 
     // Walk backwards, tracking parenthesis depth, until the '(' that encloses
     // the caret or a statement boundary. Stop after a generous amount of text so
@@ -1755,7 +1656,7 @@ bool qmdiEditor::isInsideCall() const {
     auto openParen = -1;
     auto const textStart = qMax(0, caret - 2048);
     for (int i = caret - 1; i >= textStart; --i) {
-        auto ch = document->characterAt(i);
+        auto ch = textEditor->characterAt(i);
         if (ch == QLatin1Char(')')) {
             ++depth;
         } else if (ch == QLatin1Char('(')) {
@@ -1776,7 +1677,7 @@ bool qmdiEditor::isInsideCall() const {
     // whitespace) or by a closing paren of a nested call. Statement keywords are
     // excluded so "if (...)" and friends do not ask the server for a signature.
     auto k = openParen - 1;
-    while (k >= 0 && document->characterAt(k).isSpace()) {
+    while (k >= 0 && textEditor->characterAt(k).isSpace()) {
         --k;
     }
     if (k < 0) {
@@ -1784,22 +1685,23 @@ bool qmdiEditor::isInsideCall() const {
     }
     // A closing paren (chained call) or a template argument list ("foo<T>(")
     // may stand directly before the '('.
-    if (document->characterAt(k) == QLatin1Char(')') ||
-        document->characterAt(k) == QLatin1Char('>')) {
+    if (textEditor->characterAt(k) == QLatin1Char(')') ||
+        textEditor->characterAt(k) == QLatin1Char('>')) {
         return true;
     }
-    if (!document->characterAt(k).isLetter() && document->characterAt(k) != QLatin1Char('_')) {
+    if (!textEditor->characterAt(k).isLetter() &&
+        textEditor->characterAt(k) != QLatin1Char('_')) {
         return false;
     }
     auto wordStart = k;
-    while (wordStart > 0 && (document->characterAt(wordStart - 1).isLetter() ||
-                             document->characterAt(wordStart - 1) == QLatin1Char('_'))) {
+    while (wordStart > 0 && (textEditor->characterAt(wordStart - 1).isLetter() ||
+                             textEditor->characterAt(wordStart - 1) == QLatin1Char('_'))) {
         --wordStart;
     }
     QString word;
     word.reserve(k - wordStart + 1);
     for (auto i = wordStart; i <= k; ++i) {
-        word.append(document->characterAt(i));
+        word.append(textEditor->characterAt(i));
     }
     // FIXME: get the list from the highlighter. See
     // https://github.com/diegoiast/qutepart-cpp/issues/78
@@ -1819,15 +1721,14 @@ void qmdiEditor::requestSignatureHelp() {
     if (!pluginManager) {
         return;
     }
-    auto cursor = textEditor->textCursor();
-    auto line = cursor.blockNumber();
-    auto column = cursor.position() - cursor.block().position();
+    auto line = textEditor->cursorLine();
+    auto column = textEditor->cursorColumn();
     // clang-format off
     signatureHelpWatcher.setFuture(pluginManager->handleCommandAsync(GlobalCommands::SignatureHelp, {
         {GlobalArguments::FileName, mdiClientFileName()},
         {GlobalArguments::LineNumber, line},
         {GlobalArguments::ColumnNumber, column},
-        {GlobalArguments::Content, textEditor->toPlainText()},
+        {GlobalArguments::Content, textEditor->text()},
     }));
     // clang-format on
 }
@@ -1850,7 +1751,7 @@ void qmdiEditor::requestCodeActions() {
         {GlobalArguments::ColumnNumber, range.startCharacter},
         {GlobalArguments::EndLineNumber, range.endLine},
         {GlobalArguments::EndColumnNumber, range.endCharacter},
-        {GlobalArguments::Content, textEditor->toPlainText()},
+        {GlobalArguments::Content, textEditor->text()},
     }));
     // clang-format on
 }
@@ -1866,9 +1767,8 @@ void qmdiEditor::probeCodeActions() {
 
     // The caret, not the selection: the probe answers "is there anything to do
     // where I am", and a selection spanning ten lines is not that question.
-    auto const cursor = textEditor->textCursor();
-    auto const line = cursor.blockNumber();
-    auto const column = cursor.position() - cursor.block().position();
+    auto const line = textEditor->cursorLine();
+    auto const column = textEditor->cursorColumn();
     codeActionProbe = true;
     codeActionProbeLine = line;
     // clang-format off
@@ -1878,7 +1778,7 @@ void qmdiEditor::probeCodeActions() {
         {GlobalArguments::ColumnNumber, column},
         {GlobalArguments::EndLineNumber, line},
         {GlobalArguments::EndColumnNumber, column},
-        {GlobalArguments::Content, textEditor->toPlainText()},
+        {GlobalArguments::Content, textEditor->text()},
         // Refactorings are offered on most lines; only a fix justifies a
         // permanent mark, so the probe asks for quickfixes alone.
         {GlobalArguments::OnlyCodeActionKinds, QStringList{"quickfix"}},
@@ -1894,7 +1794,7 @@ void qmdiEditor::setCodeActionMark(int line, bool available) {
     if (available) {
         textEditor->setLineCodeAction(line, true);
     }
-    textEditor->update();
+    textEditor->widget()->update();
 }
 
 void qmdiEditor::showCodeActionMenu(const CommandArgs &result) {
@@ -1947,11 +1847,10 @@ void qmdiEditor::showCodeActionMenu(const CommandArgs &result) {
         menu->addAction(item);
     }
 
-    // qutepart has its own cursorRect but it is private; QPlainTextEdit's is
-    // public. Both are viewport-relative, while QMenu::popup() wants global
+    // The rect is viewport-relative, while QMenu::popup() wants global
     // coordinates - so this has to go through the viewport or the list opens
     // near the screen origin instead of at the caret.
-    auto const viewportPos = static_cast<QPlainTextEdit *>(textEditor)->cursorRect().bottomLeft();
+    auto const viewportPos = textEditor->cursorRect(textEditor->cursorPosition()).bottomLeft();
     // popup() returns immediately, so the menu cannot be deleted here: the
     // deferred delete would run on the next event loop pass and close it again
     // before it could be used. aboutToHide is when it is genuinely finished.
@@ -1996,10 +1895,15 @@ void qmdiEditor::applyChosenCodeAction(const QVariant &entry) {
 }
 
 void qmdiEditor::requestRename(const QPoint &position) {
-    auto cursor = textEditor->cursorForPosition(position);
-    auto line = cursor.blockNumber();
-    auto column = cursor.position() - cursor.block().position();
-    auto currentName = lspRename::identifierAt(textEditor->toPlainText(), line, column);
+    auto wordPosition = textEditor->positionAt(position);
+    auto range = textEditor->wordRangeAt(wordPosition);
+    auto line = range.startLine;
+    auto column = range.startCharacter;
+    auto currentName = QString();
+    if (range.startLine == range.endLine && range.endCharacter > range.startCharacter) {
+        currentName = textEditor->lineText(line).mid(range.startCharacter,
+                                                     range.endCharacter - range.startCharacter);
+    }
     if (currentName.isEmpty()) {
         displayBannerMessage(tr("There is no symbol to rename here."), 60);
         return;
@@ -2009,7 +1913,7 @@ void qmdiEditor::requestRename(const QPoint &position) {
         // Drawn on the viewport, like the call tip and the completion list, so it
         // sits in the text rather than in a dialog on top of it.
         renameEdit = new QLineEdit(textEditor->viewport());
-        renameEdit->setFont(textEditor->font());
+        renameEdit->setFont(textEditor->widget()->font());
         renameEdit->setAttribute(Qt::WA_InputMethodEnabled, true);
         renameEdit->hide();
         // The border names the Highlight palette role, which is where
@@ -2038,10 +1942,7 @@ void qmdiEditor::requestRename(const QPoint &position) {
         // The name refers to one place in the buffer: if the text changes, or the
         // user does something else, the box is no longer about that symbol. A
         // scroll is not a change, it only moves the box along with the text.
-        connect(textEditor->document(), &QTextDocument::contentsChange, this,
-                [this](int, int, int) { hideInlineRename(); });
-        connect(textEditor, &Qutepart::Qutepart::cursorPositionChanged, this,
-                [this]() { hideInlineRename(); });
+        // Text and cursor callbacks in the constructor handle the first two.
         // Scrolling moves the text under the box, so it has to move with it.
         connect(textEditor->verticalScrollBar(), &QScrollBar::valueChanged, this,
                 [this]() { repositionInlineRename(); });
@@ -2066,17 +1967,11 @@ void qmdiEditor::repositionInlineRename() {
     }
     // Anchor over the symbol, so the box lines up with the name being replaced
     // instead of sitting wherever the caret happened to be.
-    auto document = textEditor->document();
-    if (!document) {
+    if (renameLine < 0 || renameLine >= textEditor->lineCount()) {
         hideInlineRename();
         return;
     }
-    auto block = document->findBlockByNumber(renameLine);
-    if (!block.isValid()) {
-        hideInlineRename();
-        return;
-    }
-    auto name = block.text();
+    auto name = textEditor->lineText(renameLine);
     auto column = qBound(0, renameColumn, name.size());
     auto isIdent = [](QChar c) { return c.isLetterOrNumber() || c == QChar('_'); };
     auto start = column;
@@ -2091,12 +1986,9 @@ void qmdiEditor::repositionInlineRename() {
         hideInlineRename();
         return;
     }
-    // Qutepart redeclares cursorRect with its own private signature, so the base
-    // overload has to be named explicitly. The result is in viewport
-    // coordinates, which is what the parent uses too.
-    QTextCursor anchor = textEditor->textCursor();
-    anchor.setPosition(block.position() + start);
-    auto rect = textEditor->QPlainTextEdit::cursorRect(anchor);
+    // The result is in viewport coordinates, which is what the parent uses too.
+    auto lineStart = textEditor->positionAt(renameLine, 0);
+    auto rect = textEditor->cursorRect(lineStart + start);
 
     // Size it to the line, with room for the border and padding, and wide enough
     // for the current name plus what gets typed over it.
@@ -2113,11 +2005,9 @@ void qmdiEditor::repositionInlineRename() {
     auto viewportSize = textEditor->viewport()->size();
     auto y = -1;
     if (renameLine > 0) {
-        auto above = document->findBlockByNumber(renameLine - 1);
-        if (above.isValid()) {
-            QTextCursor aboveAnchor = textEditor->textCursor();
-            aboveAnchor.setPosition(above.position());
-            y = textEditor->QPlainTextEdit::cursorRect(aboveAnchor).y() - rect.height();
+        auto abovePosition = textEditor->positionAt(renameLine - 1, 0);
+        if (abovePosition >= 0) {
+            y = textEditor->cursorRect(abovePosition).y() - rect.height();
         }
     }
     if (y < 0) {
@@ -2141,7 +2031,7 @@ void qmdiEditor::hideInlineRename() {
     // renaming can be abandoned by a window switch, where stealing focus here
     // would be wrong.
     if (textEditor && renameEdit->hasFocus()) {
-        textEditor->setFocus();
+        textEditor->widget()->setFocus();
     }
 }
 
@@ -2150,7 +2040,13 @@ void qmdiEditor::applyInlineRename(const QString &newName, int line, int column,
     if (newName.isEmpty()) {
         return;
     }
-    if (newName == lspRename::identifierAt(content, line, column)) {
+    auto range = textEditor->wordRangeAt(textEditor->positionAt(line, column));
+    auto currentName = QString();
+    if (range.startLine == range.endLine && range.endCharacter > range.startCharacter) {
+        currentName = textEditor->lineText(line).mid(range.startCharacter,
+                                                     range.endCharacter - range.startCharacter);
+    }
+    if (newName == currentName) {
         // Nothing to ask the server to do.
         return;
     }
@@ -2215,7 +2111,7 @@ void qmdiEditor::hideBannerMessage() {
 void qmdiEditor::newDocument() { loadFile(""); }
 
 void qmdiEditor::setPlainText(const QString &plainText) {
-    textEditor->setPlainText(plainText);
+    textEditor->setText(plainText);
     documentHasBeenLoaded = true;
 }
 
@@ -2319,27 +2215,15 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
         return false;
     }
 
+    if (trimSpacesOnSave) {
+        textEditor->trimTrailingSpaces();
+    }
+
     auto textStream = QTextStream(&file);
-    auto cursor = QTextCursor(textEditor->document());
-    auto op = Qutepart::AtomicEditOperation(textEditor);
-    auto doc = textEditor->document();
-    for (auto block = doc->begin(); block != doc->end();) {
-        auto currentText = block.text();
-
-        if (trimSpacesOnSave) {
-            auto static RE = QRegularExpression("\\s+$");
-            currentText.remove(RE);
-            if (currentText != block.text()) {
-                cursor.setPosition(block.position());
-                cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
-                cursor.insertText(currentText);
-                block = cursor.block();
-            }
-        }
-
-        textStream << currentText;
-        block = block.next();
-        if (block.isValid()) {
+    auto const lineCount = textEditor->lineCount();
+    for (auto line = 0; line < lineCount; ++line) {
+        textStream << textEditor->lineText(line);
+        if (line + 1 < lineCount) {
             switch (this->endLineStyle) {
             case EndLineStyle::UnixEndLine:
                 textStream << "\n";
@@ -2356,9 +2240,8 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
 
     auto filenameChanged = this->fileName != newFileName;
     if (filenameChanged && makeExecutable) {
-        auto firstLine = textEditor->lines().first();
-        if (firstLine.length() >= 3) {
-            auto line = firstLine.text();
+        auto line = textEditor->lineText(0);
+        if (line.length() >= 3) {
             auto firstChar = line[0];
             auto secondChar = line[1];
             if (firstChar == '#' && secondChar == '!') {
@@ -2389,7 +2272,7 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
             {GlobalArguments::Client, QVariant::fromValue(static_cast<qmdiClient *>(this))},
         });
 
-    textEditor->document()->setModified(false);
+    textEditor->setModified(false);
     updateClientName();
     QApplication::restoreOverrideCursor();
     return true;
@@ -2409,71 +2292,39 @@ void qmdiEditor::setReadOnly(bool b) {
         actionUndo->setEnabled(false);
         actionRedo->setEnabled(false);
     } else {
-        actionUndo->setEnabled(textEditor->document()->isUndoAvailable());
-        actionRedo->setEnabled(textEditor->document()->isRedoAvailable());
+        actionUndo->setEnabled(textEditor->canUndo());
+        actionRedo->setEnabled(textEditor->canRedo());
     }
 }
 
 void qmdiEditor::transformBlockToUpper() {
-    QTextCursor cursor = textEditor->textCursor();
-    QString s_before = cursor.selectedText();
-    QString s_after = s_before.toUpper();
-
-    if (s_before != s_after) {
-        cursor.beginEditBlock();
-        cursor.deleteChar();
-        cursor.insertText(s_after);
-        cursor.endEditBlock();
-        textEditor->setTextCursor(cursor);
+    auto const before = textEditor->selectedText();
+    auto const after = before.toUpper();
+    if (before != after) {
+        textEditor->replaceSelectedText(after);
     }
 }
 
 void qmdiEditor::transformBlockToLower() {
-    QTextCursor cursor = textEditor->textCursor();
-    QString s_before = cursor.selectedText();
-    QString s_after = s_before.toLower();
-
-    if (s_before != s_after) {
-        cursor.beginEditBlock();
-        cursor.deleteChar();
-        cursor.insertText(s_after);
-        cursor.endEditBlock();
-        textEditor->setTextCursor(cursor);
+    auto const before = textEditor->selectedText();
+    auto const after = before.toLower();
+    if (before != after) {
+        textEditor->replaceSelectedText(after);
     }
 }
 
 void qmdiEditor::transformBlockCase() {
-    QTextCursor cursor = textEditor->textCursor();
-    QString s_before = cursor.selectedText();
-    QString s_after = s_before;
-    int s_len = s_before.length();
-
-    for (int i = 0; i < s_len; i++) {
-        QChar c = s_after[i];
-        if (c.isLower()) {
-            c = c.toUpper();
-        } else if (c.isUpper()) {
-            c = c.toLower();
+    auto const before = textEditor->selectedText();
+    auto after = before;
+    for (auto &character : after) {
+        if (character.isLower()) {
+            character = character.toUpper();
+        } else if (character.isUpper()) {
+            character = character.toLower();
         }
-        s_after[i] = c;
     }
-
-    if (s_before != s_after) {
-        cursor.beginEditBlock();
-        cursor.deleteChar();
-        cursor.insertText(s_after);
-        cursor.endEditBlock();
-        textEditor->setTextCursor(cursor);
-    }
-}
-
-void qmdiEditor::fileMessage_clicked(const QString &s) {
-    if (s == ":reload") {
-        reload();
-        hideBannerMessage();
-    } else if (s == ":forcerw") {
-        hideBannerMessage();
-        setReadOnly(false);
+    if (before != after) {
+        textEditor->replaceSelectedText(after);
     }
 }
 
@@ -2544,34 +2395,14 @@ void qmdiEditor::loadContent(bool useBackup) {
     // on loading, since really, signals emitted a this stage are not meaningful.
     {
         auto firstLoad = useBackup;
-        auto doc = textEditor->document();
-        textEditor->blockSignals(true);
-        if (firstLoad) {
-            doc->setUndoRedoEnabled(false);
-        }
-
-        auto oldCursor = textEditor->textCursor();
-        auto selStart = oldCursor.selectionStart();
-        auto selEnd = oldCursor.selectionEnd();
-        auto cursor = QTextCursor(doc);
-
-        cursor.beginEditBlock();
-        cursor.select(QTextCursor::Document);
-        cursor.insertText(textStream.readAll());
-        cursor.endEditBlock();
-
-        if (firstLoad) {
-            doc->setUndoRedoEnabled(true);
-        }
-
-        auto docLength = doc->characterCount() - 1;
+        textEditor->widget()->blockSignals(true);
+        auto selStart = textEditor->selectionStart();
+        auto selEnd = textEditor->selectionEnd();
+        textEditor->replaceText(textStream.readAll(), !firstLoad);
+        auto docLength = textEditor->text().size();
         selStart = qMin(selStart, docLength);
         selEnd = qMin(selEnd, docLength);
-
-        auto newCursor = QTextCursor(doc);
-        newCursor.setPosition(selStart);
-        newCursor.setPosition(selEnd, QTextCursor::KeepAnchor);
-        textEditor->setTextCursor(newCursor);
+        textEditor->setSelection(selStart, selEnd);
     }
 
     QFileInfo fileInfo(fileName);
@@ -2593,11 +2424,11 @@ void qmdiEditor::loadContent(bool useBackup) {
             60);
     }
 
-    textEditor->document()->setModified(loadedFromBackup);
+    textEditor->setModified(loadedFromBackup);
     updateFileDetails();
     setModificationsLookupEnabled(modificationsEnabledState);
     textEditor->removeModifications();
-    textEditor->blockSignals(false);
+    textEditor->widget()->blockSignals(false);
     QApplication::restoreOverrideCursor();
     documentHasBeenLoaded = true;
 
@@ -2619,7 +2450,7 @@ QFuture<void> qmdiEditor::reformatContent() {
     auto manager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
     // The text the formatter is about to work on. Kept so the result can be
     // discarded if the buffer moves on while clang-format runs.
-    auto const input = textEditor->toPlainText();
+    auto const input = textEditor->text();
     auto args = CommandArgs{
         {GlobalArguments::FileName, mdiClientFileName()},
         {GlobalArguments::Content, input},
@@ -2654,7 +2485,7 @@ QFuture<void> qmdiEditor::reformatContent() {
             }
 
             auto c = args[GlobalArguments::Content].toString();
-            if (c == textEditor->toPlainText()) {
+            if (c == textEditor->text()) {
                 return;
             }
 
@@ -2664,7 +2495,7 @@ QFuture<void> qmdiEditor::reformatContent() {
             // formatter's output, and replacing the whole document would silently
             // discard them. Only apply when the buffer is still exactly what was
             // sent, and otherwise let the user re-run it on the current text.
-            if (textEditor->toPlainText() != input) {
+            if (textEditor->text() != input) {
                 displayBannerMessage(
                     tr("The file changed while it was being formatted. Format it again to "
                        "apply."),
@@ -2672,15 +2503,9 @@ QFuture<void> qmdiEditor::reformatContent() {
                 return;
             }
 
-            auto cursor = QTextCursor(textEditor->document());
-            cursor.beginEditBlock();
-            {
-                PlainTextEditStateGuard guard(textEditor);
-                cursor.select(QTextCursor::Document);
-                cursor.insertText(c);
-            }
-            cursor.endEditBlock();
-            textEditor->setFocus();
+            EditorStateGuard guard(textEditor.get());
+            textEditor->replaceText(c, true);
+            textEditor->widget()->setFocus();
         });
 }
 
@@ -2702,7 +2527,7 @@ QFuture<CommandArgs> qmdiEditor::getProjectDetails() {
 }
 
 void qmdiEditor::chooseHighliter(const QString &newText) {
-    auto langInfo = ::Qutepart::chooseLanguage(QString(), newText, {});
+    auto langInfo = editorFactory->languageByName(newText);
     if (langInfo.isValid()) {
         textEditor->setHighlighter(langInfo.id);
     } else {
@@ -2714,19 +2539,12 @@ void qmdiEditor::chooseIndenter(const QAction *action) {
     buttonChangeIndenter->setText(action->text());
     auto act = buttonChangeIndenter->menu()->actions();
     auto j = act.indexOf(action);
-    if (j > 0) {
-        textEditor->setIndentAlgorithm(static_cast<Qutepart::IndentAlg>(j));
+    if (j >= 0) {
+        textEditor->setIndentAlgorithm(static_cast<CodeEditor::IndentAlgorithm>(j));
     }
 }
 
-void qmdiEditor::findText(const QString &text) {
-    auto newCursor = textEditor->textCursor();
-    auto findOptions = QFlags<QTextDocument::FindFlag>();
-    auto c = textEditor->document()->find(text, newCursor, findOptions);
-
-    // c.movePosition(findOptions.testFlag(QTextDocument::FindBackward) ? QTextCursor::End
-    textEditor->setTextCursor(c);
-}
+void qmdiEditor::findText(const QString &text) { textEditor->findText(text); }
 
 void qmdiEditor::updateInternalMappings(const QString &baseDir) {
     diffMetadata.mappings.clear();
@@ -2786,10 +2604,9 @@ void qmdiEditor::updateInternalMappings(const QString &baseDir) {
     auto old_line = 0;
     auto new_line = 0;
     auto in_hunk = false;
-    auto lines = textEditor->lines();
-    for (auto it = lines.begin(); it != lines.end(); ++it) {
-        auto line = *it;
-        auto text = line.text();
+    auto const lineCount = textEditor->lineCount();
+    for (auto i = 0; i < lineCount; ++i) {
+        auto text = textEditor->lineText(i);
 
         if (text.startsWith("+++ ")) {
             current_file = extractFileName(text);
@@ -2808,7 +2625,6 @@ void qmdiEditor::updateInternalMappings(const QString &baseDir) {
             continue;
         }
 
-        auto i = line.lineNumber();
         if (text.startsWith(' ')) {
             diffMetadata.mappings[i] = {baseDir + "/" + current_file, old_line, new_line};
             old_line += 1;
@@ -2827,10 +2643,8 @@ void qmdiEditor::mapAllLinesToFile(const QString &fileName) {
     diffMetadata.mappings.clear();
     diffMetadata.baseDir = QFileInfo(fileName).absolutePath();
 
-    auto lines = textEditor->lines();
-    for (auto it = lines.begin(); it != lines.end(); ++it) {
-        auto line = *it;
-        auto i = line.lineNumber();
+    auto const lineCount = textEditor->lineCount();
+    for (auto i = 0; i < lineCount; ++i) {
         diffMetadata.mappings[i] = {fileName, -1, i + 1};
     }
 }
@@ -2845,34 +2659,36 @@ void qmdiEditor::mapAllLinesToFile(const QString &fileName) {
  */
 void qmdiEditor::updateFileDetails() {
     actionSave->setText(tr("&Save (%1)").arg(getShortFileName()));
-    auto langInfo = ::Qutepart::chooseLanguage(QString(), QString(), fileName);
+    auto langInfo = editorFactory->languageForFile(fileName);
 
     if (langInfo.isValid()) {
         textEditor->setHighlighter(langInfo.id);
-        textEditor->setIndentAlgorithm(langInfo.indentAlg);
-        buttonChangeIndenter->menu()->actions().at(langInfo.indentAlg)->setChecked(true);
+        textEditor->setIndentAlgorithm(langInfo.indentAlgorithm);
+        auto indentIndex = static_cast<int>(langInfo.indentAlgorithm);
+        buttonChangeIndenter->menu()->actions().at(indentIndex)->setChecked(true);
 
         auto delegate = static_cast<BoldItemDelegate *>(comboChangeHighlighter->itemDelegate());
-        delegate->boldItemStr = langInfo.names[0];
+        delegate->boldItemStr = langInfo.names.isEmpty() ? langInfo.id : langInfo.names.first();
 
         auto i = comboChangeHighlighter->findText(delegate->boldItemStr);
         if (i > 0) {
             comboChangeHighlighter->setCurrentIndex(i);
         }
 
-        auto s = buttonChangeIndenter->menu()->actions()[langInfo.indentAlg]->text();
+        auto s = buttonChangeIndenter->menu()->actions()[indentIndex]->text();
         buttonChangeIndenter->setText(s);
     } else {
         textEditor->removeHighlighter();
-        textEditor->setIndentAlgorithm(Qutepart::IndentAlg::INDENT_ALG_NONE);
+        textEditor->setIndentAlgorithm(CodeEditor::IndentAlgorithm::None);
 
-        auto a = buttonChangeIndenter->menu()->actions().at(Qutepart::IndentAlg::INDENT_ALG_NONE);
+        auto a = buttonChangeIndenter->menu()->actions().at(
+            static_cast<int>(CodeEditor::IndentAlgorithm::None));
 
         a->setChecked(true);
         buttonChangeIndenter->setText(a->text());
 
         auto delegate = static_cast<BoldItemDelegate *>(comboChangeHighlighter->itemDelegate());
-        delegate->boldItemStr = PLAIN_TEXT_HIGHIGHTER;
+        delegate->boldItemStr = QStringLiteral("Plain text");
 
         auto i = comboChangeHighlighter->findText(delegate->boldItemStr);
         if (i > 0) {
@@ -2892,11 +2708,11 @@ void qmdiEditor::updateFileDetails() {
 }
 
 void qmdiEditor::updateIndenterMenu() {
-    auto langInfo = ::Qutepart::chooseLanguage(QString(), QString(), this->fileName);
+    auto langInfo = editorFactory->languageForFile(this->fileName);
     auto k = 0;
     for (auto i : buttonChangeIndenter->menu()->actions()) {
         QFont font = i->font();
-        if (langInfo.isValid() && k == langInfo.indentAlg) {
+        if (langInfo.isValid() && k == static_cast<int>(langInfo.indentAlgorithm)) {
             font.setBold(true);
         } else {
             font.setBold(false);
@@ -2916,21 +2732,21 @@ void qmdiEditor::updatePreview() {
     }
 
     if (isMarkDownDocument()) {
-        textPreview->previewText(mdiClientFileName(), textEditor->toPlainText(),
+        textPreview->previewText(mdiClientFileName(), textEditor->text(),
                                  TextPreview::Markdown);
     } else if (isSVGDocument()) {
-        textPreview->previewText(mdiClientFileName(), textEditor->toPlainText(), TextPreview::SVG);
+        textPreview->previewText(mdiClientFileName(), textEditor->text(), TextPreview::SVG);
     } else if (isXPMDocument()) {
-        textPreview->previewText(mdiClientFileName(), textEditor->toPlainText(), TextPreview::XPM);
+        textPreview->previewText(mdiClientFileName(), textEditor->text(), TextPreview::XPM);
     } else if (isJSONDocument()) {
-        textPreview->previewText(mdiClientFileName(), textEditor->toPlainText(), TextPreview::JSON);
+        textPreview->previewText(mdiClientFileName(), textEditor->text(), TextPreview::JSON);
     } else if (isXMLDocument()) {
-        textPreview->previewText(mdiClientFileName(), textEditor->toPlainText(), TextPreview::XML);
+        textPreview->previewText(mdiClientFileName(), textEditor->text(), TextPreview::XML);
     }
 }
 
 void qmdiEditor::autoSave() {
-    if (textEditor->document()->isModified()) {
+    if (textEditor->isModified()) {
         saveBackup();
     }
 }
@@ -2950,7 +2766,7 @@ void qmdiEditor::saveBackup() {
     auto file = QFile(getBackupFileName());
     if (file.open(QIODevice::WriteOnly)) {
         QTextStream out(&file);
-        out << textEditor->toPlainText();
+        out << textEditor->text();
     }
 }
 
@@ -2958,7 +2774,7 @@ void qmdiEditor::loadBackup() {
     auto file = QFile(getBackupFileName());
     if (file.exists() && file.open(QIODevice::ReadOnly)) {
         QTextStream in(&file);
-        textEditor->setPlainText(in.readAll());
+        textEditor->setText(in.readAll());
     }
 }
 
@@ -2966,5 +2782,12 @@ void qmdiEditor::deleteBackup() {
     auto file = QFile(getBackupFileName());
     if (file.exists()) {
         file.remove();
+    }
+}
+
+void qmdiEditor::fileMessage_clicked(const QString &s)
+{
+    if (s == ":reload") {
+        reload();
     }
 }

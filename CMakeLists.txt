@@ -196,6 +196,12 @@ set(codepointer_sources
     src/widgets/qmdiSplitTab.h
     src/widgets/qmdieditor.cpp
     src/widgets/qmdieditor.h
+    src/widgets/codeeditorinterface.h
+    src/widgets/codeeditorfactory.h
+    src/widgets/quteparteditor.cpp
+    src/widgets/quteparteditor.h
+    src/widgets/quteparteditorfactory.cpp
+    src/widgets/quteparteditorfactory.h
     src/widgets/SplitTabWidget.cpp
     src/widgets/SplitTabWidget.h
     src/widgets/qmdiSplitTab.cpp

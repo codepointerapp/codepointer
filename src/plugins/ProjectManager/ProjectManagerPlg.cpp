@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLineEdit>
@@ -28,6 +29,7 @@
 #include <QStandardPaths>
 #include <QStringList>
 #include <QStringListModel>
+#include <QTextBlock>
 #include <QTimer>
 #include <QWidgetAction>
 #include <qfileinfo.h>
