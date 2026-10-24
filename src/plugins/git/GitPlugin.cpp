@@ -346,9 +346,8 @@ void GitPlugin::deleteBranchHandler() {
     if (reply == QMessageBox::Yes) {
         auto deleteBranchArg = cb->isChecked() ? "-D" : "-d";
         auto args = QStringList{"branch", deleteBranchArg, branch};
-        runGit(args).then(this, [this](const std::tuple<QString, int> &) {
-            refreshBranchesHandler();
-        });
+        runGit(args).then(this,
+                          [this](const std::tuple<QString, int> &) { refreshBranchesHandler(); });
     }
 }
 
@@ -570,7 +569,6 @@ QFuture<std::tuple<QString, int>> GitPlugin::runGit(const QStringList &args) {
                 form->gitOutput->setToolTip(output);
                 form->gitOutput->show();
             }
-
         });
         return std::make_tuple(output, exitCode);
     });
