@@ -289,6 +289,7 @@ set(codepointer_sources
     src/plugins/LSP/LspReferencesWidget.cpp
     src/plugins/LSP/LspReferencesWidget.hpp
 
+    src/AppPaths.hpp
     src/main.cpp
     ${CMAKE_BINARY_DIR}/codepointer.qrc
     indenters.json

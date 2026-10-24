@@ -17,6 +17,7 @@
 #include <QToolButton>
 #include <QtGlobal>
 
+#include "AppPaths.hpp"
 #include "pluginmanager.h"
 #include "plugins/CTags/CTagsPlugin.hpp"
 #include "plugins/CodeFormat/CodeFormat.hpp"
@@ -109,17 +110,15 @@ int main(int argc, char *argv[]) {
     // lets fallback to something more usable for us
     app.setStyle(new ThemeProxyStyle("windowsvista"));
     auto needsIcons = true;
-    auto iconsPath = "/share/icons";
 #else
     app.setStyle(new ThemeProxyStyle(app.style()->objectName()));
     auto needsIcons = QIcon::fromTheme(QIcon::ThemeIcon::GoNext).isNull();
-    auto iconsPath = "/../share/icons";
 #endif
 
     // On bare-bones Linux installs, Windows or OSX, we might not have a freedesktop
     // icons thus - we use our bundled icons.
     if (needsIcons) {
-        auto base = QDir(QCoreApplication::applicationDirPath() + iconsPath).absolutePath();
+        auto base = AppPaths::iconsDir();
         // clang-format off
         auto paths = QIcon::fallbackSearchPaths()
                      << base + "/breeze/actions/16"
