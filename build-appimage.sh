@@ -12,8 +12,8 @@ if [ "$1" = "--ce" ]; then
 fi
 
 APP_NAME="codepointer"
-APP_VERSION="0.1.9-beta2"
-QT_VERSION="6.12.0"
+APP_VERSION="0.1.9-beta3"
+QT_VERSION="6.11.3"
 
 NAME="${APP_NAME}-v${APP_VERSION}${NAME_SUFFIX}-x86_64"
 QTDIR="/usr/lib/qt6"
