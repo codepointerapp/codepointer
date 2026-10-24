@@ -222,10 +222,8 @@ void GitPlugin::diffFileHandler() {
     auto clientName = client->mdiClientName;
     auto position = manager->getMdiServer()->getClientIndex(client);
 
-    form->gitLoading->start();
     getDiff(filename).then(
         this, [this, filename, clientName, position](const std::tuple<QString, int> &res) {
-            form->gitLoading->stop();
             auto [diff, exitCode] = res;
             if (exitCode != 0 || diff.isEmpty()) {
                 return;
@@ -258,9 +256,7 @@ void GitPlugin::revertFileHandler() {
         return;
     }
     auto filename = client->mdiClientFileName();
-    form->gitLoading->start();
     getDiff(filename).then(this, [this, client](const std::tuple<QString, int> &res) {
-        form->gitLoading->stop();
         auto [diff, exitCode] = res;
         auto filename = client->mdiClientFileName();
         auto clientName = client->mdiClientName;
@@ -282,7 +278,6 @@ void GitPlugin::revertFileHandler() {
         auto args = QStringList{"-C", fi.absolutePath(), "restore", fi.fileName()};
         form->gitLoading->start();
         runGit(args).then(this, [this, filename](const std::tuple<QString, int> &res2) {
-            form->gitLoading->stop();
             auto [output, exitCode] = res2;
             if (exitCode != 0) {
                 qDebug() << "Failed restoring" << exitCode << output;
@@ -297,10 +292,8 @@ void GitPlugin::refreshBranchesHandler() {
         return;
     }
 
-    form->gitLoading->start();
     runGit({"-C", repoRoot, "branch", "-a"})
         .then(this, [this](const std::tuple<QString, int> &res) {
-            form->gitLoading->stop();
             form->branchListCombo->clear();
 
             auto [output, exitCode] = res;
@@ -353,12 +346,7 @@ void GitPlugin::deleteBranchHandler() {
     if (reply == QMessageBox::Yes) {
         auto deleteBranchArg = cb->isChecked() ? "-D" : "-d";
         auto args = QStringList{"branch", deleteBranchArg, branch};
-        form->gitLoading->start();
-        runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
-            form->gitLoading->stop();
-            auto [output, exitCode] = res;
-            form->gitOutput->setText(output);
-            form->gitOutput->setToolTip(output);
+        runGit(args).then(this, [this](const std::tuple<QString, int> &) {
             refreshBranchesHandler();
         });
     }
@@ -392,14 +380,10 @@ void GitPlugin::checkoutHandler() {
     auto newBranch = form->branchListCombo->currentText();
     auto lastDir = getConfig().getGitLastDir();
 
-    form->gitLoading->start();
     runGit({"-C", lastDir, "checkout", newBranch})
         .then(this, [this](const std::tuple<QString, int> &res) {
             auto [output, exitCode] = res;
-            form->gitLoading->stop();
             if (exitCode != 0) {
-                form->gitOutput->setText(output);
-                form->gitOutput->setToolTip(output);
                 return;
             }
             logProjectHandler();
@@ -437,13 +421,10 @@ void GitPlugin::commitDisplayHandler(const QModelIndex &mi) {
     auto sha1 = widget->currentSha1;
     auto lastDir = getConfig().getGitLastDir();
 
-    form->gitLoading->start();
     runGit({"-C", lastDir, "show", sha1, "--", filename})
-        .then(this, [this, manager, filename, sha1, lastDir](const std::tuple<QString, int> &res) {
+        .then(this, [manager, filename, sha1, lastDir](const std::tuple<QString, int> &res) {
             auto [diff, exitCode] = res;
-            form->gitLoading->stop();
             if (exitCode != 0) {
-                // TODO display this error
                 return;
             }
             auto shortSha1 = shortGitSha1(sha1);
@@ -487,12 +468,9 @@ void GitPlugin::logHandler(GitLog log, const QString &filename) {
         form->label->setText(labelText);
         getConfig().setGitLastCommand(args.join(" "));
 
-        form->gitLoading->start();
         runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
             auto [output, exitCode] = res;
-            form->gitLoading->stop();
             if (exitCode != 0) {
-                // ui->commitLogLabel->setText(output);
                 return;
             }
 
@@ -514,9 +492,7 @@ void GitPlugin::on_gitCommitClicked(const QModelIndex &mi) {
     getManager()->saveSettings();
 
     auto const sha1Short = shortGitSha1(sha1);
-    form->gitLoading->start();
     getRawCommit(sha1).then(this, [this, sha1, sha1Short](const std::tuple<QString, int> &res) {
-        form->gitLoading->stop();
         auto [rawCommit, exitCode] = res;
         if (exitCode != 0) {
             return;
@@ -553,9 +529,7 @@ void GitPlugin::on_gitCommitDoubleClicked(const QModelIndex &mi) {
     auto const sha1 = model->data(mi, CommitModel::Roles::HashRole).toString();
     auto lastDir = getConfig().getGitLastDir();
 
-    form->gitLoading->start();
     getRawCommit(sha1).then(this, [this, sha1, lastDir](const std::tuple<QString, int> &res) {
-        form->gitLoading->stop();
         auto [rawCommit, exitCode] = res;
         if (exitCode != 0) {
             return;
@@ -574,22 +548,38 @@ void GitPlugin::on_gitCommitDoubleClicked(const QModelIndex &mi) {
 }
 
 QFuture<std::tuple<QString, int>> GitPlugin::runGit(const QStringList &args) {
+    form->gitLoading->start();
+    form->gitOutput->clear();
+    form->gitOutput->setToolTip("");
+    form->gitOutput->hide();
+
     // qDebug() << "Running git" << args.join(" ");
     return QtConcurrent::run([this, args] {
         QProcess p;
         p.setProcessChannelMode(QProcess::ProcessChannelMode::MergedChannels);
         p.start(gitBinary, args);
         p.waitForFinished();
-        return std::make_tuple(QString::fromUtf8(p.readAllStandardOutput()), p.exitCode());
+
+        auto exitCode = p.exitCode();
+        auto output = QString::fromUtf8(p.readAllStandardOutput());
+
+        QTimer::singleShot(0, this, [this, exitCode, output]() {
+            form->gitLoading->stop();
+            if (exitCode != 0) {
+                form->gitOutput->setText(output);
+                form->gitOutput->setToolTip(output);
+                form->gitOutput->show();
+            }
+
+        });
+        return std::make_tuple(output, exitCode);
     });
 }
 
 QFuture<std::tuple<QString, int>> GitPlugin::detectRepoRoot(const QString &filePath) {
     auto dir = QFileInfo(filePath).absolutePath();
     auto args = QStringList{"-C", dir, "rev-parse", "--show-toplevel"};
-    form->gitLoading->start();
-    return runGit(args).then([this](const std::tuple<QString, int> &res) {
-        form->gitLoading->stop();
+    return runGit(args).then([](const std::tuple<QString, int> &res) {
         auto [output, exitCode] = res;
         return std::make_tuple((exitCode == 0) ? output.trimmed() : QString{}, exitCode);
     });
@@ -616,7 +606,6 @@ void GitPlugin::restoreGitLog() {
 
     auto args = cmd.split(" ");
     form->label->setText(cmd);
-    form->gitLoading->start();
     runGit(args).then(this, [this](const std::tuple<QString, int> &res) {
         auto [output, exitCode] = res;
         auto model = new CommitModel(this);
