@@ -11,7 +11,7 @@
             "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.9-beta3",
             "latest-version": "0.1.9-beta3",
             "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.9-beta3/codepointer-v0.1.9-beta3-x86_64.exe",
-            "changelog": "Added LSP support, some kit updates, indenter in single lines update",
+            "changelog": "Added LSP support, some kit updates, indenter in single lines update, use modern Windows style",
             "mandatory": true
         },
         "linux": {
