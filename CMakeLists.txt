@@ -107,6 +107,14 @@ set(DISABLE_QUTEPART_TESTS on)
 set(QHEXVIEW_ENABLE_DIALOGS on)
 set(LSP_USE_SANITIZERS off)
 
+set(WINUI3STYLE_BUILD_DEMO OFF)
+set(WINUI3STYLE_BUILD_PLUGIN OFF)
+set(WINUI3STYLE_CLANG_TIDY OFF)
+set(WINUI3STYLE_BUILD_TESTS OFF)
+set(WINUI3STYLE_STATIC ON)
+set(WINUI3STYLE_BUILD_NATIVE_TESTS OFF)
+set(WINUI3STYLE_BUILD_BENCHMARKS OFF)
+
 option(CODEPOINTER_WORK_OFFLINE OFF)
 option(CODEPOINTER_BUNDLE_ICON_THEME "Download and install the Breeze icon theme (needed when no system icon theme is present, e.g. bare Linux installs or Windows)" ON)
 option(CODEPOINTER_DISABLE_UPDATES "Disable the in-app update checker (e.g. for Flatpak/store builds, where the store manages updates)" OFF)
@@ -129,6 +137,7 @@ if (CODEPOINTER_WORK_OFFLINE)
     add_subdirectory("lib/QSimpleUpdater")
     add_subdirectory("lib/QHexView")
     add_subdirectory("lib/lsp-framework/")
+    add_subdirectory("lib/WinUI3Style/")
 else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
@@ -142,6 +151,7 @@ else()
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#c5c136c0f79ca6423b0914a2676ae3d0e3811c5b")
     CPMAddPackage("gh:Dax89/QHexView#8893881350ea1d0bb0deafb7ae4a700e8de6683f")
     CPMAddPackage("gh:leon-bckl/lsp-framework#db64fac3eea5b36888b801cc0c8b081a377f1914")
+    CPMAddPackage("gh:JulienMaille/WinUI3Style#5eaa242602503182b5df0715eeb9dcd7d7b0c90c")
     if (CODEPOINTER_BUNDLE_ICON_THEME)
         download_breeze_icons(6.4.0)
     endif()
@@ -354,6 +364,7 @@ target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent 
     QSimpleUpdater
     QJsonModelStatic
     lsp
+    winui3style
 )
 set_target_properties(codepointer PROPERTIES OUTPUT_NAME ${CODEPOINTER_BINARY})
 
