@@ -37,6 +37,7 @@ class HelpPlugin : public IPlugin {
         // ini file. and it just does not work. As ugly as parsing strings manually instead of the
         // framework - this does work.
         CONFIG_DEFINE(LastUpdateTime, QString)
+        CONFIG_DEFINE(UseWinUI3Theme, bool)
         qmdiPluginConfig *config;
     };
     Config &getConfig() {
@@ -59,10 +60,12 @@ class HelpPlugin : public IPlugin {
     bool isTaskRunnning() const;
     bool isBottomPanelsVisible() const;
 
+    virtual void configurationHasBeenModified() override;
   public slots:
     void showWelcomeScreen();
     void actionAbout_triggered();
     void checkForUpdates_triggered();
+    void updateTheme();
 
   protected:
     virtual bool eventFilter(QObject *obj, QEvent *event) override;
