@@ -13,9 +13,12 @@
 #include <QPainter>
 #include <QProxyStyle>
 #include <QStandardPaths>
+#include <QStyleFactory>
 #include <QStyleOptionDockWidget>
 #include <QToolButton>
 #include <QtGlobal>
+
+#include <winui3style/winui3style.h>
 
 #include "pluginmanager.h"
 #include "plugins/CTags/CTagsPlugin.hpp"
@@ -104,17 +107,24 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
     QCoreApplication::setApplicationVersion("0.1.9-beta3");
 
+    // qDebug() << QStyleFactory::keys();
+    //  QStyleFactory::create("winui3");
+    //   app.setStyle(new ThemeProxyStyle("winui3"));
+    //  app.setStyle(new ThemeProxyStyle(new WinUI3::Style));
+    app.setStyle(new WinUI3::Style);
+    qDebug() << QStyleFactory::keys();
+
 #if defined(WIN32)
     // default style on windows is ugly and unusable.
     // lets fallback to something more usable for us
-    app.setStyle(new ThemeProxyStyle("windowsvista"));
     auto needsIcons = true;
     auto iconsPath = "/share/icons";
 #else
-    app.setStyle(new ThemeProxyStyle(app.style()->objectName()));
+    // app.setStyle(new ThemeProxyStyle(app.style()->objectName()));
     auto needsIcons = QIcon::fromTheme(QIcon::ThemeIcon::GoNext).isNull();
     auto iconsPath = "/../share/icons";
 #endif
+    app.setStyle(new ThemeProxyStyle(new WinUI3::Style));
 
     // On bare-bones Linux installs, Windows or OSX, we might not have a freedesktop
     // icons thus - we use our bundled icons.

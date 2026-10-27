@@ -130,6 +130,7 @@ if (CODEPOINTER_WORK_OFFLINE)
     add_subdirectory("lib/QSimpleUpdater")
     add_subdirectory("lib/QHexView")
     add_subdirectory("lib/lsp-framework/")
+    add_subdirectory("lib/WinUI3Style/")
 else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
@@ -143,6 +144,7 @@ else()
     CPMAddPackage("gh:alex-spataru/QSimpleUpdater#c5c136c0f79ca6423b0914a2676ae3d0e3811c5b")
     CPMAddPackage("gh:Dax89/QHexView#8893881350ea1d0bb0deafb7ae4a700e8de6683f")
     CPMAddPackage("gh:leon-bckl/lsp-framework#db64fac3eea5b36888b801cc0c8b081a377f1914")
+    CPMAddPackage("gh:lib/WinUI3Style#main")
     if (CODEPOINTER_BUNDLE_ICON_THEME)
         download_breeze_icons(6.4.0)
     endif()
@@ -355,6 +357,7 @@ target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent 
     QSimpleUpdater
     QJsonModelStatic
     lsp
+    winui3style
 )
 set_target_properties(codepointer PROPERTIES OUTPUT_NAME ${CODEPOINTER_BINARY})
 
