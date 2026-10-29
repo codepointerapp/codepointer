@@ -13,7 +13,6 @@
 #include <QPainter>
 #include <QProxyStyle>
 #include <QStandardPaths>
-#include <QStyleFactory>
 #include <QStyleOptionDockWidget>
 #include <QToolButton>
 #include <QtGlobal>
@@ -107,16 +106,10 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
     QCoreApplication::setApplicationVersion("0.1.9-beta3");
 
-    // qDebug() << QStyleFactory::keys();
-    //  QStyleFactory::create("winui3");
-    //   app.setStyle(new ThemeProxyStyle("winui3"));
-    //  app.setStyle(new ThemeProxyStyle(new WinUI3::Style));
-    app.setStyle(new WinUI3::Style);
-    qDebug() << QStyleFactory::keys();
-
 #if defined(WIN32)
     // default style on windows is ugly and unusable.
     // lets fallback to something more usable for us
+    // app.setStyle(new ThemeProxyStyle("windowsvista"));
     auto needsIcons = true;
     auto iconsPath = "/share/icons";
 #else
