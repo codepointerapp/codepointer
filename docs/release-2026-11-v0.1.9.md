@@ -6,6 +6,8 @@ Skipped last month release to fully commit on a working LSP enabled release. Thi
 was a big working branch, opened for more than a year. Internally it uses
 <https://github.com/leon-bckl/lsp-framework/>.
 
+![Codepointer show inline errors, and functions hints](codepointer-v0.1.9.png)
+
 Major changes:
 
 * LSP support. You can get proper completions, calltips and references. I will
