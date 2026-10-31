@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
 
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
-    QCoreApplication::setApplicationVersion("0.1.9-beta3");
+    QCoreApplication::setApplicationVersion("0.1.9");
 
     app.setStyle(new ThemeProxyStyle(app.style()->objectName()));
 #if defined(WIN32)
