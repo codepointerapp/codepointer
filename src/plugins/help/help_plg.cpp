@@ -799,7 +799,9 @@ void HelpPlugin::updateTheme() {
     auto static defaultStyleName = app.style()->objectName();
 
     if (getConfig().getUseWinUI3Theme()) {
-        app.setStyle(new ThemeProxyStyle(new WinUI3::Style));
+        auto style = new WinUI3::Style;
+        style->setDensityMode(WinUI3::DensityMode::Compact);
+        app.setStyle(new ThemeProxyStyle(style));
     } else {
         app.setStyle(new ThemeProxyStyle(defaultStyleName));
     }
