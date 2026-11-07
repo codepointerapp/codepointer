@@ -164,6 +164,7 @@ auto static cargoListBinUnits(const QString &metaData) -> StringHash {
             auto exeName = targetName;
 #endif
             auto exePath = targetDir.filePath(QDir("debug").filePath(exeName));
+            exePath = QDir::toNativeSeparators(exePath);
             fileMap.insert(targetName, exePath);
         }
     }
