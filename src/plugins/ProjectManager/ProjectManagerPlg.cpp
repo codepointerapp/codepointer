@@ -1781,6 +1781,7 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
 
     project = ProjectBuildConfig::buildFromFile(filename);
 
+#if 0
     // Try to find correnponding JSon file in the same dir as the project's that has been
     // requested
     {
@@ -1795,7 +1796,7 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
             qDebug() << "Chosen " << filename << " loaded instead" << p->fileName;
         }
     }
-
+#endif
     if (!project) {
         // project file is not parsable. just bail out.
         return false;
