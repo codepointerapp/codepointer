@@ -896,9 +896,9 @@ auto verifyRunnable(const QString &fileName) -> bool {
     }
 
 #ifdef Q_OS_WIN
-    static const auto runnableExts =
-        QStringList{".exe", ".bat", ".cmd", ".ps1", ".com", "py", "js"};
-    if (runnableExts.contains(info.suffix(), Qt::CaseInsensitive)) {
+    auto static runnableExts = QStringList{"exe", "bat", "cmd", "ps1", "com", "py", "js"};
+    auto suffix = info.suffix();
+    if (runnableExts.contains(suffix, Qt::CaseInsensitive)) {
         return true;
     }
 
