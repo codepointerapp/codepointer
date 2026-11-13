@@ -12,6 +12,7 @@
 #include <QProcess>
 #include <QResizeEvent>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QStringListModel>
 #include <QTimer>
 #include <QtConcurrent>
@@ -160,7 +161,7 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     auto delegate = new CommitDelegate(form->listView);
     form->listView->setItemDelegate(delegate);
     form->listView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    connect(form->branchListCombo, &QComboBox::currentIndexChanged, this,
+    connect(form->branchListCombo, &QComboBox::activated, this,
             &GitPlugin::checkoutHandler);
     connect(form->listView, &QAbstractItemView::activated, this, &GitPlugin::on_gitCommitClicked);
     connect(form->listView, &QAbstractItemView::clicked, this, &GitPlugin::on_gitCommitClicked);
@@ -294,6 +295,7 @@ void GitPlugin::refreshBranchesHandler() {
 
     runGit({"-C", repoRoot, "branch", "-a"})
         .then(this, [this](const std::tuple<QString, int> &res) {
+            QSignalBlocker blocker(form->branchListCombo);
             form->branchListCombo->clear();
 
             auto [output, exitCode] = res;
@@ -378,6 +380,9 @@ void GitPlugin::commitHandler() {
 void GitPlugin::checkoutHandler() {
     auto newBranch = form->branchListCombo->currentText();
     auto lastDir = getConfig().getGitLastDir();
+    if (newBranch.isEmpty() || lastDir.isEmpty()) {
+        return;
+    }
 
     runGit({"-C", lastDir, "checkout", newBranch})
         .then(this, [this](const std::tuple<QString, int> &res) {
@@ -597,6 +602,8 @@ void GitPlugin::restoreGitLog() {
         return;
     }
 
+    QTimer::singleShot(0, this, &GitPlugin::refreshBranchesHandler);
+
     auto cmd = getConfig().getGitLastCommand();
     if (cmd.isEmpty()) {
         return;
@@ -623,5 +630,4 @@ void GitPlugin::restoreGitLog() {
         }
         form->gitLoading->stop();
     });
-    QTimer::singleShot(0, this, &GitPlugin::refreshBranchesHandler);
 }
