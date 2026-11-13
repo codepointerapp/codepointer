@@ -1,3 +1,11 @@
+/**
+ * \file GitPlugin.cpp
+ * \brief Git plugin for CodePointer
+ * \author Diego Iastrubni diegoiast@gmail.com
+ */
+
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 #include <QCheckBox>
 #include <QDebug>
 #include <QDockWidget>
@@ -161,8 +169,7 @@ void GitPlugin::on_client_merged(qmdiHost *host) {
     auto delegate = new CommitDelegate(form->listView);
     form->listView->setItemDelegate(delegate);
     form->listView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    connect(form->branchListCombo, &QComboBox::activated, this,
-            &GitPlugin::checkoutHandler);
+    connect(form->branchListCombo, &QComboBox::activated, this, &GitPlugin::checkoutHandler);
     connect(form->listView, &QAbstractItemView::activated, this, &GitPlugin::on_gitCommitClicked);
     connect(form->listView, &QAbstractItemView::clicked, this, &GitPlugin::on_gitCommitClicked);
     connect(form->listView, &QAbstractItemView::doubleClicked, this,
