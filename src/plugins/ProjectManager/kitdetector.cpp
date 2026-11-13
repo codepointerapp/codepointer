@@ -688,62 +688,32 @@ void generateKitFiles(const std::filesystem::path &directoryPath,
     auto SCRIPT_EXTENSION = unix_target ? SCRIPT_EXTENSION_UNIX : SCRIPT_EXTENSION_WIN32;
     auto SCRIPT_HEADER = unix_target ? SCRIPT_HEADER_UNIX : SCRIPT_HEADER_WIN32;
     auto SCRIPT_SUFFIX = unix_target ? SCRIPT_SUFFIX_UNIX : SCRIPT_SUFFIX_WIN32;
-    auto compilersSize = std::max<size_t>(1, compilers.size());
-    auto qtinstallSize = std::max<size_t>(1, qtInstalls.size());
 
-    // Only pair compilers with Qt installations that were built for the same
-    // toolchain (e.g. an MSVC Qt build must not be matched with a MinGW
-    // compiler). An Unknown toolchain on either side acts as a wildcard.
-    struct CompilerQtPair {
-        size_t compiler_index;
-        size_t qt_index;
-    };
-    auto validPairs = std::vector<CompilerQtPair>();
-    for (auto i = 0ul; i < compilersSize; ++i) {
-        for (auto j = 0ul; j < qtinstallSize; ++j) {
-            auto cc = compilers.empty() ? ExtraPath() : compilers[i];
-            auto qtInst = qtInstalls.empty() ? ExtraPath() : qtInstalls[j];
-            if (cc.toolchain == Toolchain::Unknown || qtInst.toolchain == Toolchain::Unknown ||
-                cc.toolchain == qtInst.toolchain) {
-                validPairs.push_back({i, j});
-            }
-        }
-    }
-    // If no pair matches at all, fall back to all combinations rather than
-    // generating zero kits.
-    if (validPairs.empty()) {
-        for (auto i = 0ul; i < compilersSize; ++i) {
-            for (auto j = 0ul; j < qtinstallSize; ++j) {
-                validPairs.push_back({i, j});
-            }
-        }
-    }
-
-    for (const auto &pair : validPairs) {
-        auto cc = compilers.empty() ? ExtraPath() : compilers[pair.compiler_index];
-        auto qtInst = qtInstalls.empty() ? ExtraPath() : qtInstalls[pair.qt_index];
-
+    auto writeKitScript = [&](const std::string &displayName, const ExtraPath &cc,
+                              const ExtraPath &qtInst, bool includeTools) {
         auto scriptName =
             std::string("qtedit-kit-").append(std::to_string(kitNumber)).append(SCRIPT_EXTENSION);
         auto scriptPath = directoryPath / scriptName;
         std::ofstream scriptFile(scriptPath.string());
         if (!scriptFile) {
             std::cerr << "Error: Could not create script file at " << scriptPath << std::endl;
-            continue;
+            return;
         }
 
         auto scriptDisplay = std::string(SCRIPT_HEADER);
-        replaceAll(scriptDisplay, "@@NAME@@", cc.name + ", " + qtInst.name + " *");
+        replaceAll(scriptDisplay, "@@NAME@@", displayName);
 
         scriptFile << scriptDisplay;
-        for (auto &tt : tools) {
-            scriptFile << tt.comment;
-            scriptFile << "\n";
-            scriptFile << tt.command;
+        if (includeTools) {
+            for (auto &tt : tools) {
+                scriptFile << tt.comment;
+                scriptFile << "\n";
+                scriptFile << tt.command;
+                scriptFile << "\n";
+            }
             scriptFile << "\n";
         }
 
-        scriptFile << "\n";
         if (!cc.command.empty()) {
             scriptFile << cc.comment;
             scriptFile << "\n";
@@ -767,6 +737,61 @@ void generateKitFiles(const std::filesystem::path &directoryPath,
         }
 #endif
         kitNumber++;
+    };
+
+    // A kit that adds nothing: runs the task with the environment as-is.
+    writeKitScript("System *", ExtraPath(), ExtraPath(), false);
+
+    // Rust is not a C/C++ compiler and has nothing to pair with Qt: emit a
+    // standalone kit that only adds cargo to the PATH.
+    auto cppCompilers = std::vector<ExtraPath>();
+    for (const auto &cc : compilers) {
+        if (cc.toolchain == Toolchain::Rust) {
+            writeKitScript(cc.name + " *", cc, ExtraPath(), false);
+            continue;
+        }
+        cppCompilers.push_back(cc);
+    }
+
+    if (cppCompilers.empty() && qtInstalls.empty()) {
+        return;
+    }
+
+    auto compilersSize = std::max<size_t>(1, cppCompilers.size());
+    auto qtinstallSize = std::max<size_t>(1, qtInstalls.size());
+
+    // Only pair compilers with Qt installations that were built for the same
+    // toolchain (e.g. an MSVC Qt build must not be matched with a MinGW
+    // compiler). An Unknown toolchain on either side acts as a wildcard.
+    struct CompilerQtPair {
+        size_t compiler_index;
+        size_t qt_index;
+    };
+    auto validPairs = std::vector<CompilerQtPair>();
+    for (auto i = 0ul; i < compilersSize; ++i) {
+        for (auto j = 0ul; j < qtinstallSize; ++j) {
+            auto cc = cppCompilers.empty() ? ExtraPath() : cppCompilers[i];
+            auto qtInst = qtInstalls.empty() ? ExtraPath() : qtInstalls[j];
+            if (cc.toolchain == Toolchain::Unknown || qtInst.toolchain == Toolchain::Unknown ||
+                cc.toolchain == qtInst.toolchain) {
+                validPairs.push_back({i, j});
+            }
+        }
+    }
+    // If no pair matches at all, fall back to all combinations rather than
+    // generating zero kits.
+    if (validPairs.empty()) {
+        for (auto i = 0ul; i < compilersSize; ++i) {
+            for (auto j = 0ul; j < qtinstallSize; ++j) {
+                validPairs.push_back({i, j});
+            }
+        }
+    }
+
+    for (const auto &pair : validPairs) {
+        auto cc = cppCompilers.empty() ? ExtraPath() : cppCompilers[pair.compiler_index];
+        auto qtInst = qtInstalls.empty() ? ExtraPath() : qtInstalls[pair.qt_index];
+        writeKitScript(cc.name + ", " + qtInst.name + " *", cc, qtInst, true);
     }
 }
 
