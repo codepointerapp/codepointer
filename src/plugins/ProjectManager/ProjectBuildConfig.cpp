@@ -360,7 +360,6 @@ auto ProjectBuildConfig::tryGuessFromCargo(const QString &fileName)
     auto cargoUpdate = "cargo update";
     auto cargoClean = "cargo clean";
     auto cargoListPackages =
-        "cmake -E make_directory \"${build_directory}\" && "
         "cargo metadata --format-version=1 --no-deps > \"${build_directory}/cargo-metadata.json\"";
 
     {
