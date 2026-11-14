@@ -24,6 +24,7 @@
 #include <QPainterPath>
 #include <QParallelAnimationGroup>
 #include <QPropertyAnimation>
+#include <QProxyStyle>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSimpleUpdater.h>
@@ -35,6 +36,7 @@
 #include <CommandPaletteWidget/commandpalette.h>
 #include <iplugin.h>
 #include <pluginmanager.h>
+#include <winui3style/winui3style.h>
 
 #include "GlobalCommands.hpp"
 #include "help_plg.h"
@@ -43,8 +45,10 @@
 #include "widgets/qmdieditor.h"
 
 #ifdef _WIN32
+auto constexpr isWindows = true;
 #include <windows.h>
 #else
+auto constexpr isWindows = false;
 #include <unistd.h>
 // Needed for saving the desktop file
 #include <filesystem>
@@ -228,6 +232,58 @@ auto static refreshSystemMenus() -> void {
 auto updatesUrl =
     "https://raw.githubusercontent.com/codepointerapp/codepointer/refs/heads/main/updates.json";
 
+class ThemeProxyStyle : public QProxyStyle {
+  public:
+    using QProxyStyle::QProxyStyle;
+
+    void polish(QPalette &pal) override {
+        QProxyStyle::polish(pal);
+        // FIXME: should we modify palette for macOS?
+#if defined(BUILD_DEV)
+        auto tintBackgroundColor = QColor::fromRgb(0xFFC107); // Yellow
+        pal.setColor(QPalette::Highlight, tintBackgroundColor);
+        pal.setColor(QPalette::HighlightedText, Qt::white);
+#elif defined(BUILD_OFFICIAL)
+        auto tintBackgroundColor = QColor::fromRgb(0x44aa44); // Green
+        pal.setColor(QPalette::Highlight, tintBackgroundColor);
+        pal.setColor(QPalette::HighlightedText, Qt::white);
+#else
+        // We do not modify palette for community builds
+#endif
+    }
+
+    void drawControl(ControlElement element, const QStyleOption *option, QPainter *painter,
+                     const QWidget *widget) const override {
+        if (element == CE_DockWidgetTitle) {
+            if (const auto *v6 = qstyleoption_cast<const QStyleOptionDockWidget *>(option)) {
+                auto rect = v6->rect;
+                auto highlight = v6->palette.color(QPalette::Highlight);
+                auto lighter = highlight.lighter(150);
+
+                painter->save();
+                if (v6->state & State_Active) {
+                    auto grad = QLinearGradient(rect.topLeft(), rect.topRight());
+                    grad.setColorAt(0, highlight);
+                    grad.setColorAt(1, lighter);
+                    painter->fillRect(rect, grad);
+                } else {
+                    painter->fillRect(rect, highlight);
+                }
+
+                auto titleRect = rect.adjusted(5, 0, -5, 0);
+                painter->setPen(Qt::white);
+                auto font = painter->font();
+                font.setBold(true);
+                painter->setFont(font);
+                painter->drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, v6->title);
+                painter->restore();
+                return;
+            }
+        }
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+};
+
 HelpPlugin::HelpPlugin() {
     name = tr("Help system browser");
     author = tr("Diego Iastrubni <diegoiast@gmail.com>");
@@ -240,6 +296,8 @@ HelpPlugin::HelpPlugin() {
 HelpPlugin::~HelpPlugin() {}
 
 void HelpPlugin::on_client_merged(qmdiHost *host) {
+    IPlugin::on_client_merged(host);
+
 #ifndef DISABLE_UPDATES
     auto updateChannelStrings = QStringList() << tr("Do not check for updates")
                                               << tr("Check for updates every time program starts")
@@ -257,6 +315,14 @@ void HelpPlugin::on_client_merged(qmdiHost *host) {
             .setType(qmdiConfigItem::OneOf)
             .setPossibleValue(updateChannelStrings)
             .setDefaultValue(UpdateCheck::Daily)
+            .build());
+    config.configItems.push_back(
+        qmdiConfigItem::Builder()
+            .setDisplayName(tr("Use WinUI3 theme"))
+            .setDescription(tr("Special theme - more Windows 11 oriented, affects after restart"))
+            .setKey(Config::UseWinUI3ThemeKey)
+            .setType(qmdiConfigItem::Bool)
+            .setDefaultValue(isWindows)
             .build());
     config.configItems.push_back(
         qmdiConfigItem::Builder()
@@ -372,6 +438,7 @@ void HelpPlugin::showAbout() {
 void HelpPlugin::loadConfig(QSettings &settings) {
     IPlugin::loadConfig(settings);
     doStartupChecksForUpdate(false);
+    updateTheme();
 }
 
 void HelpPlugin::doStartupChecksForUpdate(bool notifyUserNoUpdates) {
@@ -641,6 +708,7 @@ void HelpPlugin::actionAbout_triggered() {
     <li><a href="https://github.com/Dax89/QHexView">QHexView</a></li>
     <li><a href="https://github.com/alex-spataru/QSimpleUpdater">QSimpleUpdater</a></li>
     <li><a href="https://github.com/leon-bckl/lsp-framework">lsp-framework</a></li>
+    <li><a href="https://github.com/JulienMaille/WinUI3Style/">WinUIStyle</a></li>
 </ul>
 
 <p>Copyright © 2024-2026 <a href="mailto:diegoiast@gmail.com">Diego Iastrubni</a></p>
@@ -723,6 +791,19 @@ void HelpPlugin::actionAbout_triggered() {
 }
 
 void HelpPlugin::checkForUpdates_triggered() { doChecksForUpdate(true); }
+
+void HelpPlugin::configurationHasBeenModified() { updateTheme(); }
+
+void HelpPlugin::updateTheme() {
+    auto &app = *qApp;
+    auto static defaultStyleName = app.style()->objectName();
+
+    if (getConfig().getUseWinUI3Theme()) {
+        app.setStyle(new ThemeProxyStyle(new WinUI3::Style));
+    } else {
+        app.setStyle(new ThemeProxyStyle(defaultStyleName));
+    }
+}
 
 bool HelpPlugin::eventFilter(QObject *obj, QEvent *event) {
     auto handled = QObject::eventFilter(obj, event);

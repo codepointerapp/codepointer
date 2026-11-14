@@ -17,6 +17,8 @@
 #include <QToolButton>
 #include <QtGlobal>
 
+#include <winui3style/winui3style.h>
+
 #include "pluginmanager.h"
 #include "plugins/CTags/CTagsPlugin.hpp"
 #include "plugins/CodeFormat/CodeFormat.hpp"
@@ -30,55 +32,6 @@
 #include "plugins/hexviewer/hexviewer_plg.h"
 #include "plugins/imageviewer/imageviewer_plg.h"
 #include "plugins/texteditor/texteditor_plg.h"
-
-class ThemeProxyStyle : public QProxyStyle {
-  public:
-    using QProxyStyle::QProxyStyle;
-
-    void polish(QPalette &pal) override {
-        QProxyStyle::polish(pal);
-#if defined(BUILD_DEV)
-        auto tintBackgroundColor = QColor::fromRgb(0xFFC107); // Yellow
-#elif defined(BUILD_OFFICIAL)
-        auto tintBackgroundColor = QColor::fromRgb(0x44aa44); // Green
-#else
-        auto tintBackgroundColor = QColor::fromRgb(0x6ba8ff); // Blue
-#endif
-        pal.setColor(QPalette::Highlight, tintBackgroundColor);
-        pal.setColor(QPalette::HighlightedText, Qt::white);
-    }
-
-    void drawControl(ControlElement element, const QStyleOption *option, QPainter *painter,
-                     const QWidget *widget) const override {
-        if (element == CE_DockWidgetTitle) {
-            if (const auto *v6 = qstyleoption_cast<const QStyleOptionDockWidget *>(option)) {
-                auto rect = v6->rect;
-                auto highlight = v6->palette.color(QPalette::Highlight);
-                auto lighter = highlight.lighter(150);
-
-                painter->save();
-                if (v6->state & State_Active) {
-                    auto grad = QLinearGradient(rect.topLeft(), rect.topRight());
-                    grad.setColorAt(0, highlight);
-                    grad.setColorAt(1, lighter);
-                    painter->fillRect(rect, grad);
-                } else {
-                    painter->fillRect(rect, highlight);
-                }
-
-                auto titleRect = rect.adjusted(5, 0, -5, 0);
-                painter->setPen(Qt::white);
-                auto font = painter->font();
-                font.setBold(true);
-                painter->setFont(font);
-                painter->drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, v6->title);
-                painter->restore();
-                return;
-            }
-        }
-        QProxyStyle::drawControl(element, option, painter, widget);
-    }
-};
 
 int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(qutepart_syntax_files);
@@ -104,7 +57,7 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
     QCoreApplication::setApplicationVersion("0.1.9");
 
-    app.setStyle(new ThemeProxyStyle(app.style()->objectName()));
+
 #if defined(WIN32)
     auto needsIcons = true;
     auto iconsPath = "/share/icons";
