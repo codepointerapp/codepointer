@@ -755,10 +755,8 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
 
     auto number = 0;
     auto shownTotal = 0;
-    auto unreached = 0;
     for (auto const &[fileName, unique] : groups) {
         if (shownTotal >= MAX_TOTAL) {
-            unreached += static_cast<int>(unique.size());
             continue;
         }
 
@@ -794,40 +792,22 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
                              });
             menu->addAction(action);
         }
+    }
 
-        auto l = QObject::tr("More results from %1").arg(QFileInfo(fileName).fileName());
-        if (unique.size() <= shown) {
-            l = QObject::tr("Show all results in a panel");
+    auto const separator = new QAction(menu);
+    separator->setSeparator(true);
+    menu->addAction(separator);
+
+    auto const all = new QAction(QObject::tr("Show all results in a panel"), menu);
+    QObject::connect(all, &QAction::triggered, menu, [symbol, everyUnique, manager]() {
+        if (!manager) {
+            return;
         }
-        auto const more = new QAction(l, menu);
-        auto const fileRows = unique;
-        QObject::connect(more, &QAction::triggered, menu, [symbol, fileRows, manager]() {
-            if (!manager) {
-                return;
-            }
-            manager->handleCommandAsync(
-                GlobalCommands::ShowReferences,
-                {{GlobalArguments::Symbol, symbol}, {GlobalArguments::Tags, fileRows}});
-        });
-        menu->addAction(more);
-    }
-
-    if (unreached > 0) {
-        auto const separator = new QAction(menu);
-        separator->setSeparator(true);
-        menu->addAction(separator);
-
-        auto const more = new QAction(QObject::tr("...and %1 more").arg(unreached), menu);
-        QObject::connect(more, &QAction::triggered, menu, [symbol, everyUnique, manager]() {
-            if (!manager) {
-                return;
-            }
-            manager->handleCommandAsync(
-                GlobalCommands::ShowReferences,
-                {{GlobalArguments::Symbol, symbol}, {GlobalArguments::Tags, everyUnique}});
-        });
-        menu->addAction(more);
-    }
+        manager->handleCommandAsync(
+            GlobalCommands::ShowReferences,
+            {{GlobalArguments::Symbol, symbol}, {GlobalArguments::Tags, everyUnique}});
+    });
+    menu->addAction(all);
 }
 
 void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &globalPosition) {
