@@ -818,6 +818,7 @@ void CommitForm::pushImpl() {
         ui->gitOutput->setText(output.trimmed());
         ui->pushButton->setText(t);
         ui->pushButton->setEnabled(true);
+        ui->forcePushCheckbox->setChecked(false);
     });
 };
 
