@@ -1776,19 +1776,15 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
     auto project = this->projectModel->findConfigFile(filename);
     if (project) {
         // TODO - should we select this project?
-        return true;
+        return false;
     }
 
     project = ProjectBuildConfig::buildFromFile(filename);
 
-#if 0
-    // Try to find correnponding JSon file in the same dir as the project's that has been
-    // requested
     {
         auto fn = dir + QDir::separator() + PROJECT_FILENAME;
         if (auto p = this->projectModel->findConfigFile(fn)) {
-            // TODO - should we select this project?
-            return true;
+            return false;
         }
 
         if (auto p = ProjectBuildConfig::buildFromJsonFile(fn)) {
@@ -1796,7 +1792,6 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
             qDebug() << "Chosen " << filename << " loaded instead" << p->fileName;
         }
     }
-#endif
     if (!project) {
         // project file is not parsable. just bail out.
         return false;
