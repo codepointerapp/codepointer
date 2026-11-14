@@ -802,7 +802,12 @@ void CommitForm::pushImpl() {
     ui->pushButton->setText(tr("Pushing..."));
     ui->gitOutput->clear();
 
-    auto args = QStringList{"-C", repoRoot, "push"};
+    // These arguments prevent from requesting password over the command line,
+    // which we cannot handle.
+    auto args = QStringList{"-C",  repoRoot,
+                            "-c",  "credential.interactive=false",
+                            "-c",  "core.sshCommand=\"ssh -o BatchMode=yes\"",
+                            "push"};
     if (ui->forcePushCheckbox->isChecked()) {
         args << "--force";
     }
