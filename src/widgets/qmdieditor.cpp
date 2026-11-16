@@ -376,6 +376,10 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     splitter->addWidget(textEditor);
     splitter->addWidget(textPreview);
 
+    // These are set to *F2 on the library, which we want to use for rename
+    textEditor->prevBookmarkAction()->setShortcut({});
+    textEditor->nextBookmarkAction()->setShortcut({});
+
     connect(textEditor, &QPlainTextEdit::cursorPositionChanged, this, [this, staticLabel]() {
         QTextCursor cursor = textEditor->textCursor();
         int line = cursor.blockNumber() + 1;
@@ -486,6 +490,14 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
 
     textOperationsMenu = new QMenu(tr("Text actions"), this);
     textOperationsMenu->setObjectName("qmdiEditor::textOperationsMenu");
+
+    codeActionsSubmenu = new QMenu(tr("Code actions"), this);
+    codeActionsSubmenu->setObjectName("qmdiEditor::codeActionsSubmenu");
+    codeActionsSubmenu->addAction(actionFollowSymbol);
+    codeActionsSubmenu->addAction(actionFindReferences);
+    codeActionsSubmenu->addAction(actionRenameSymbol);
+    codeActionsSubmenu->addSeparator();
+    codeActionsSubmenu->addAction(actionCodeActions);
     textOperationsMenu->addAction(textEditor->deleteLineAction());
     textOperationsMenu->addAction(textEditor->cutLineAction());
     textOperationsMenu->addAction(textEditor->copyLineAction());
@@ -529,6 +541,7 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     this->menus["&Edit"]->addAction(actionPaste);
     this->menus["&Edit"]->addSeparator();
     this->menus["&Edit"]->addMenu(textOperationsMenu);
+    this->menus["&Edit"]->addMenu(codeActionsSubmenu);
     this->menus["&Edit"]->addMenu(bookmarksMenu);
     this->menus["&Edit"]->addMenu(foldingMenu);
     this->menus["&Edit"]->addAction(actionTogglePreview);
@@ -810,6 +823,104 @@ static auto createSubReferencesSubmenu(const CommandArgs &data, QMenu *menu, Plu
     menu->addAction(all);
 }
 
+void qmdiEditor::showRenameSymbol() {
+    auto cursor = textEditor->textCursor();
+    auto cursorRect = static_cast<QPlainTextEdit *>(textEditor)->cursorRect(cursor);
+    requestRename(cursorRect.center());
+}
+
+void qmdiEditor::showReferencesMenu() {
+    auto cursorRect = static_cast<QPlainTextEdit *>(textEditor)->cursorRect();
+    auto localPosition = cursorRect.bottomLeft();
+    auto future = getReferencesForCurrentWord(localPosition);
+    auto watcher = new QFutureWatcher<CommandArgs>(this);
+
+    connect(watcher, &QFutureWatcher<CommandArgs>::finished, this, [this, watcher]() {
+        watcher->deleteLater();
+        if (watcher->isCanceled()) {
+            return;
+        }
+
+        auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+        if (!pluginManager) {
+            return;
+        }
+
+        auto const res = watcher->result();
+        auto const symbol = res[GlobalArguments::Symbol].toString();
+        auto const tags = res[GlobalArguments::Tags].toList();
+        auto order = QStringList();
+        auto byFile = QHash<QString, QVariantList>();
+        auto everyUnique = QVariantList();
+        for (auto const &item : tags) {
+            auto const fileName = item.toHash()[GlobalArguments::FileName].toString();
+            if (!byFile.contains(fileName)) {
+                order.append(fileName);
+            }
+            byFile[fileName].append(item);
+        }
+
+        for (auto const &fileName : std::as_const(order)) {
+            auto seen = QSet<QString>();
+            for (auto const &item : byFile.value(fileName)) {
+                auto const tag = item.toHash();
+                auto const key = QStringLiteral("%1:%2")
+                                     .arg(tag[GlobalArguments::LineNumber].toInt())
+                                     .arg(tag[GlobalArguments::ColumnNumber].toInt());
+                if (seen.contains(key)) {
+                    continue;
+                }
+                seen.insert(key);
+                everyUnique.append(item);
+            }
+        }
+
+        pluginManager->handleCommandAsync(
+            GlobalCommands::ShowReferences,
+            {{GlobalArguments::Symbol, symbol}, {GlobalArguments::Tags, everyUnique}});
+    });
+    watcher->setFuture(future);
+}
+
+void qmdiEditor::showFollowSymbolMenu() {
+    auto cursorRect = static_cast<QPlainTextEdit *>(textEditor)->cursorRect();
+    auto localPosition = cursorRect.bottomLeft();
+    auto globalPosition = textEditor->viewport()->mapToGlobal(localPosition);
+    auto menu = new QMenu(this);
+    auto loadingAction = new QAction(tr("Loading..."), menu);
+
+    loadingAction->setEnabled(false);
+    menu->setObjectName("qmdiEditor::followSymbolMenu");
+    menu->addAction(loadingAction);
+
+    auto future = getSuggestionsForCurrentWord(localPosition);
+    auto watcher = new QFutureWatcher<CommandArgs>(this);
+    auto safeWatcher = QPointer(watcher);
+    auto safeMenu = QPointer(menu);
+    auto safeLoading = QPointer(loadingAction);
+    connect(watcher, &QFutureWatcher<CommandArgs>::finished, menu, [=, this]() {
+        if (!safeMenu || !safeLoading) {
+            return;
+        }
+
+        safeMenu->removeAction(safeLoading);
+        if (!safeWatcher || safeWatcher.isNull() || safeWatcher->isCanceled()) {
+            return;
+        }
+
+        auto res = safeWatcher->result();
+        auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+        if (!pluginManager) {
+            return;
+        }
+        createSubFollowSymbolSubmenu(res, safeMenu, pluginManager);
+    });
+
+    QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    watcher->setFuture(future);
+    menu->popup(globalPosition);
+}
+
 void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &globalPosition) {
     auto followSymbolMenu = new QMenu(this);
     followSymbolMenu->setTitle(tr("Follow symbol"));
@@ -1052,6 +1163,9 @@ void qmdiEditor::setupActions() {
     actionToggleHeader = new QAction(tr("Toggle header/implementation"), this);
     actionTogglePreview = new QAction(tr("Toggle preview"), this);
     actionCodeActions = new QAction(tr("Fix available..."), this);
+    actionFollowSymbol = new QAction(tr("Follow symbol"), this);
+    actionFindReferences = new QAction(tr("Find all references"), this);
+    actionRenameSymbol = new QAction(tr("Rename..."), this);
 
     addAction(actionCapitalize);
     addAction(actionLowerCase );
@@ -1059,6 +1173,9 @@ void qmdiEditor::setupActions() {
     addAction(actionToggleHeader );
     addAction(actionTogglePreview );
     addAction(actionCodeActions);
+    addAction(actionFollowSymbol);
+    addAction(actionFindReferences);
+    addAction(actionRenameSymbol);
     addAction(actionSaveNoFormat);
 
     actionSave->setShortcut(QKeySequence::Save);
@@ -1089,6 +1206,12 @@ void qmdiEditor::setupActions() {
     // editor; the menu entry below is the discoverable route to the same thing.
     actionCodeActions->setShortcut(QKeySequence(Qt::AltModifier | Qt::Key_Return));
     actionCodeActions->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    actionFollowSymbol->setShortcut(Qt::Key_F12);
+    actionFollowSymbol->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    actionFindReferences->setShortcut(QKeySequence(Qt::ShiftModifier | Qt::Key_F12));
+    actionFindReferences->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    actionRenameSymbol->setShortcut(Qt::Key_F2);
+    actionRenameSymbol->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 
     auto highlighters = Qutepart::getAvailableHighlihters();
     comboChangeHighlighter->setObjectName("qmdiEditor::comboChangeHighlighter");
@@ -1118,6 +1241,9 @@ void qmdiEditor::setupActions() {
     actionChangeCase->setObjectName("qmdiEditor::actionChangeCase");
     actionToggleHeader->setObjectName("qmdiEditor::actiohToggleHeader");
     actionTogglePreview->setObjectName("qmdiEditor::actionTogglePreview");
+    actionFollowSymbol->setObjectName("qmdiEditor::actionFollowSymbol");
+    actionFindReferences->setObjectName("qmdiEditor::actionFindReferences");
+    actionRenameSymbol->setObjectName("qmdiEditor::actionRenameSymbol");
 
     actionSave->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     actionSaveAs->setShortcutContext(Qt::WidgetWithChildrenShortcut);
@@ -1137,6 +1263,9 @@ void qmdiEditor::setupActions() {
     actionChangeCase->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     actionToggleHeader->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     actionTogglePreview->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    actionFollowSymbol->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    actionFindReferences->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    actionRenameSymbol->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 
     connect(textEditor, &QPlainTextEdit::undoAvailable, actionUndo, &QAction::setEnabled);
     connect(textEditor, &QPlainTextEdit::redoAvailable, actionRedo, &QAction::setEnabled);
@@ -1197,6 +1326,9 @@ void qmdiEditor::setupActions() {
     connect(actionToggleHeader, &QAction::triggered, this, &qmdiEditor::toggleHeaderImpl);
     connect(actionTogglePreview, &QAction::triggered, previewButton, &QPushButton::click);
     connect(actionCodeActions, &QAction::triggered, this, &qmdiEditor::requestCodeActions);
+    connect(actionFollowSymbol, &QAction::triggered, this, &qmdiEditor::showFollowSymbolMenu);
+    connect(actionFindReferences, &QAction::triggered, this, &qmdiEditor::showReferencesMenu);
+    connect(actionRenameSymbol, &QAction::triggered, this, &qmdiEditor::showRenameSymbol);
 
     // default is control+b - which we want to use for build
     textEditor->toggleBookmarkAction()->setShortcut(QKeySequence());

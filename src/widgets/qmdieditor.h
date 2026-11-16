@@ -323,6 +323,13 @@ class qmdiEditor : public QWidget, public qmdiClient {
     /// Takes down the inline box without sending anything.
     void hideInlineRename();
 
+    /// Opens the "Follow symbol" submenu for the symbol under the caret (F12).
+    void showFollowSymbolMenu();
+    /// Opens the references side panel for the symbol under the caret (Shift+F12).
+    void showReferencesMenu();
+    /// Opens the inline rename box for the symbol under the caret (F2).
+    void showRenameSymbol();
+
   private:
     QString getShortFileName();
     void showContextMenu(const QPoint &localPosition, const QPoint &globalPosition);
@@ -370,6 +377,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QString fileName;
     QMenu *bookmarksMenu;
     QMenu *textOperationsMenu;
+    QMenu *codeActionsSubmenu = nullptr;
     QMenu *foldingMenu;
 
     QComboBox *comboChangeHighlighter = nullptr;
@@ -399,6 +407,9 @@ class qmdiEditor : public QWidget, public qmdiClient {
     QAction *actionToggleHeader = nullptr;
     QAction *actionTogglePreview = nullptr;
     QAction *actionCodeActions = nullptr;
+    QAction *actionFollowSymbol = nullptr;
+    QAction *actionFindReferences = nullptr;
+    QAction *actionRenameSymbol = nullptr;
 
     struct diffLineNumber {
         QString file;

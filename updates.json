@@ -8,9 +8,9 @@
             "mandatory": true
         },
         "windows-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.9",
-            "latest-version": "0.1.9",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.9/codepointer-v0.1.9-x86_64.exe",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.10-dev2",
+            "latest-version": "0.1.10-dev2",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.10-dev2/codepointer-v0.1.10-dev2-x86_64.exe",
             "changelog": "Added LSP support, AppImage works as Wayland client, indenter in single lines update",
             "mandatory": true
         },
@@ -22,9 +22,9 @@
             "mandatory": true
         },
         "linux-testing": {
-            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.9",
-            "latest-version": "0.1.9",
-            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.9/codepointer-v0.1.9-x86_64.AppImage",
+            "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.10-dev2",
+            "latest-version": "0.1.10-dev2",
+            "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.10-dev2/codepointer-v0.1.10-dev2-x86_64.AppImage",
             "changelog": "Added LSP support, AppImage works as Wayland client, indenter in single lines update",
             "mandatory": true
         }
