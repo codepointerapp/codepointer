@@ -83,8 +83,13 @@ void LspReferencesWidget::setResults(const QString &symbol, const QVariantList &
 
     m_stack->setCurrentIndex(rows.isEmpty() ? 1 : 0);
 
-    if (m_dock && !rows.isEmpty()) {
+    if (!m_dock) {
+        return;
+    }
+    if (!rows.isEmpty()) {
         m_dock->show();
         m_dock->raise();
+        list->setCurrentRow(0);
+        list->setFocus();
     }
 }
