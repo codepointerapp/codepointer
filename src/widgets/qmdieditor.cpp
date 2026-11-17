@@ -150,12 +150,51 @@ auto static getLineEnding(QIODevice &stream, const QString &defaultLineEnding) -
     return ending;
 }
 
-static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
-                                         PluginManager *manager) -> void {
+static auto addressFromSymbolTag(const QVariantHash &tag) -> QString {
     static auto const START_MARKER = QString("/^");
     static auto const END_MARKER = QString("$/;\"");
     static auto const MIN_LENGTH = START_MARKER.length() + END_MARKER.length();
 
+    auto address = tag[GlobalArguments::Raw].toString();
+    if (address.startsWith(START_MARKER) && address.endsWith(END_MARKER) &&
+        address.length() > MIN_LENGTH) {
+        address = address.mid(START_MARKER.length(), address.length() - MIN_LENGTH);
+    }
+    return address;
+}
+
+static auto openSymbolTag(const QVariantHash &tag, PluginManager *manager) -> void {
+    if (!manager) {
+        return;
+    }
+    auto const fileName = tag[GlobalArguments::FileName].toString();
+    if (fileName.isEmpty()) {
+        return;
+    }
+
+    auto const nativeFileName = QDir::toNativeSeparators(fileName);
+    manager->openFile(nativeFileName);
+    auto const editor = dynamic_cast<qmdiEditor *>(manager->clientForFileName(nativeFileName));
+    if (!editor) {
+        return;
+    }
+
+    editor->loadContent(true);
+    auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
+    if (lineNumber > 0) {
+        auto const columnNumber = tag[GlobalArguments::ColumnNumber].toInt();
+        editor->goTo(columnNumber > 0 ? columnNumber - 1 : 0, lineNumber - 1);
+    } else {
+        auto const address = addressFromSymbolTag(tag);
+        if (!address.isEmpty()) {
+            editor->findText(address);
+        }
+    }
+    editor->setFocus();
+}
+
+static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
+                                         PluginManager *manager) -> void {
     if (!data.contains(GlobalArguments::Tags)) {
         return;
     }
@@ -204,15 +243,8 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         auto const fileName = tag[GlobalArguments::FileName].toString();
         auto const fieldType = tag[GlobalArguments::Type].toString();
         auto const fieldValue = tag[GlobalArguments::Value].toString();
-        auto const rawAddress = tag[GlobalArguments::Raw].toString();
+        auto const address = addressFromSymbolTag(tag);
         auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
-        auto const columnNumber = tag[GlobalArguments::ColumnNumber].toInt();
-
-        auto address = rawAddress;
-        if (address.startsWith(START_MARKER) && address.endsWith(END_MARKER) &&
-            address.length() > MIN_LENGTH) {
-            address = address.mid(START_MARKER.length(), address.length() - MIN_LENGTH);
-        }
 
         QString itemKey;
         if (lineNumber > 0) {
@@ -239,23 +271,9 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         }
 
         auto a = new QAction(title, menu);
-        QObject::connect(a, &QAction::triggered, a,
-                         [fileName, rawAddress, address, lineNumber, columnNumber, manager]() {
-                             auto nativeFileName = QDir::toNativeSeparators(fileName);
-                             manager->openFile(nativeFileName);
-                             auto client = manager->clientForFileName(nativeFileName);
-                             auto editor = dynamic_cast<qmdiEditor *>(client);
-                             if (editor) {
-                                 editor->loadContent(true);
-                                 if (lineNumber > 0) {
-                                     editor->goTo(columnNumber > 0 ? columnNumber - 1 : 0,
-                                                  lineNumber - 1);
-                                 } else if (!address.isEmpty()) {
-                                     editor->findText(address);
-                                 }
-                                 editor->setFocus();
-                             }
-                         });
+        QObject::connect(a, &QAction::triggered, a, [tag, manager]() {
+            openSymbolTag(tag, manager);
+        });
         menu->addAction(a);
     }
 }
@@ -886,39 +904,43 @@ void qmdiEditor::showFollowSymbolMenu() {
     auto cursorRect = static_cast<QPlainTextEdit *>(textEditor)->cursorRect();
     auto localPosition = cursorRect.bottomLeft();
     auto globalPosition = textEditor->viewport()->mapToGlobal(localPosition);
-    auto menu = new QMenu(this);
-    auto loadingAction = new QAction(tr("Loading..."), menu);
-
-    loadingAction->setEnabled(false);
-    menu->setObjectName("qmdiEditor::followSymbolMenu");
-    menu->addAction(loadingAction);
 
     auto future = getSuggestionsForCurrentWord(localPosition);
     auto watcher = new QFutureWatcher<CommandArgs>(this);
     auto safeWatcher = QPointer(watcher);
-    auto safeMenu = QPointer(menu);
-    auto safeLoading = QPointer(loadingAction);
-    connect(watcher, &QFutureWatcher<CommandArgs>::finished, menu, [=, this]() {
-        if (!safeMenu || !safeLoading) {
-            return;
-        }
-
-        safeMenu->removeAction(safeLoading);
+    connect(watcher, &QFutureWatcher<CommandArgs>::finished, this, [=, this]() {
+        watcher->deleteLater();
         if (!safeWatcher || safeWatcher.isNull() || safeWatcher->isCanceled()) {
             return;
         }
 
         auto res = safeWatcher->result();
-        auto pluginManager = dynamic_cast<PluginManager *>(mdiServer->mdiHost);
+        auto pluginManager =
+            dynamic_cast<PluginManager *>(mdiServer ? mdiServer->mdiHost : nullptr);
         if (!pluginManager) {
             return;
         }
-        createSubFollowSymbolSubmenu(res, safeMenu, pluginManager);
-    });
 
-    QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+        // A single answer has nothing to choose between - go straight there.
+        auto const tags = res[GlobalArguments::Tags].toList();
+        if (tags.size() == 1) {
+            auto const tag = tags.first().toHash();
+            auto const fileName = tag[GlobalArguments::FileName].toString();
+            auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
+            if (!fileName.isEmpty() &&
+                (lineNumber > 0 || !addressFromSymbolTag(tag).isEmpty())) {
+                openSymbolTag(tag, pluginManager);
+                return;
+            }
+        }
+
+        auto menu = new QMenu(this);
+        menu->setObjectName("qmdiEditor::followSymbolMenu");
+        createSubFollowSymbolSubmenu(res, menu, pluginManager);
+        connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+        menu->popup(globalPosition);
+    });
     watcher->setFuture(future);
-    menu->popup(globalPosition);
 }
 
 void qmdiEditor::showContextMenu(const QPoint &localPosition, const QPoint &globalPosition) {
@@ -2124,18 +2146,10 @@ void qmdiEditor::requestRename(const QPoint &position) {
         renameEdit->setFont(textEditor->font());
         renameEdit->setAttribute(Qt::WA_InputMethodEnabled, true);
         renameEdit->hide();
-        // The border names the Highlight palette role, which is where
-        // ThemeProxyStyle puts the app tint, so it follows the palette instead of
-        // naming a color of its own.
-        renameEdit->setStyleSheet(
-            QString("QLineEdit { border: 2px solid palette(highlight); border-radius: 3px;"
-                    " padding: 1px 5px; }"));
-        // The event filter on the box is what turns Escape and focus loss into a
-        // cancelled rename.
         renameEdit->installEventFilter(this);
 
         auto shadow = new QGraphicsDropShadowEffect(renameEdit);
-        shadow->setBlurRadius(8);
+        shadow->setBlurRadius(16);
         shadow->setOffset(1, 2);
         // A shadow is depth, not a theme color, so it stays a dark overlay that
         // works over any background.
@@ -2163,12 +2177,14 @@ void qmdiEditor::requestRename(const QPoint &position) {
     renameColumn = column;
     renameEdit->setText(currentName);
     renameEdit->selectAll();
+
     // Shown before positioning: the geometry is in viewport coordinates, and a
     // hidden widget has no meaningful size to lay out against.
     renameEdit->show();
     renameEdit->raise();
     repositionInlineRename();
     renameEdit->setFocus();
+
     textEditor->hideCallTip();
 }
 
