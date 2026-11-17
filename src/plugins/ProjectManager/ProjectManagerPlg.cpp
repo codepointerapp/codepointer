@@ -31,6 +31,7 @@
 #include <QTimer>
 #include <QWidgetAction>
 #include <qfileinfo.h>
+#include <cerrno>
 #include <utility>
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -1218,18 +1219,29 @@ bool ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
             taskPtyMasterFd = masterFd;
             taskPtyNotifier = notifier;
             auto epoch = taskPtyEpoch;
-            connect(notifier, &QSocketNotifier::activated, notifier, [this, masterFd, epoch]() {
-                if (epoch != taskPtyEpoch || taskPtyMasterFd != masterFd) {
-                    return;
-                }
-                char buffer[4096];
-                auto bytesRead = read(masterFd, buffer, sizeof(buffer) - 1);
-                if (bytesRead > 0) {
-                    buffer[bytesRead] = '\0';
-                    QString lines = QString::fromUtf8(buffer, bytesRead);
-                    processBuildOutput(lines);
-                }
-            });
+            connect(notifier, &QSocketNotifier::activated, notifier,
+                    [this, notifier, masterFd, epoch]() {
+                        if (epoch != taskPtyEpoch || taskPtyMasterFd != masterFd) {
+                            return;
+                        }
+                        char buffer[4096];
+                        auto bytesRead = read(masterFd, buffer, sizeof(buffer) - 1);
+                        if (bytesRead > 0) {
+                            buffer[bytesRead] = '\0';
+                            QString lines = QString::fromUtf8(buffer, bytesRead);
+                            processBuildOutput(lines);
+                            return;
+                        }
+
+                        // A PTY master reports EIO on Linux (and EOF elsewhere) once
+                        // the slave side is gone. Leaving the notifier enabled makes
+                        // it fire on every POLLHUP, so the event loop spins at 100%.
+                        if (bytesRead < 0 && (errno == EAGAIN || errno == EWOULDBLOCK ||
+                                              errno == EINTR)) {
+                            return;
+                        }
+                        notifier->setEnabled(false);
+                    });
         }
     }
     env.insert("FORCE_COLOR", "1");
