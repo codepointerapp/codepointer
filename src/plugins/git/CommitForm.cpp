@@ -806,7 +806,7 @@ void CommitForm::pushImpl() {
     // which we cannot handle.
     auto args = QStringList{"-C",  repoRoot,
                             "-c",  "credential.interactive=false",
-                            "-c",  "core.sshCommand=\"ssh -o BatchMode=yes\"",
+                            "-c",  "core.sshCommand=ssh -o BatchMode=yes",
                             "push"};
     if (ui->forcePushCheckbox->isChecked()) {
         args << "--force";
