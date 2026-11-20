@@ -3006,14 +3006,9 @@ void qmdiEditor::updateFileDetails() {
         }
     }
 
-    auto isCplusplusSource = fileName.endsWith(".h", Qt::CaseInsensitive) ||
-                             fileName.endsWith(".hh", Qt::CaseInsensitive) ||
-                             fileName.endsWith(".hpp", Qt::CaseInsensitive) ||
-                             fileName.endsWith(".cpp", Qt::CaseInsensitive) ||
-                             fileName.endsWith(".c", Qt::CaseInsensitive) ||
-                             fileName.endsWith(".cc", Qt::CaseInsensitive) ||
-                             fileName.endsWith(".c++", Qt::CaseInsensitive) ||
-                             fileName.endsWith(".cxx", Qt::CaseInsensitive);
+    auto suffix = QFileInfo(fileName).suffix();
+    auto isCplusplusSource = cExtensions.contains(suffix, Qt::CaseInsensitive) ||
+                             headerExtensions.contains(suffix, Qt::CaseInsensitive);
     actionToggleHeader->setEnabled(isCplusplusSource);
 }
 
