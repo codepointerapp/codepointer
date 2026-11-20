@@ -9,15 +9,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
-#include <QIcon>
-#include <QPainter>
-#include <QProxyStyle>
 #include <QStandardPaths>
-#include <QStyleOptionDockWidget>
-#include <QToolButton>
-#include <QtGlobal>
-
-#include <winui3style/winui3style.h>
 
 #include "pluginmanager.h"
 #include "plugins/CTags/CTagsPlugin.hpp"
@@ -32,10 +24,15 @@
 #include "plugins/hexviewer/hexviewer_plg.h"
 #include "plugins/imageviewer/imageviewer_plg.h"
 #include "plugins/texteditor/texteditor_plg.h"
+#include "winui3style/winui3style.h"
 
 int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(qutepart_syntax_files);
     Q_INIT_RESOURCE(qutepart_theme_data);
+
+    QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
+    QCoreApplication::setApplicationVersion("0.1.10-alpha1");
+    QApplication app(argc, argv);
 
     // File dialogs come up blank on some macOS setups - a virtualised machine, where
     // the AppKit open and save panels are never presented at all. Nothing here can fix
@@ -52,10 +49,6 @@ int main(int argc, char *argv[]) {
     if (!qEnvironmentVariableIsEmpty("CODEPOINTER_QT_FILE_DIALOGS")) {
         QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     }
-
-    QApplication app(argc, argv);
-    QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
-    QCoreApplication::setApplicationVersion("0.1.10-alpha1");
 
 #if defined(WIN32)
     auto needsIcons = true;
@@ -80,12 +73,6 @@ int main(int argc, char *argv[]) {
         qDebug() << "No icons found, using our own. Icons search path" << paths;
     }
 
-    QCommandLineParser parser;
-    parser.addHelpOption();
-    parser.addPositionalArgument(app.tr("files"), app.tr("Files to open."), "[files...]");
-    parser.process(app);
-
-    PluginManager pluginManager;
     auto filePath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     auto iniFilePath = filePath + QString("/%1.ini").arg(CODEPOINTER_APP_NAME);
     auto windowIcon = QIcon(CODEPOINTER_ICON);
@@ -93,6 +80,12 @@ int main(int argc, char *argv[]) {
     auto textEditorPlugin = new TextEditorPlugin;
     auto split = new SplitTabsPlugin(textEditorPlugin);
 
+    QCommandLineParser parser;
+    parser.addHelpOption();
+    parser.addPositionalArgument(app.tr("files"), app.tr("Files to open."), "[files...]");
+    parser.process(app);
+
+    PluginManager pluginManager;
     pluginManager.setWindowTitle(QCoreApplication::applicationName());
     pluginManager.setWindowIcon(windowIcon);
     pluginManager.setFileSettingsManager(iniFilePath);
