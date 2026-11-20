@@ -73,7 +73,7 @@
 #define PLATFORM_LINE_ENDING "\n"
 #endif
 
-auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++"};
+auto static const cExtensions = QStringList{"c", "cpp", "cxx", "cc", "c++", "m", "mm"};
 auto static const headerExtensions = QStringList{"h", "hpp", "hh"};
 
 auto static getCorrespondingFile(PluginManager *manager, const QString &fileName)
@@ -2949,15 +2949,15 @@ void qmdiEditor::updateInternalMappings(const QString &baseDir) {
     }
 }
 
-void qmdiEditor::mapAllLinesToFile(const QString &fileName) {
+void qmdiEditor::mapAllLinesToFile(const QString &diffFileName) {
     diffMetadata.mappings.clear();
-    diffMetadata.baseDir = QFileInfo(fileName).absolutePath();
+    diffMetadata.baseDir = QFileInfo(diffFileName).absolutePath();
 
     auto lines = textEditor->lines();
     for (auto it = lines.begin(); it != lines.end(); ++it) {
         auto line = *it;
         auto i = line.lineNumber();
-        diffMetadata.mappings[i] = {fileName, -1, i + 1};
+        diffMetadata.mappings[i] = {diffFileName, -1, i + 1};
     }
 }
 
