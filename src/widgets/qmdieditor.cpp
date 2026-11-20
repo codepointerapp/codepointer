@@ -271,9 +271,8 @@ static auto createSubFollowSymbolSubmenu(const CommandArgs &data, QMenu *menu,
         }
 
         auto a = new QAction(title, menu);
-        QObject::connect(a, &QAction::triggered, a, [tag, manager]() {
-            openSymbolTag(tag, manager);
-        });
+        QObject::connect(a, &QAction::triggered, a,
+                         [tag, manager]() { openSymbolTag(tag, manager); });
         menu->addAction(a);
     }
 }
@@ -927,8 +926,7 @@ void qmdiEditor::showFollowSymbolMenu() {
             auto const tag = tags.first().toHash();
             auto const fileName = tag[GlobalArguments::FileName].toString();
             auto const lineNumber = tag[GlobalArguments::LineNumber].toInt();
-            if (!fileName.isEmpty() &&
-                (lineNumber > 0 || !addressFromSymbolTag(tag).isEmpty())) {
+            if (!fileName.isEmpty() && (lineNumber > 0 || !addressFromSymbolTag(tag).isEmpty())) {
                 openSymbolTag(tag, pluginManager);
                 return;
             }

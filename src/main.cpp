@@ -57,7 +57,6 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
     QCoreApplication::setApplicationVersion("0.1.10-alpha1");
 
-
 #if defined(WIN32)
     auto needsIcons = true;
     auto iconsPath = "/share/icons";

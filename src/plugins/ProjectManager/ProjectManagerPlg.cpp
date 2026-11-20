@@ -30,7 +30,6 @@
 #include <QStringListModel>
 #include <QTimer>
 #include <QWidgetAction>
-#include <qfileinfo.h>
 #include <cerrno>
 #include <utility>
 
@@ -1236,8 +1235,8 @@ bool ProjectManagerPlugin::runCommand(const QString &workingDirectory, const QSt
                         // A PTY master reports EIO on Linux (and EOF elsewhere) once
                         // the slave side is gone. Leaving the notifier enabled makes
                         // it fire on every POLLHUP, so the event loop spins at 100%.
-                        if (bytesRead < 0 && (errno == EAGAIN || errno == EWOULDBLOCK ||
-                                              errno == EINTR)) {
+                        if (bytesRead < 0 &&
+                            (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
                             return;
                         }
                         notifier->setEnabled(false);
