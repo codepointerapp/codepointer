@@ -4,6 +4,10 @@
 
 No major features, just a stability release.
 
+
+![New theme for Codepointer - follows WinUI3 guidelines](codepointer-winui3.png)
+
+
 Major changes:
 
 * New theme, build specially for Windows. Follows the WinUI3 convention, but also
