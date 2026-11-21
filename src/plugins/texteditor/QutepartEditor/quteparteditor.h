@@ -113,6 +113,8 @@ class QutepartCodeEditor : public CodeEditorInterface {
     void setLineWrapMode(CodeEditor::WrapMode mode) override;
     void setThemeFile(const QString &themeFile) override;
     QString themeFile() const override;
+    QStringList themes() const override;
+    QString themeDisplayName(const QString &themeFile) const override;
     void setEditorFont(const QFont &font) override;
 
     void setDrawAnyWhitespace(bool value) override;

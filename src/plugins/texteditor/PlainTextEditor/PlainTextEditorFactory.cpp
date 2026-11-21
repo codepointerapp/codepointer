@@ -47,12 +47,3 @@ CodeEditor::LanguageInfo PlainTextEditorFactory::languageByName(const QString &n
 }
 
 QStringList PlainTextEditorFactory::fileExtensions() const { return {}; }
-
-QStringList PlainTextEditorFactory::themes() const { return {}; }
-
-QString PlainTextEditorFactory::themeDisplayName(const QString &themeFile) const {
-    if (themeFile.isEmpty()) {
-        return QCoreApplication::translate("PlainTextEditorFactory", "Default");
-    }
-    return {};
-}

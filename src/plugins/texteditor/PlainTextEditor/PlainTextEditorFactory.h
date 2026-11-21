@@ -19,7 +19,4 @@ class PlainTextEditorFactory : public CodeEditorFactory {
     CodeEditor::LanguageInfo languageForFile(const QString &fileName) const override;
     CodeEditor::LanguageInfo languageByName(const QString &name) const override;
     QStringList fileExtensions() const override;
-
-    QStringList themes() const override;
-    QString themeDisplayName(const QString &themeFile) const override;
 };

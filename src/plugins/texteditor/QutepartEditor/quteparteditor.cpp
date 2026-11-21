@@ -7,6 +7,10 @@
 // SPDX-License-Identifier: MIT
 
 #include <QAction>
+#include <QCoreApplication>
+#include <QDir>
+#include <QDirIterator>
+#include <QHash>
 #include <QMenu>
 #include <QRegularExpression>
 #include <QTextBlock>
@@ -49,6 +53,25 @@ static auto fromQutepartSeverity(Qutepart::DiagnosticSeverity severity)
     }
     return CodeEditor::DiagnosticSeverity::Information;
 }
+
+namespace {
+const QHash<QString, QString> &qutepartThemeNames() {
+    static const QHash<QString, QString> names = [] {
+        QHash<QString, QString> result;
+        QDirIterator iterator(":/qutepart/themes/", {"*.theme"}, QDir::NoDotAndDotDot | QDir::Files,
+                              QDirIterator::Subdirectories);
+        while (iterator.hasNext()) {
+            auto fileName = iterator.next();
+            auto theme = Qutepart::Theme();
+            if (theme.loadTheme(fileName)) {
+                result.insert(fileName, theme.getMetaData().name);
+            }
+        }
+        return result;
+    }();
+    return names;
+}
+} // namespace
 
 QutepartCodeEditor::QutepartCodeEditor(QWidget *parent)
     : qutepart(new Qutepart::Qutepart(parent)) {
@@ -502,6 +525,15 @@ void QutepartCodeEditor::setThemeFile(const QString &themeFile) {
 }
 
 QString QutepartCodeEditor::themeFile() const { return themeFileValue; }
+
+QStringList QutepartCodeEditor::themes() const { return qutepartThemeNames().keys(); }
+
+QString QutepartCodeEditor::themeDisplayName(const QString &themeFile) const {
+    if (themeFile.isEmpty()) {
+        return QCoreApplication::translate("QutepartCodeEditor", "Default");
+    }
+    return qutepartThemeNames().value(themeFile);
+}
 
 void QutepartCodeEditor::setEditorFont(const QFont &font) { qutepart->setFont(font); }
 

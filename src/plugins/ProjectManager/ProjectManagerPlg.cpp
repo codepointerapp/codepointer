@@ -14,7 +14,6 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QFontDatabase>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLineEdit>

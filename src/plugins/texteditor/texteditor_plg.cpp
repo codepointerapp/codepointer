@@ -34,14 +34,6 @@ TextEditorPlugin::TextEditorPlugin(CodeEditorFactory *factory) : editorFactory(f
     alwaysEnabled = false;
     historyModel = new SharedHistoryModel(this);
 
-    /*
-    #if defined(WIN32)
-        auto installPrefix = QCoreApplication::applicationDirPath();
-    #else
-        auto installPrefix = QCoreApplication::applicationDirPath() + "/..";
-    #endif
-    */
-
     config.pluginName = tr("Text editor");
     config.description = tr("Default text editor, based on QutePart");
     config.configItems.push_back(qmdiConfigItem::Builder()
@@ -216,10 +208,10 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
         newThemeSelected = false;
         chooseTheme->setDisabled(true);
 
-        auto themeFiles = editorFactory->themes();
+        auto themeFiles = editor->themes();
         auto list = QStringList(tr("System colors"));
         for (auto const &themeFile : std::as_const(themeFiles)) {
-            list.append(editorFactory->themeDisplayName(themeFile));
+            list.append(editor->themeDisplayName(themeFile));
         }
         list.sort(Qt::CaseSensitive);
 
@@ -234,7 +226,7 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
                     pendingThemeFile.clear();
                     if (themeDescription != tr("System colors")) {
                         for (auto const &themeFile : std::as_const(themeFiles)) {
-                            if (editorFactory->themeDisplayName(themeFile) == themeDescription) {
+                            if (editor->themeDisplayName(themeFile) == themeDescription) {
                                 pendingThemeFile = themeFile;
                                 break;
                             }

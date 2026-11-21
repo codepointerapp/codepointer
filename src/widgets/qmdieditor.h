@@ -67,6 +67,10 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void setEditorHighlighter(QString id);
     void setEditorThemeFile(const QString &themeFile);
     QString editorThemeFile() const;
+    QStringList themes() const { return textEditor->themes(); }
+    QString themeDisplayName(const QString &themeFile) const {
+        return textEditor->themeDisplayName(themeFile);
+    }
     inline void setEditorMarkWord(bool b) { textEditor->setMarkCurrentWord(b); }
 
     bool isLocalToolbarVisible() const;

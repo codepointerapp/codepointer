@@ -8,14 +8,10 @@
 
 #pragma once
 
-#include <QHash>
-
 #include "widgets/codeeditorfactory.h"
 
 class QutepartEditorFactory : public CodeEditorFactory {
   public:
-    QutepartEditorFactory();
-
     QString id() const override;
     QString displayName() const override;
     std::unique_ptr<CodeEditorInterface> createEditor(QWidget *parent) override;
@@ -24,10 +20,4 @@ class QutepartEditorFactory : public CodeEditorFactory {
     CodeEditor::LanguageInfo languageForFile(const QString &fileName) const override;
     CodeEditor::LanguageInfo languageByName(const QString &name) const override;
     QStringList fileExtensions() const override;
-
-    QStringList themes() const override;
-    QString themeDisplayName(const QString &themeFile) const override;
-
-  private:
-    QHash<QString, QString> themeNames;
 };

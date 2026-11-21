@@ -28,7 +28,4 @@ class CodeEditorFactory {
     virtual CodeEditor::LanguageInfo languageForFile(const QString &fileName) const = 0;
     virtual CodeEditor::LanguageInfo languageByName(const QString &name) const = 0;
     virtual QStringList fileExtensions() const = 0;
-
-    virtual QStringList themes() const = 0;
-    virtual QString themeDisplayName(const QString &themeFile) const = 0;
 };

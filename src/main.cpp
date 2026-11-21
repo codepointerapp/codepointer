@@ -25,7 +25,7 @@
 #include "plugins/imageviewer/imageviewer_plg.h"
 #include "plugins/texteditor/texteditor_plg.h"
 
-// #define USE_QUTEPART_EDITOR
+#define USE_QUTEPART_EDITOR
 
 #ifdef USE_QUTEPART_EDITOR
 #include "plugins/texteditor/QutepartEditor/quteparteditorfactory.h"

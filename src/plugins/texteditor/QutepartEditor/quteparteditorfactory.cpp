@@ -7,7 +7,6 @@
 // SPDX-License-Identifier: MIT
 
 #include <QCoreApplication>
-#include <QDirIterator>
 
 #include <qutepart/qutepart.h>
 #include <qutepart/theme.h>
@@ -25,19 +24,6 @@ static auto fromQutepartLanguage(const Qutepart::LangInfo &langInfo) -> CodeEdit
     result.names = langInfo.names;
     result.indentAlgorithm = static_cast<CodeEditor::IndentAlgorithm>(langInfo.indentAlg);
     return result;
-}
-
-QutepartEditorFactory::QutepartEditorFactory() {
-    auto iterator = QDirIterator(":/qutepart/themes/", {"*.theme"},
-                                 QDir::NoDotAndDotDot | QDir::Files,
-                                 QDirIterator::Subdirectories);
-    while (iterator.hasNext()) {
-        auto fileName = iterator.next();
-        auto theme = Qutepart::Theme();
-        if (theme.loadTheme(fileName)) {
-            themeNames.insert(fileName, theme.getMetaData().name);
-        }
-    }
 }
 
 QString QutepartEditorFactory::id() const { return QStringLiteral("qutepart"); }
@@ -92,12 +78,3 @@ CodeEditor::LanguageInfo QutepartEditorFactory::languageByName(const QString &na
 }
 
 QStringList QutepartEditorFactory::fileExtensions() const { return {}; }
-
-QStringList QutepartEditorFactory::themes() const { return themeNames.keys(); }
-
-QString QutepartEditorFactory::themeDisplayName(const QString &themeFile) const {
-    if (themeFile.isEmpty()) {
-        return QCoreApplication::translate("QutepartEditorFactory", "Default");
-    }
-    return themeNames.value(themeFile);
-}

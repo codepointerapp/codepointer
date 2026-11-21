@@ -211,6 +211,13 @@ class CodeEditorInterface {
     virtual void setLineWrapMode(CodeEditor::WrapMode mode) = 0;
     virtual void setThemeFile(const QString &themeFile) { Q_UNUSED(themeFile); }
     virtual QString themeFile() const { return {}; }
+    /// Available theme files and their user visible names. Backends without
+    /// themes return empty lists.
+    virtual QStringList themes() const { return {}; }
+    virtual QString themeDisplayName(const QString &themeFile) const {
+        Q_UNUSED(themeFile);
+        return {};
+    }
     virtual void setEditorFont(const QFont &font) = 0;
 
     virtual void setDrawAnyWhitespace(bool) {}
