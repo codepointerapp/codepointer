@@ -231,18 +231,14 @@ set(codepointer_sources
 
     src/plugins/CodeFormat/CodeFormat.cpp
     src/plugins/CodeFormat/CodeFormat.hpp
-    src/plugins/QutepartEditor/quteparteditor.cpp
-    src/plugins/QutepartEditor/quteparteditor.h
-    src/plugins/QutepartEditor/quteparteditorfactory.cpp
-    src/plugins/QutepartEditor/quteparteditorfactory.h
-    src/plugins/QutepartEditor/QutepartEditorPlugin.cpp
-    src/plugins/QutepartEditor/QutepartEditorPlugin.hpp
-    src/plugins/PlainTextEditor/PlainTextEditor.cpp
-    src/plugins/PlainTextEditor/PlainTextEditor.h
-    src/plugins/PlainTextEditor/PlainTextEditorFactory.cpp
-    src/plugins/PlainTextEditor/PlainTextEditorFactory.h
-    src/plugins/PlainTextEditor/PlainTextEditorPlugin.cpp
-    src/plugins/PlainTextEditor/PlainTextEditorPlugin.hpp
+    src/plugins/texteditor/QutepartEditor/quteparteditor.cpp
+    src/plugins/texteditor/QutepartEditor/quteparteditor.h
+    src/plugins/texteditor/QutepartEditor/quteparteditorfactory.cpp
+    src/plugins/texteditor/QutepartEditor/quteparteditorfactory.h
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditor.cpp
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditor.h
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.cpp
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.h
     src/plugins/texteditor/texteditor_plg.cpp
     src/plugins/texteditor/texteditor_plg.h
     src/plugins/texteditor/thememanager.cpp
