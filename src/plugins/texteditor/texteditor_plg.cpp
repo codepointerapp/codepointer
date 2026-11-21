@@ -209,8 +209,8 @@ CodeEditorFactory *TextEditorPlugin::chooseFactory(const QString &fileName) cons
     return best;
 }
 
-qmdiEditor *TextEditorPlugin::createEditor(const QString &fileName) {
-    auto *editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), chooseFactory(fileName));
+qmdiEditor *TextEditorPlugin::createEditor(CodeEditorFactory *factory) {
+    auto *editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), factory);
     QPointer<qmdiEditor> safeEditor = editor;
 
     connect(editor, &qmdiEditor::fileNameChanged, this, [this, safeEditor](const QString &newName) {
@@ -424,8 +424,9 @@ QFuture<CommandArgs> TextEditorPlugin::handleCommandAsync(const QString &command
         clientPosition = -1;
     }
 
-    auto editor = createEditor(fileName);
-    auto langInfo = languageForFile(fileName);
+    auto *factory = chooseFactory(fileName);
+    auto editor = createEditor(factory);
+    auto langInfo = factory ? factory->languageForFile(fileName) : CodeEditor::LanguageInfo{};
     if (langInfo.isValid()) {
         editor->setEditorHighlighter(langInfo.id);
     }
@@ -563,7 +564,8 @@ int TextEditorPlugin::canOpenFile(const QString &fileName) {
 }
 
 qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, int zoom) {
-    auto editor = createEditor(fileName);
+    auto *factory = chooseFactory(fileName);
+    auto editor = createEditor(factory);
 
     // In the future - the zoom, will be used to set state to the lines, if the value is really
     // large. I will assume that font size bigger than 500 is not really existent.
@@ -573,7 +575,7 @@ qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, in
         editor->setFont(f);
     }
 
-    auto langInfo = languageForFile(fileName);
+    auto langInfo = factory ? factory->languageForFile(fileName) : CodeEditor::LanguageInfo{};
     if (langInfo.isValid()) {
         editor->setEditorHighlighter(langInfo.id);
     }
@@ -651,7 +653,7 @@ void TextEditorPlugin::fileNew() {
 }
 
 qmdiClient *TextEditorPlugin::fileNewEditor() {
-    auto editor = createEditor();
+    auto editor = createEditor(chooseFactory());
     editor->setHistoryModel(historyModel);
     applySettings(editor);
     return editor;

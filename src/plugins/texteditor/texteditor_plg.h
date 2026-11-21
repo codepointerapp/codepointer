@@ -76,7 +76,7 @@ class TextEditorPlugin : public IPlugin {
 
   private:
     CodeEditorFactory *chooseFactory(const QString &fileName = {}) const;
-    qmdiEditor *createEditor(const QString &fileName = {});
+    qmdiEditor *createEditor(CodeEditorFactory *factory);
     void adviseReopen(qmdiEditor *editor, const QString &fileName);
     void showReopenBanner(qmdiEditor *editor, const QString &reason);
     void reopenWithBestPlugin(qmdiEditor *editor);
