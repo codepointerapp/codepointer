@@ -583,6 +583,18 @@ qmdiEditor::qmdiEditor(QWidget *p, CodeEditorFactory *factory)
 }
 
 qmdiEditor::~qmdiEditor() {
+    // The editor widget is a child of this QWidget, but the interface that owns
+    // it is a member destroyed before QWidget's destructor runs. Drop the event
+    // filters first, otherwise the child's destruction can re-enter eventFilter()
+    // and call through the already destroyed textEditor.
+    if (textEditor) {
+        textEditor->viewport()->removeEventFilter(this);
+    }
+    if (renameEdit) {
+        renameEdit->removeEventFilter(this);
+    }
+    removeEventFilter(this);
+
     bookmarksMenu->deleteLater();
     textOperationsMenu->deleteLater();
     mdiServer = nullptr;
