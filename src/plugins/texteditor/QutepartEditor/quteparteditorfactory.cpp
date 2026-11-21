@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <QCoreApplication>
+#include <QFileInfo>
 
 #include <qutepart/qutepart.h>
 #include <qutepart/theme.h>
@@ -26,9 +27,35 @@ static auto fromQutepartLanguage(const Qutepart::LangInfo &langInfo) -> CodeEdit
     return result;
 }
 
+static auto isPlainTextFileName(const QString &fileName) -> bool {
+    auto const info = QFileInfo(fileName);
+    static const QStringList plainTextNames = {
+        QStringLiteral("readme"),   QStringLiteral("license"),  QStringLiteral("copying"),
+        QStringLiteral("makefile"), QStringLiteral("doxyfile"), QStringLiteral("cmakelists.txt"),
+    };
+    if (plainTextNames.contains(info.fileName().toLower())) {
+        return true;
+    }
+
+    static const QStringList plainTextSuffixes = {QStringLiteral("txt"), QStringLiteral("text")};
+    return plainTextSuffixes.contains(info.suffix().toLower());
+}
+
 QString QutepartEditorFactory::id() const { return QStringLiteral("qutepart"); }
 
 QString QutepartEditorFactory::displayName() const { return QStringLiteral("Qutepart"); }
+
+int QutepartEditorFactory::score(const QString &fileName) const {
+    if (fileName.isEmpty()) {
+        return EditorScore::Low;
+    }
+
+    auto const language = languageForFile(fileName);
+    if (!language.isValid()) {
+        return isPlainTextFileName(fileName) ? EditorScore::Medium : 0;
+    }
+    return language.id == QStringLiteral("Plain text") ? EditorScore::Medium : EditorScore::High;
+}
 
 std::unique_ptr<CodeEditorInterface> QutepartEditorFactory::createEditor(QWidget *parent) {
     return std::make_unique<QutepartCodeEditor>(parent);

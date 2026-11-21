@@ -1026,6 +1026,7 @@ qmdiClientState qmdiEditor::getState() const {
     state[StateConstants::ZOOM] = zoom;
     state[StateConstants::READ_ONLY] = textEditor->isReadOnly();
     state[StateConstants::BASE_DIR] = diffMetadata.baseDir;
+    state[StateConstants::SCROLL] = textEditor->verticalScrollBar()->value();
 
     if (!uid.isEmpty()) {
         state[StateConstants::UUID] = uid;
@@ -1079,6 +1080,9 @@ void qmdiEditor::setState(const qmdiClientState &state) {
 
     if (state.contains(StateConstants::READ_ONLY)) {
         textEditor->setReadOnly(state[StateConstants::READ_ONLY].toBool());
+    }
+    if (state.contains(StateConstants::SCROLL)) {
+        textEditor->verticalScrollBar()->setValue(state[StateConstants::SCROLL].toInt());
     }
     diffMetadata.baseDir = state[StateConstants::BASE_DIR].toString();
 }
@@ -2410,6 +2414,9 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
 
     textEditor->setModified(false);
     updateClientName();
+    if (filenameChanged) {
+        emit fileNameChanged(newFileName);
+    }
     QApplication::restoreOverrideCursor();
     return true;
 }
@@ -2918,5 +2925,7 @@ void qmdiEditor::deleteBackup() {
 void qmdiEditor::fileMessage_clicked(const QString &s) {
     if (s == ":reload") {
         reload();
+    } else if (s == ":reopen-here") {
+        emit reopenRequested();
     }
 }

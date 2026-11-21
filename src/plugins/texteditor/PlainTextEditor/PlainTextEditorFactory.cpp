@@ -26,6 +26,10 @@ QString PlainTextEditorFactory::displayName() const {
     return QCoreApplication::translate("PlainTextEditorFactory", "Plain text");
 }
 
+int PlainTextEditorFactory::score(const QString &fileName) const {
+    return fileName.isEmpty() ? EditorScore::Medium : EditorScore::Low;
+}
+
 std::unique_ptr<CodeEditorInterface> PlainTextEditorFactory::createEditor(QWidget *parent) {
     return std::make_unique<PlainTextCodeEditor>(parent);
 }

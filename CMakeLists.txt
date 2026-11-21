@@ -235,10 +235,14 @@ set(codepointer_sources
     src/plugins/texteditor/QutepartEditor/quteparteditor.h
     src/plugins/texteditor/QutepartEditor/quteparteditorfactory.cpp
     src/plugins/texteditor/QutepartEditor/quteparteditorfactory.h
+    src/plugins/texteditor/QutepartEditor/QutepartEditorPlugin.cpp
+    src/plugins/texteditor/QutepartEditor/QutepartEditorPlugin.h
     src/plugins/texteditor/PlainTextEditor/PlainTextEditor.cpp
     src/plugins/texteditor/PlainTextEditor/PlainTextEditor.h
     src/plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.cpp
     src/plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.h
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditorPlugin.cpp
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditorPlugin.h
     src/plugins/texteditor/texteditor_plg.cpp
     src/plugins/texteditor/texteditor_plg.h
     src/plugins/texteditor/thememanager.cpp
@@ -304,6 +308,7 @@ set(codepointer_sources
     src/plugins/Terminal/TerminalPlugin.hpp
     src/AnsiToHTML.cpp
     src/AnsiToHTML.hpp
+    src/CodePointerPluginManager.hpp
 
     src/plugins/LSP/LspClientImpl.cpp
     src/plugins/LSP/LspClientImpl.hpp

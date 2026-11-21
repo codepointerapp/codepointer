@@ -15,6 +15,10 @@ class CodeEditorFactory;
 class qmdiEditor;
 class SharedHistoryModel;
 
+namespace CodeEditor {
+struct LanguageInfo;
+}
+
 class TextEditorPlugin : public IPlugin {
     struct Config {
         CONFIG_DEFINE(ShowToolbar, bool)
@@ -42,13 +46,12 @@ class TextEditorPlugin : public IPlugin {
         static Config configObject{&this->config};
         return configObject;
     }
-    CodeEditorFactory *editorFactory;
     QString currentThemeFile;
 
     Q_OBJECT
   public:
-    explicit TextEditorPlugin(CodeEditorFactory *factory);
-    ~TextEditorPlugin();
+    explicit TextEditorPlugin();
+    ~TextEditorPlugin() override = default;
 
     virtual void on_client_merged(qmdiHost *host) override;
     virtual void showAbout() override;
@@ -64,7 +67,7 @@ class TextEditorPlugin : public IPlugin {
     qmdiClient *openFile(const QString &fileName, int x = -1, int y = -1, int z = -1) override;
     qmdiClient *navigateFile(qmdiClient *client, int x, int y, int z) override;
     void applySettings(qmdiEditor *editor);
-    CodeEditorFactory *getEditorFactory() const { return editorFactory; }
+    CodeEditor::LanguageInfo languageForFile(const QString &fileName) const;
 
   public slots:
     virtual void configurationHasBeenModified() override;
@@ -72,6 +75,12 @@ class TextEditorPlugin : public IPlugin {
     qmdiClient *fileNewEditor();
 
   private:
+    CodeEditorFactory *chooseFactory(const QString &fileName = {}) const;
+    qmdiEditor *createEditor(const QString &fileName = {});
+    void adviseReopen(qmdiEditor *editor, const QString &fileName);
+    void showReopenBanner(qmdiEditor *editor, const QString &reason);
+    void reopenWithBestPlugin(qmdiEditor *editor);
+
     QAction *chooseTheme;
     SharedHistoryModel *historyModel;
     QString pendingThemeFile;

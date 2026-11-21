@@ -13,6 +13,7 @@ class PlainTextEditorFactory : public CodeEditorFactory {
   public:
     QString id() const override;
     QString displayName() const override;
+    int score(const QString &fileName) const override;
     std::unique_ptr<CodeEditorInterface> createEditor(QWidget *parent) override;
 
     QList<CodeEditor::LanguageInfo> languages() const override;

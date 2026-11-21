@@ -8,6 +8,7 @@
 #include <QFontDatabase>
 #include <QMainWindow>
 #include <QMessageBox>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 #include <QStringListModel>
@@ -19,13 +20,14 @@
 #include <qmdiserver.h>
 
 #include "AnsiToHTML.hpp"
+#include "CodePointerPluginManager.hpp"
 #include "GlobalCommands.hpp"
 #include "texteditor_plg.h"
 #include "widgets/HistoryLineEdit.h"
 #include "widgets/codeeditorfactory.h"
 #include "widgets/qmdieditor.h"
 
-TextEditorPlugin::TextEditorPlugin(CodeEditorFactory *factory) : editorFactory(factory) {
+TextEditorPlugin::TextEditorPlugin() {
     name = "TextEditorPlugin";
     author = tr("Diego Iastrubni <diegoiast@gmail.com>");
     iVersion = 0;
@@ -187,7 +189,117 @@ TextEditorPlugin::TextEditorPlugin(CodeEditorFactory *factory) : editorFactory(f
                                      .build());
 }
 
-TextEditorPlugin::~TextEditorPlugin() { delete editorFactory; }
+CodeEditorFactory *TextEditorPlugin::chooseFactory(const QString &fileName) const {
+    auto *manager = dynamic_cast<CodePointerPluginManager *>(getManager());
+    if (!manager) {
+        return nullptr;
+    }
+
+    CodeEditorFactory *best = nullptr;
+    auto bestScore = 0;
+    for (auto *plugin : manager->enabledPlugins()) {
+        auto *factory = dynamic_cast<CodeEditorFactory *>(plugin);
+        if (!factory) {
+            continue;
+        }
+        if (auto score = factory->score(fileName); score > bestScore) {
+            best = factory;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+qmdiEditor *TextEditorPlugin::createEditor(const QString &fileName) {
+    auto *editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), chooseFactory(fileName));
+    QPointer<qmdiEditor> safeEditor = editor;
+
+    connect(editor, &qmdiEditor::fileNameChanged, this, [this, safeEditor](const QString &newName) {
+        if (safeEditor) {
+            adviseReopen(safeEditor.data(), newName);
+        }
+    });
+    connect(editor, &qmdiEditor::reopenRequested, this, [this, safeEditor]() {
+        if (safeEditor) {
+            reopenWithBestPlugin(safeEditor.data());
+        }
+    });
+    return editor;
+}
+
+CodeEditor::LanguageInfo TextEditorPlugin::languageForFile(const QString &fileName) const {
+    auto *factory = chooseFactory(fileName);
+    if (!factory) {
+        return {};
+    }
+    return factory->languageForFile(fileName);
+}
+
+void TextEditorPlugin::adviseReopen(qmdiEditor *editor, const QString &fileName) {
+    auto *manager = dynamic_cast<CodePointerPluginManager *>(getManager());
+    if (!manager || !editor) {
+        return;
+    }
+
+    auto *bestPlugin = manager->bestPluginForFile(fileName);
+    if (!bestPlugin) {
+        return;
+    }
+
+    if (bestPlugin != this) {
+        showReopenBanner(editor,
+                         tr("This file is handled better by %1.").arg(bestPlugin->getName()));
+        return;
+    }
+
+    auto *current = editor->factory();
+    auto *best = chooseFactory(fileName);
+    if (current && best && best != current && best->score(fileName) > current->score(fileName)) {
+        showReopenBanner(editor, tr("This file is handled better by %1.").arg(best->displayName()));
+    }
+}
+
+void TextEditorPlugin::showReopenBanner(qmdiEditor *editor, const QString &reason) {
+    auto message = QStringLiteral("%1 <a href=':reopen-here' title='%2'>%3</a>")
+                       .arg(reason, tr("Reopen this file with the suggested viewer"),
+                            tr("Click here to reopen"));
+    editor->displayBannerMessage(message, -1);
+}
+
+void TextEditorPlugin::reopenWithBestPlugin(qmdiEditor *editor) {
+    auto *manager = getManager();
+    if (!manager || !mdiServer || !editor) {
+        return;
+    }
+
+    if (!editor->doSave()) {
+        return;
+    }
+
+    auto state = editor->getState();
+    auto const fileName = editor->mdiClientFileName();
+    auto const oldIndex = mdiServer->getClientIndex(editor);
+    QPointer<qmdiEditor> safeEditor = editor;
+    mdiServer->tryCloseClient(oldIndex);
+    if (safeEditor) {
+        // Closing was vetoed, so there is nothing to reopen.
+        return;
+    }
+
+    auto *client = manager->openFile(fileName);
+    if (!client) {
+        return;
+    }
+
+    client->setState(state);
+    auto const newIndex = mdiServer->getClientIndex(client);
+    if (newIndex >= 0 && oldIndex >= 0 && newIndex != oldIndex) {
+        mdiServer->moveClient(newIndex, oldIndex);
+    }
+    if (oldIndex >= 0) {
+        mdiServer->setCurrentClientIndex(oldIndex);
+    }
+}
 
 void TextEditorPlugin::on_client_merged(qmdiHost *) {
     auto manager = getManager();
@@ -313,8 +425,8 @@ QFuture<CommandArgs> TextEditorPlugin::handleCommandAsync(const QString &command
         clientPosition = -1;
     }
 
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), editorFactory);
-    auto langInfo = editorFactory->languageForFile(fileName);
+    auto editor = createEditor(fileName);
+    auto langInfo = languageForFile(fileName);
     if (langInfo.isValid()) {
         editor->setEditorHighlighter(langInfo.id);
     }
@@ -452,7 +564,7 @@ int TextEditorPlugin::canOpenFile(const QString &fileName) {
 }
 
 qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, int zoom) {
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), editorFactory);
+    auto editor = createEditor(fileName);
 
     // In the future - the zoom, will be used to set state to the lines, if the value is really
     // large. I will assume that font size bigger than 500 is not really existent.
@@ -462,7 +574,7 @@ qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, in
         editor->setFont(f);
     }
 
-    auto langInfo = editorFactory->languageForFile(fileName);
+    auto langInfo = languageForFile(fileName);
     if (langInfo.isValid()) {
         editor->setEditorHighlighter(langInfo.id);
     }
@@ -540,7 +652,7 @@ void TextEditorPlugin::fileNew() {
 }
 
 qmdiClient *TextEditorPlugin::fileNewEditor() {
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), editorFactory);
+    auto editor = createEditor();
     editor->setHistoryModel(historyModel);
     applySettings(editor);
     return editor;

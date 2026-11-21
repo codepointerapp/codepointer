@@ -145,6 +145,10 @@ class qmdiEditor : public QWidget, public qmdiClient {
     /// The buffer changed. Emitted on every keystroke, so consumers that do
     /// expensive work (LSP document sync) must debounce.
     void contentChanged();
+    /// Emitted after a successful save that changed the file name.
+    void fileNameChanged(const QString &newName);
+    /// The user clicked the reopen link in a backend-advice banner.
+    void reopenRequested();
 
   public slots:
     void on_fileChanged(const QString &filename);
@@ -238,6 +242,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
     inline void setMinimapVisible(bool value) const { textEditor->setMinimapVisible(value); }
     void setReadOnly(bool b);
     inline CodeEditorInterface *getCodeEditor() const { return textEditor.get(); }
+    inline CodeEditorFactory *factory() const { return editorFactory; }
     inline void setHighlighter(const QString &languageId) {
         textEditor->setHighlighter(languageId);
     }
@@ -361,6 +366,7 @@ class qmdiEditor : public QWidget, public qmdiClient {
         static constexpr const char *UUID = "uuid";
         static constexpr const char *READ_ONLY = "read-only";
         static constexpr const char *BASE_DIR = "basedir";
+        static constexpr const char *SCROLL = "scroll";
     };
 
     QString fileName;

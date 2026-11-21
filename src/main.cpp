@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QStandardPaths>
 
+#include "CodePointerPluginManager.hpp"
 #include "pluginmanager.h"
 #include "plugins/CTags/CTagsPlugin.hpp"
 #include "plugins/CodeFormat/CodeFormat.hpp"
@@ -23,17 +24,9 @@
 #include "plugins/help/help_plg.h"
 #include "plugins/hexviewer/hexviewer_plg.h"
 #include "plugins/imageviewer/imageviewer_plg.h"
+#include "plugins/texteditor/PlainTextEditor/PlainTextEditorPlugin.h"
+#include "plugins/texteditor/QutepartEditor/QutepartEditorPlugin.h"
 #include "plugins/texteditor/texteditor_plg.h"
-
-#define USE_QUTEPART_EDITOR
-
-#ifdef USE_QUTEPART_EDITOR
-#include "plugins/texteditor/QutepartEditor/quteparteditorfactory.h"
-#define EDITOR_FACTORY QutepartEditorFactory
-#else
-#include "plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.h"
-#define EDITOR_FACTORY PlainTextEditorFactory
-#endif
 
 int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(qutepart_syntax_files);
@@ -91,18 +84,20 @@ int main(int argc, char *argv[]) {
     parser.addPositionalArgument(app.tr("files"), app.tr("Files to open."), "[files...]");
     parser.process(app);
 
-    PluginManager pluginManager;
+    CodePointerPluginManager pluginManager;
     pluginManager.setWindowTitle(QCoreApplication::applicationName());
     pluginManager.setWindowIcon(windowIcon);
     pluginManager.setFileSettingsManager(iniFilePath);
 
-    auto textEditorPlugin = new TextEditorPlugin(new EDITOR_FACTORY);
+    auto textEditorPlugin = new TextEditorPlugin;
     auto splitPlugin = new SplitTabsPlugin(textEditorPlugin);
     auto helpPlugin = new HelpPlugin;
 
     pluginManager.addPlugin(textEditorPlugin);
     pluginManager.addPlugin(splitPlugin);
     pluginManager.addPlugin(helpPlugin);
+    pluginManager.addPlugin(new QutepartEditorPlugin);
+    pluginManager.addPlugin(new PlainTextEditorPlugin);
     pluginManager.addPlugin(new CodeFormatPlugin);
     pluginManager.addPlugin(new CTagsPlugin);
     pluginManager.addPlugin(new LspPlugin);

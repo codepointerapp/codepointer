@@ -631,7 +631,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         }
         file.close();
 
-        auto langInfo = p->getEditorFactory()->languageForFile(filename);
+        auto langInfo = p->languageForFile(filename);
         if (langInfo.isValid()) {
             highlighter = langInfo.id;
         }
