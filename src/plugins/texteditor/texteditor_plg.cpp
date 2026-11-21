@@ -20,7 +20,6 @@
 #include <qmdiserver.h>
 
 #include "AnsiToHTML.hpp"
-#include "CodePointerPluginManager.hpp"
 #include "GlobalCommands.hpp"
 #include "texteditor_plg.h"
 #include "widgets/HistoryLineEdit.h"
@@ -190,15 +189,15 @@ TextEditorPlugin::TextEditorPlugin() {
 }
 
 CodeEditorFactory *TextEditorPlugin::chooseFactory(const QString &fileName) const {
-    auto *manager = dynamic_cast<CodePointerPluginManager *>(getManager());
+    auto *manager = dynamic_cast<PluginManager *>(getManager());
     if (!manager) {
         return nullptr;
     }
 
     CodeEditorFactory *best = nullptr;
     auto bestScore = 0;
-    for (auto *plugin : manager->enabledPlugins()) {
-        auto *factory = dynamic_cast<CodeEditorFactory *>(plugin);
+    for (auto plugin : manager->enabledPlugins()) {
+        auto factory = dynamic_cast<CodeEditorFactory *>(plugin);
         if (!factory) {
             continue;
         }
@@ -236,7 +235,7 @@ CodeEditor::LanguageInfo TextEditorPlugin::languageForFile(const QString &fileNa
 }
 
 void TextEditorPlugin::adviseReopen(qmdiEditor *editor, const QString &fileName) {
-    auto *manager = dynamic_cast<CodePointerPluginManager *>(getManager());
+    auto *manager = dynamic_cast<PluginManager *>(getManager());
     if (!manager || !editor) {
         return;
     }

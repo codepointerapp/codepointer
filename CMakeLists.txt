@@ -233,16 +233,16 @@ set(codepointer_sources
     src/plugins/CodeFormat/CodeFormat.hpp
     src/plugins/texteditor/QutepartEditor/quteparteditor.cpp
     src/plugins/texteditor/QutepartEditor/quteparteditor.h
+    src/plugins/PlainText/PlainTextEditorPlugin.cpp
+    src/plugins/PlainText/PlainTextEditorPlugin.h
+    src/plugins/QutepartEditor/QutepartEditorPlugin.cpp
+    src/plugins/QutepartEditor/QutepartEditorPlugin.h
     src/plugins/texteditor/QutepartEditor/quteparteditorfactory.cpp
     src/plugins/texteditor/QutepartEditor/quteparteditorfactory.h
-    src/plugins/texteditor/QutepartEditor/QutepartEditorPlugin.cpp
-    src/plugins/texteditor/QutepartEditor/QutepartEditorPlugin.h
     src/plugins/texteditor/PlainTextEditor/PlainTextEditor.cpp
     src/plugins/texteditor/PlainTextEditor/PlainTextEditor.h
     src/plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.cpp
     src/plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.h
-    src/plugins/texteditor/PlainTextEditor/PlainTextEditorPlugin.cpp
-    src/plugins/texteditor/PlainTextEditor/PlainTextEditorPlugin.h
     src/plugins/texteditor/texteditor_plg.cpp
     src/plugins/texteditor/texteditor_plg.h
     src/plugins/texteditor/thememanager.cpp

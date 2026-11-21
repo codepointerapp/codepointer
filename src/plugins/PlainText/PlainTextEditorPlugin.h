@@ -7,8 +7,8 @@
 
 #pragma once
 
-#include "PlainTextEditorFactory.h"
 #include "iplugin.h"
+#include "plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.h"
 
 class PlainTextEditorPlugin : public IPlugin, public PlainTextEditorFactory {
     Q_OBJECT

@@ -9,7 +9,7 @@
 #pragma once
 
 #include "iplugin.h"
-#include "quteparteditorfactory.h"
+#include "plugins/texteditor/QutepartEditor/quteparteditorfactory.h"
 
 class QutepartEditorPlugin : public IPlugin, public QutepartEditorFactory {
     Q_OBJECT

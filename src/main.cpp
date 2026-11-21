@@ -11,12 +11,13 @@
 #include <QDir>
 #include <QStandardPaths>
 
-#include "CodePointerPluginManager.hpp"
 #include "pluginmanager.h"
 #include "plugins/CTags/CTagsPlugin.hpp"
 #include "plugins/CodeFormat/CodeFormat.hpp"
 #include "plugins/LSP/LspPlugin.hpp"
+#include "plugins/PlainText/PlainTextEditorPlugin.h"
 #include "plugins/ProjectManager/ProjectManagerPlg.h"
+#include "plugins/QutepartEditor/QutepartEditorPlugin.h"
 #include "plugins/SplitTabsPlugin/SplitTabsPlugin.hpp"
 #include "plugins/Terminal/TerminalPlugin.hpp"
 #include "plugins/filesystem/filesystembrowser.h"
@@ -24,8 +25,6 @@
 #include "plugins/help/help_plg.h"
 #include "plugins/hexviewer/hexviewer_plg.h"
 #include "plugins/imageviewer/imageviewer_plg.h"
-#include "plugins/texteditor/PlainTextEditor/PlainTextEditorPlugin.h"
-#include "plugins/texteditor/QutepartEditor/QutepartEditorPlugin.h"
 #include "plugins/texteditor/texteditor_plg.h"
 
 int main(int argc, char *argv[]) {
@@ -84,7 +83,7 @@ int main(int argc, char *argv[]) {
     parser.addPositionalArgument(app.tr("files"), app.tr("Files to open."), "[files...]");
     parser.process(app);
 
-    CodePointerPluginManager pluginManager;
+    PluginManager pluginManager;
     pluginManager.setWindowTitle(QCoreApplication::applicationName());
     pluginManager.setWindowIcon(windowIcon);
     pluginManager.setFileSettingsManager(iniFilePath);
