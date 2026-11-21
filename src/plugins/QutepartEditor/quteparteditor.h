@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "codeeditorinterface.h"
+#include "widgets/codeeditorinterface.h"
 
 class QAction;
 class QMenu;

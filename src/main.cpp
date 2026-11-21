@@ -15,6 +15,8 @@
 #include "plugins/CTags/CTagsPlugin.hpp"
 #include "plugins/CodeFormat/CodeFormat.hpp"
 #include "plugins/LSP/LspPlugin.hpp"
+#include "plugins/PlainTextEditor/PlainTextEditorPlugin.hpp"
+// #include "plugins/QutepartEditor/QutepartEditorPlugin.hpp"
 #include "plugins/ProjectManager/ProjectManagerPlg.h"
 #include "plugins/SplitTabsPlugin/SplitTabsPlugin.hpp"
 #include "plugins/Terminal/TerminalPlugin.hpp"
@@ -24,7 +26,6 @@
 #include "plugins/hexviewer/hexviewer_plg.h"
 #include "plugins/imageviewer/imageviewer_plg.h"
 #include "plugins/texteditor/texteditor_plg.h"
-#include "widgets/quteparteditorfactory.h"
 #include "winui3style/winui3style.h"
 
 int main(int argc, char *argv[]) {
@@ -78,7 +79,11 @@ int main(int argc, char *argv[]) {
     auto iniFilePath = filePath + QString("/%1.ini").arg(CODEPOINTER_APP_NAME);
     auto windowIcon = QIcon(CODEPOINTER_ICON);
     auto helpPlugin = new HelpPlugin;
-    auto textEditorPlugin = new TextEditorPlugin(new QutepartEditorFactory);
+    // To use the original Qutepart backed editor instead, include
+    // QutepartEditorPlugin.hpp above and swap this for:
+    // auto editorPlugin = new QutepartEditorPlugin;
+    auto editorPlugin = new PlainTextEditorPlugin;
+    auto textEditorPlugin = new TextEditorPlugin(editorPlugin->factory());
     auto split = new SplitTabsPlugin(textEditorPlugin);
 
     QCommandLineParser parser;
@@ -91,6 +96,7 @@ int main(int argc, char *argv[]) {
     pluginManager.setWindowIcon(windowIcon);
     pluginManager.setFileSettingsManager(iniFilePath);
 
+    pluginManager.addPlugin(editorPlugin);
     pluginManager.addPlugin(split);
     pluginManager.addPlugin(textEditorPlugin);
     pluginManager.addPlugin(helpPlugin);

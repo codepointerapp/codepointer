@@ -16,9 +16,9 @@
 #include <qutepart/qutepart.h>
 #include <qutepart/theme.h>
 
-#include "lsp_rename_geometry.h"
 #include "quteparteditor.h"
-#include "qttextoperationsadapter.h"
+#include "widgets/lsp_rename_geometry.h"
+#include "widgets/qttextoperationsadapter.h"
 
 static auto toQutepartSeverity(CodeEditor::DiagnosticSeverity severity)
     -> Qutepart::DiagnosticSeverity {

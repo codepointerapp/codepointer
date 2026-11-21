@@ -218,10 +218,6 @@ set(codepointer_sources
     src/widgets/qmdieditor.h
     src/widgets/codeeditorinterface.h
     src/widgets/codeeditorfactory.h
-    src/widgets/quteparteditor.cpp
-    src/widgets/quteparteditor.h
-    src/widgets/quteparteditorfactory.cpp
-    src/widgets/quteparteditorfactory.h
     src/widgets/SplitTabWidget.cpp
     src/widgets/SplitTabWidget.h
     src/widgets/qmdiSplitTab.cpp
@@ -235,6 +231,18 @@ set(codepointer_sources
 
     src/plugins/CodeFormat/CodeFormat.cpp
     src/plugins/CodeFormat/CodeFormat.hpp
+    src/plugins/QutepartEditor/quteparteditor.cpp
+    src/plugins/QutepartEditor/quteparteditor.h
+    src/plugins/QutepartEditor/quteparteditorfactory.cpp
+    src/plugins/QutepartEditor/quteparteditorfactory.h
+    src/plugins/QutepartEditor/QutepartEditorPlugin.cpp
+    src/plugins/QutepartEditor/QutepartEditorPlugin.hpp
+    src/plugins/PlainTextEditor/PlainTextEditor.cpp
+    src/plugins/PlainTextEditor/PlainTextEditor.h
+    src/plugins/PlainTextEditor/PlainTextEditorFactory.cpp
+    src/plugins/PlainTextEditor/PlainTextEditorFactory.h
+    src/plugins/PlainTextEditor/PlainTextEditorPlugin.cpp
+    src/plugins/PlainTextEditor/PlainTextEditorPlugin.hpp
     src/plugins/texteditor/texteditor_plg.cpp
     src/plugins/texteditor/texteditor_plg.h
     src/plugins/texteditor/thememanager.cpp

@@ -10,7 +10,7 @@
 
 #include <QHash>
 
-#include "codeeditorfactory.h"
+#include "widgets/codeeditorfactory.h"
 
 class QutepartEditorFactory : public CodeEditorFactory {
   public:
