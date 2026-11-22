@@ -115,14 +115,19 @@ set(WINUI3STYLE_BUILD_NATIVE_TESTS OFF)
 set(WINUI3STYLE_CLANG_TIDY OFF)
 set(WINUI3STYLE_STATIC ON)
 
-option(CODEPOINTER_WORK_OFFLINE OFF)
-option(CODEPOINTER_BUNDLE_ICON_THEME "Download and install the Breeze icon theme (needed when no system icon theme is present, e.g. bare Linux installs or Windows)" ON)
-option(CODEPOINTER_DISABLE_UPDATES "Disable the in-app update checker (e.g. for Flatpak/store builds, where the store manages updates)" OFF)
 
 # Disable testing for tree-sitter to avoid "ts-test" target collision between grammars
 set(OLD_BUILD_TESTING ${BUILD_TESTING})
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING ${OLD_BUILD_TESTING} CACHE BOOL "" FORCE)
+
+# qlitehtml options
+set(LITEHTML_ENABLE_LINT OFF)
+set(BUILD_TESTING OFF)
+
+option(CODEPOINTER_WORK_OFFLINE OFF)
+option(CODEPOINTER_BUNDLE_ICON_THEME "Download and install the Breeze icon theme (needed when no system icon theme is present, e.g. bare Linux installs or Windows)" ON)
+option(CODEPOINTER_DISABLE_UPDATES "Disable the in-app update checker (e.g. for Flatpak/store builds, where the store manages updates)" OFF)
 
 if (CODEPOINTER_WORK_OFFLINE)
     # For this to work, you need to make these libraries available yourself.
@@ -138,6 +143,8 @@ if (CODEPOINTER_WORK_OFFLINE)
     add_subdirectory("lib/QHexView")
     add_subdirectory("lib/lsp-framework/")
     add_subdirectory("lib/WinUI3Style/")
+    add_subdirectory("lib/qlitehtml/")
+    add_subdirectory("lib/cmark/")
 else()
     include(cmake/CPM.cmake)
     include(cmake/icons-breeze.cmake)
@@ -152,6 +159,8 @@ else()
     CPMAddPackage("gh:Dax89/QHexView#8893881350ea1d0bb0deafb7ae4a700e8de6683f")
     CPMAddPackage("gh:leon-bckl/lsp-framework#db64fac3eea5b36888b801cc0c8b081a377f1914")
     CPMAddPackage("gh:JulienMaille/WinUI3Style#76151b7870b988a593d7b1c75d6c6a981d87b1c9")
+    CPMAddPackage("gh:subsurface/qlitehtml#ed4bb77c8a993a4d664bf470dd6ad1649cd273f1")
+    CPMAddPackage("gh:commonmark/cmark#d56b4bdced7563c7bd596f8f80dd0521eb8ca34a")
     if (CODEPOINTER_BUNDLE_ICON_THEME)
         download_breeze_icons(6.4.0)
     endif()
@@ -302,7 +311,6 @@ set(codepointer_sources
     ${CMAKE_BINARY_DIR}/codepointer.qrc
     indenters.json
     codepointer.rc
-
 )
 
 file(COPY "${CMAKE_SOURCE_DIR}/${ICON_NAME}.svg" DESTINATION "${CMAKE_BINARY_DIR}")
@@ -365,6 +373,8 @@ target_link_libraries(codepointer PUBLIC Qt6::Core Qt6::Widgets Qt6::Concurrent 
     QJsonModelStatic
     lsp
     winui3style
+    qlitehtml
+    cmark
 )
 set_target_properties(codepointer PROPERTIES OUTPUT_NAME ${CODEPOINTER_BINARY})
 

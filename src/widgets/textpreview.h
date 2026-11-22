@@ -15,7 +15,7 @@
 #include <QIcon>
 #include <QStackedWidget>
 
-class QTextBrowser;
+class QLiteHtmlWidget;
 class QLabel;
 class QTreeView;
 
@@ -39,7 +39,7 @@ class TextPreview : public QStackedWidget {
     auto previewText(const QString &filename, const QString &str, PreviewType type) -> void;
 
   private:
-    QTextBrowser *markdownPreview = nullptr;
+    QLiteHtmlWidget *markdownPreview = nullptr;
     pal::ImageViewer *imagePreview = nullptr;
     QTreeView *treeView = nullptr;
 };
