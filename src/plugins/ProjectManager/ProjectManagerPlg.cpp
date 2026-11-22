@@ -1784,6 +1784,12 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
         emit manager->newClientAdded(client);
     }
 
+    auto p = this->projectModel->findConfigDir(dir);
+    if (p) {
+        // this dir is already loaded
+        return false;
+    }
+
     auto project = this->projectModel->findConfigFile(filename);
     if (project) {
         // TODO - should we select this project?
