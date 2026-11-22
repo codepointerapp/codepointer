@@ -1791,18 +1791,19 @@ auto ProjectManagerPlugin::tryOpenProject(const QString &filename, const QString
     }
 
     project = ProjectBuildConfig::buildFromFile(filename);
+    /*
+        {
+            auto fn = dir + QDir::separator() + PROJECT_FILENAME;
+            if (auto p = this->projectModel->findConfigFile(fn)) {
+                return false;
+            }
 
-    {
-        auto fn = dir + QDir::separator() + PROJECT_FILENAME;
-        if (auto p = this->projectModel->findConfigFile(fn)) {
-            return false;
+            if (auto p = ProjectBuildConfig::buildFromJsonFile(fn)) {
+                project = p;
+                qDebug() << "Chosen " << filename << " loaded instead" << p->fileName;
+            }
         }
-
-        if (auto p = ProjectBuildConfig::buildFromJsonFile(fn)) {
-            project = p;
-            qDebug() << "Chosen " << filename << " loaded instead" << p->fileName;
-        }
-    }
+    */
     if (!project) {
         // project file is not parsable. just bail out.
         return false;
