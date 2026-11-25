@@ -91,8 +91,7 @@ QList<CodeEditor::LanguageInfo> QutepartEditorFactory::languages() const {
     return result;
 }
 
-CodeEditor::LanguageInfo
-QutepartEditorFactory::languageForFile(const QString &fileName) const {
+CodeEditor::LanguageInfo QutepartEditorFactory::languageForFile(const QString &fileName) const {
     auto cached = languagesByFileCache.constFind(fileName);
     if (cached != languagesByFileCache.cend()) {
         return cached.value();

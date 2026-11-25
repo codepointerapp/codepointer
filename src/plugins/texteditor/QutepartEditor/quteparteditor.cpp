@@ -73,8 +73,7 @@ const QHash<QString, QString> &qutepartThemeNames() {
 }
 } // namespace
 
-QutepartCodeEditor::QutepartCodeEditor(QWidget *parent)
-    : qutepart(new Qutepart::Qutepart(parent)) {
+QutepartCodeEditor::QutepartCodeEditor(QWidget *parent) : qutepart(new Qutepart::Qutepart(parent)) {
     QObject::connect(qutepart, &QPlainTextEdit::textChanged, qutepart, [this]() {
         if (textChangedCallback) {
             textChangedCallback();
@@ -142,9 +141,7 @@ bool QutepartCodeEditor::isEmpty() const {
 
 bool QutepartCodeEditor::isModified() const { return qutepart->document()->isModified(); }
 
-void QutepartCodeEditor::setModified(bool modified) {
-    qutepart->document()->setModified(modified);
-}
+void QutepartCodeEditor::setModified(bool modified) { qutepart->document()->setModified(modified); }
 
 bool QutepartCodeEditor::isReadOnly() const { return qutepart->isReadOnly(); }
 
@@ -390,9 +387,9 @@ QRect QutepartCodeEditor::cursorRect(int position) const {
 
 void QutepartCodeEditor::setCompletionCallback(CodeEditor::CompletionCallback callback) {
     qutepart->setCompletionCallback(
-        [callback = std::move(callback)](const QString &prefix, const QString &previousWord,
-                                         const QString &separator)
-            -> QFuture<QSet<Qutepart::CompletionItem>> {
+        [callback = std::move(callback)](
+            const QString &prefix, const QString &previousWord,
+            const QString &separator) -> QFuture<QSet<Qutepart::CompletionItem>> {
             if (!callback) {
                 return {};
             }
@@ -449,9 +446,8 @@ void QutepartCodeEditor::clearAllDiagnostics() { qutepart->clearAllDiagnostics()
 QList<CodeEditor::Diagnostic> QutepartCodeEditor::diagnosticsOn(int line) const {
     auto result = QList<CodeEditor::Diagnostic>();
     for (auto const &diagnostic : qutepart->diagnosticsOn(line)) {
-        result.append(CodeEditor::Diagnostic{diagnostic.owner,
-                                             fromQutepartSeverity(diagnostic.severity),
-                                             diagnostic.message});
+        result.append(CodeEditor::Diagnostic{
+            diagnostic.owner, fromQutepartSeverity(diagnostic.severity), diagnostic.message});
     }
     return result;
 }
@@ -470,13 +466,9 @@ void QutepartCodeEditor::setLineWarning(int line, bool value) {
     qutepart->setLineWarning(line, value);
 }
 
-void QutepartCodeEditor::setLineError(int line, bool value) {
-    qutepart->setLineError(line, value);
-}
+void QutepartCodeEditor::setLineError(int line, bool value) { qutepart->setLineError(line, value); }
 
-void QutepartCodeEditor::setLineInfo(int line, bool value) {
-    qutepart->setLineInfo(line, value);
-}
+void QutepartCodeEditor::setLineInfo(int line, bool value) { qutepart->setLineInfo(line, value); }
 
 void QutepartCodeEditor::setLineBreakpoint(int line, bool value) {
     qutepart->setLineBreakpoint(line, value);
@@ -537,9 +529,7 @@ QString QutepartCodeEditor::themeDisplayName(const QString &themeFile) const {
 
 void QutepartCodeEditor::setEditorFont(const QFont &font) { qutepart->setFont(font); }
 
-void QutepartCodeEditor::setDrawAnyWhitespace(bool value) {
-    qutepart->setDrawAnyWhitespace(value);
-}
+void QutepartCodeEditor::setDrawAnyWhitespace(bool value) { qutepart->setDrawAnyWhitespace(value); }
 
 void QutepartCodeEditor::setDrawIndentations(bool value) {
     qutepart->setDrawIndentations(value);
@@ -550,9 +540,7 @@ void QutepartCodeEditor::setBracketHighlightingEnabled(bool value) {
     qutepart->setBracketHighlightingEnabled(value);
 }
 
-void QutepartCodeEditor::setSoftLineWrapping(bool value) {
-    qutepart->setSoftLineWrapping(value);
-}
+void QutepartCodeEditor::setSoftLineWrapping(bool value) { qutepart->setSoftLineWrapping(value); }
 
 void QutepartCodeEditor::setLineNumbersVisible(bool value) {
     qutepart->setLineNumbersVisible(value);
@@ -572,9 +560,7 @@ void QutepartCodeEditor::setFoldingAreaVisible(bool value) {
 
 void QutepartCodeEditor::setMinimapVisible(bool value) { qutepart->setMinimapVisible(value); }
 
-void QutepartCodeEditor::setMarkCurrentWord(bool value) {
-    qutepart->setMarkCurrentWord(value);
-}
+void QutepartCodeEditor::setMarkCurrentWord(bool value) { qutepart->setMarkCurrentWord(value); }
 
 void QutepartCodeEditor::setFrameVisible(bool value) {
     qutepart->setFrameStyle(value ? QFrame::StyledPanel : QFrame::NoFrame);

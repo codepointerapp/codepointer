@@ -1,8 +1,16 @@
+/**
+ * \file ProjectIssuesWidget.cpp
+ * \brief Issues widget for project UI
+ * \author Diego Iastrubni diegoiast@gmail.com
+ */
+
+// SPDX-License-Identifier: MIT
+
 #include <optional>
 
+#include <QApplication>
 #include <QDir>
 #include <QFileInfo>
-#include <QApplication>
 #include <QHeaderView>
 #include <QStyle>
 #include <QStyledItemDelegate>
@@ -280,7 +288,8 @@ auto static setEditorStatus(qmdiEditor *editor, const CompileStatus &status) {
     if (!severity) {
         return;
     }
-    editor->setDiagnostic(status.row, CodeEditor::Diagnostic{BuildOwner, *severity, status.message});
+    editor->setDiagnostic(status.row,
+                          CodeEditor::Diagnostic{BuildOwner, *severity, status.message});
 }
 
 void ProjectIssuesWidget::processLine(const QString &rawLines, int lineNumber,
