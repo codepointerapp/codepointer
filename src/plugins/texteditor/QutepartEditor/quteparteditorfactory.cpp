@@ -8,6 +8,7 @@
 
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QHash>
 
 #include <qutepart/qutepart.h>
 #include <qutepart/theme.h>
@@ -17,7 +18,13 @@
 
 namespace Qutepart {
 extern QMap<QString, QString> languageNameToXmlFileName;
-}
+} // namespace Qutepart
+
+namespace {
+QList<CodeEditor::LanguageInfo> allLanguagesCache;
+QHash<QString, CodeEditor::LanguageInfo> languagesByFileCache;
+QHash<QString, CodeEditor::LanguageInfo> languagesByNameCache;
+} // namespace
 
 static auto fromQutepartLanguage(const Qutepart::LangInfo &langInfo) -> CodeEditor::LanguageInfo {
     auto result = CodeEditor::LanguageInfo();
@@ -62,6 +69,10 @@ std::unique_ptr<CodeEditorInterface> QutepartEditorFactory::createEditor(QWidget
 }
 
 QList<CodeEditor::LanguageInfo> QutepartEditorFactory::languages() const {
+    if (!allLanguagesCache.isEmpty()) {
+        return allLanguagesCache;
+    }
+
     auto result = QList<CodeEditor::LanguageInfo>();
     auto plainText = CodeEditor::LanguageInfo();
     plainText.id = QStringLiteral("Plain text");
@@ -76,32 +87,45 @@ QList<CodeEditor::LanguageInfo> QutepartEditorFactory::languages() const {
             result.append(fromQutepartLanguage(langInfo));
         }
     }
+    allLanguagesCache = result;
     return result;
 }
 
 CodeEditor::LanguageInfo
 QutepartEditorFactory::languageForFile(const QString &fileName) const {
-    auto langInfo = Qutepart::chooseLanguage({}, {}, fileName);
-    if (!langInfo.isValid()) {
-        return {};
+    auto cached = languagesByFileCache.constFind(fileName);
+    if (cached != languagesByFileCache.cend()) {
+        return cached.value();
     }
-    return fromQutepartLanguage(langInfo);
+
+    auto result = CodeEditor::LanguageInfo();
+    auto const langInfo = Qutepart::chooseLanguage({}, {}, fileName);
+    if (langInfo.isValid()) {
+        result = fromQutepartLanguage(langInfo);
+    }
+    languagesByFileCache.insert(fileName, result);
+    return result;
 }
 
 CodeEditor::LanguageInfo QutepartEditorFactory::languageByName(const QString &name) const {
-    if (name.compare("Plain text", Qt::CaseInsensitive) == 0) {
-        auto plainText = CodeEditor::LanguageInfo();
-        plainText.id = QStringLiteral("Plain text");
-        plainText.names = {QCoreApplication::translate("QutepartEditorFactory", "Plain text")};
-        plainText.indentAlgorithm = CodeEditor::IndentAlgorithm::None;
-        return plainText;
+    auto cached = languagesByNameCache.constFind(name);
+    if (cached != languagesByNameCache.cend()) {
+        return cached.value();
     }
 
-    auto langInfo = Qutepart::chooseLanguage({}, name, {});
-    if (!langInfo.isValid()) {
-        return {};
+    auto result = CodeEditor::LanguageInfo();
+    if (name.compare("Plain text", Qt::CaseInsensitive) == 0) {
+        result.id = QStringLiteral("Plain text");
+        result.names = {QCoreApplication::translate("QutepartEditorFactory", "Plain text")};
+        result.indentAlgorithm = CodeEditor::IndentAlgorithm::None;
+    } else {
+        auto const langInfo = Qutepart::chooseLanguage({}, name, {});
+        if (langInfo.isValid()) {
+            result = fromQutepartLanguage(langInfo);
+        }
     }
-    return fromQutepartLanguage(langInfo);
+    languagesByNameCache.insert(name, result);
+    return result;
 }
 
 QStringList QutepartEditorFactory::fileExtensions() const { return {}; }
