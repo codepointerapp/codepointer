@@ -297,8 +297,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
         auto manager = git->getManager();
         auto editorPlugin = manager->findPlugin("TextEditorPlugin");
         if (auto p = dynamic_cast<TextEditorPlugin *>(editorPlugin)) {
-
-            auto client = p->fileNewEditor();
+            auto client = p->fileNewEditor(QStringLiteral("git.diff"));
             client->mdiServer = git->mdiServer;
             if (auto e = dynamic_cast<qmdiEditor *>(client)) {
                 e->setLineNumbersVisible(false);
@@ -313,7 +312,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 diffPreviewEditor = e->getCodeEditor();
             }
 
-            auto client2 = p->fileNewEditor();
+            auto client2 = p->fileNewEditor(QStringLiteral("commit-message.md"));
             client2->mdiServer = git->mdiServer;
             if (auto e = dynamic_cast<qmdiEditor *>(client2)) {
                 e->setLineNumbersVisible(false);

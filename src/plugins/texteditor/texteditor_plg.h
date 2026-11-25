@@ -72,7 +72,7 @@ class TextEditorPlugin : public IPlugin {
   public slots:
     virtual void configurationHasBeenModified() override;
     void fileNew();
-    qmdiClient *fileNewEditor();
+    qmdiClient *fileNewEditor(const QString &fileName);
 
   private:
     CodeEditorFactory *chooseFactory(const QString &fileName = {}) const;

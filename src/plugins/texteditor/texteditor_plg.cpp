@@ -648,12 +648,13 @@ void TextEditorPlugin::configurationHasBeenModified() {
 }
 
 void TextEditorPlugin::fileNew() {
-    auto editor = fileNewEditor();
+    auto editor = fileNewEditor("");
     mdiServer->addClient(editor);
 }
 
-qmdiClient *TextEditorPlugin::fileNewEditor() {
-    auto editor = createEditor(chooseFactory());
+/// Create an editor for a virtual file name; used to select a backend by score.
+qmdiClient *TextEditorPlugin::fileNewEditor(const QString &fileName) {
+    auto editor = createEditor(chooseFactory(fileName));
     editor->setHistoryModel(historyModel);
     applySettings(editor);
     return editor;
