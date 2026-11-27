@@ -40,3 +40,4 @@ Next phases:
 * ProjectBuildConfig.cpp : cargo fixes for windows - 68fd7304c23def53c365ae7d916672c2832423f8
 * ProjectManagerPlg.cpp: fix running batch files (240) - 03c2d64528d819af632e41f1e6273b534840756d
 * cargo: fix display of exes (235) - 1247dba2b95c4ed69e649a6f69e740005f68c7ef
+* AppImage: process name is "AppRun" - https://github.com/codepointerapp/codepointer/issues/246

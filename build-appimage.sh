@@ -51,7 +51,7 @@ fi
 rm -fr "build/${matrix_config_build_dir}"
 rm -fr "dist"
 
-cmake -B "build/${matrix_config_build_dir}" -DCMAKE_BUILD_TYPE=Release -DBUILD_VERSION=${BUILD_TYPE} -DCODEPOINTER_WORK_OFFLINE=OFF
+cmake -B "build/${matrix_config_build_dir}" -DCMAKE_BUILD_TYPE=Release -DBUILD_VERSION=${BUILD_TYPE} -DCODEPOINTER_WORK_OFFLINE=ON
 cmake --build   "build/${matrix_config_build_dir}" --parallel --config Release
 cmake --install "build/${matrix_config_build_dir}" --prefix dist/${matrix_config_build_dir}/usr
 
