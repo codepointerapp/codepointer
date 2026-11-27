@@ -35,6 +35,7 @@ Next phases:
 * git: push force - disable when finished - 9a9c685eb7ffe31c48bedb611b822bf2c9686639
 * ProjectManagerPlg.cpp: do not load already opened projects - b961cc7ce1642f59a804ade479a8cff13d8dd7c1
 * Qutepart: fix line numbers issues -
+* Qutepart: Dark themes shows some text in black, in CMakeLists.txt - https://github.com/diegoiast/qutepart-cpp/issues/81
 * kitdetector.cpp: add system and rust only kits (237) - 86e4764b167de721bfee567efe67fbb66fd17b38
 * ProjectBuildConfig.cpp : cargo fixes for windows - 68fd7304c23def53c365ae7d916672c2832423f8
 * ProjectManagerPlg.cpp: fix running batch files (240) - 03c2d64528d819af632e41f1e6273b534840756d
