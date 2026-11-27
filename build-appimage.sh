@@ -1,4 +1,4 @@
-#! /bin/sh
+#! /bin/bash
 
 set -x
 set -e
@@ -15,8 +15,10 @@ APP_NAME="codepointer"
 APP_VERSION="0.1.10-alpha1"
 QT_VERSION="6.11.3"
 
+HOME="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
+
 NAME="${APP_NAME}-v${APP_VERSION}${NAME_SUFFIX}-x86_64"
-QTDIR="/usr/lib/qt6"
+QTDIR="${HOME}/qt/${QT_VERSION}/gcc_64"
 export matrix_config_build_dir=ubuntu-gcc
 export PATH=$QTDIR/bin:$PATH
 export LD_LIBRARY_PATH=$QTDIR/lib:$LD_LIBRARY_PATH
@@ -49,7 +51,7 @@ fi
 rm -fr "build/${matrix_config_build_dir}"
 rm -fr "dist"
 
-cmake -B "build/${matrix_config_build_dir}" -DCMAKE_BUILD_TYPE=Release -DBUILD_VERSION=${BUILD_TYPE}
+cmake -B "build/${matrix_config_build_dir}" -DCMAKE_BUILD_TYPE=Release -DBUILD_VERSION=${BUILD_TYPE} -DCODEPOINTER_WORK_OFFLINE=OFF
 cmake --build   "build/${matrix_config_build_dir}" --parallel --config Release
 cmake --install "build/${matrix_config_build_dir}" --prefix dist/${matrix_config_build_dir}/usr
 
@@ -79,6 +81,7 @@ wget -nc --no-verbose "https://github.com/linuxdeploy/linuxdeploy/releases/downl
 wget -nc --no-verbose "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
 chmod +x linuxdeploy*.AppImage
 
+export ARCH=x86_64 
 if [ -n "${WAYLAND_CLIENT_LIB}" ]; then
     ./linuxdeploy-x86_64.AppImage --appdir "dist/${matrix_config_build_dir}" --plugin qt --output appimage \
         --library "${WAYLAND_CLIENT_LIB}"
