@@ -119,7 +119,7 @@ is not covered by this document.
 Install the following packages:
 
 ```
-sudo apt install python3-pip python3-pipx build-essential xorg-dev libcups2-dev libxcb-cursor-dev libtiff5-dev clang clang-tools ninja-build cmake ccache mold
+sudo apt install python3-pip python3-pipx build-essential xorg-dev libcups2-dev libxcb-cursor-dev libtiff5-dev clang clang-tools ninja-build cmake ccache mold libicu-dev
 ```
 
 ### Fedora
