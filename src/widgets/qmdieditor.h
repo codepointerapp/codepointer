@@ -338,6 +338,21 @@ class qmdiEditor : public QWidget, public qmdiClient {
     void loadBackup();
     void deleteBackup();
 
+    /// True when this editor's window is active and this is its current tab.
+    /// A background tab is treated like an unfocused window: putting a modal
+    /// question in front of the user for a file they cannot see is no better
+    /// than doing it while the application itself is in the background.
+    bool isFocusedEditor() const;
+    /// Asks whether to discard the in-memory changes and read the file again.
+    /// Uses the modal dialog while focused, and the banner with the same two
+    /// choices (reload / keep) otherwise, so an out-of-focus window never grabs
+    /// the keyboard. Returns true only when the reload was actually performed.
+    bool promptReload(const QString &question);
+    /// Freezes the buffer while a reload question is outstanding, remembering
+    /// whether it was writable before so the decision can restore that state.
+    void lockForReloadPrompt();
+    void unlockAfterReloadPrompt();
+
     Qutepart::ThemeManager *themeManager = nullptr;
     Qutepart::Qutepart *textEditor = nullptr;
     TextOperationsWidget *operationsWidget = nullptr;
@@ -356,6 +371,12 @@ class qmdiEditor : public QWidget, public qmdiClient {
     int renameLine = -1;
     int renameColumn = -1;
     int m_timerHideout;
+    bool readOnlyBeforeReloadPrompt = false;
+    bool reloadPromptPending = false;
+    /// One countdown for the banner, so replacing a message also replaces its
+    /// timer. Chained singleShots could otherwise hide a newer, persistent
+    /// message when an older countdown finally ran out.
+    QTimer *bannerTimer = nullptr;
     bool fileModifications = true;
     QTimer *loadingTimer = nullptr;
     QTimer *fileChangedTimer = nullptr;

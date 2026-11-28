@@ -124,6 +124,48 @@ auto static runningUnderGnome() -> bool {
 #endif
 }
 
+namespace {
+
+// Builds the rich text shown in the banner's QLabel. Qt's rich text subset
+// supports background-color on spans but not padding or borders, so
+// non-breaking spaces provide the room around a label.
+class BannerHtml {
+  public:
+    static auto renderAction(const QString &link, const QString &icon, const QString &label,
+                             const QString &color, const QString &tooltip) -> QString {
+        return QStringLiteral("<a href='%1' title='%2' style='text-decoration:none'>"
+                              "<span style='background-color:%3; color:white; font-weight:bold'>"
+                              "&nbsp;%4 %5&nbsp;</span></a>")
+            .arg(link, tooltip.toHtmlEscaped(), color, icon, label.toHtmlEscaped());
+    }
+
+    static auto renderSeparator() -> QString {
+        return QStringLiteral("&nbsp;<span style='color:#888'>&#124;</span>&nbsp;");
+    }
+
+    static auto renderText(const QString &text) -> QString {
+        auto html = text.toHtmlEscaped();
+        html.replace(QLatin1Char('\n'), QStringLiteral("<br>"));
+        return html;
+    }
+
+    static auto renderIcon(const QString &icon, const QString &color) -> QString {
+        return QStringLiteral("<span style='color:%1; font-weight:bold'>%2</span>&nbsp;")
+            .arg(color, icon);
+    }
+
+    static auto withActions(const QString &text, const QStringList &actions,
+                            const QString &icon = {}, const QString &color = {}) -> QString {
+        auto html = icon.isEmpty() ? renderText(text) : renderIcon(icon, color) + renderText(text);
+        for (const auto &action : actions) {
+            html += renderSeparator() + action;
+        }
+        return html;
+    }
+};
+
+} // namespace
+
 auto static getLineEnding(QIODevice &stream, const QString &defaultLineEnding) -> QString {
     if (stream.atEnd()) {
         return defaultLineEnding;
@@ -497,6 +539,13 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
     ui_banner = new Ui::BannerMessage;
     ui_banner->setupUi(banner);
     connect(ui_banner->label, &QLabel::linkActivated, this, &qmdiEditor::fileMessage_clicked);
+    // The .ui connects the x to hide(); go through the editor slot as well so
+    // dismissing a pending reload question also gives the keyboard back.
+    connect(ui_banner->closeButton, &QToolButton::clicked, this, &qmdiEditor::hideBannerMessage);
+
+    bannerTimer = new QTimer(this);
+    bannerTimer->setInterval(1000);
+    connect(bannerTimer, &QTimer::timeout, this, &qmdiEditor::hideTimer_timeout);
 
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -616,17 +665,22 @@ qmdiEditor::qmdiEditor(QWidget *p, Qutepart::ThemeManager *themes)
             return;
         }
 
-        auto f = QFileInfo(fileName);
-        auto message = QString();
-        if (f.exists()) {
-            message = QString("%1 <a href=':reload' title='%2'>%3</a>")
-                          .arg(tr("File has been modified outside the editor"),
-                               tr("Clicking this links will revert all changes to this editor"),
-                               tr("Click here to reload"));
+        // An unmodified buffer can simply be read again. When it has unsaved
+        // changes the choice belongs to the user, and how we ask depends on
+        // whether this editor is in front of them.
+        if (QFileInfo::exists(fileName)) {
+            promptReload(tr("File has been modified outside the editor"));
         } else {
-            message = tr("File has been deleted outside the editor.");
+            // There is nothing to reload here, so the banner is informational
+            // and only offers a way to dismiss it.
+            auto text = tr("File has been deleted outside the editor.");
+            auto dismiss = BannerHtml::renderAction(
+                QStringLiteral(":dismiss"), QStringLiteral("&#10005;"), tr("Dismiss"),
+                QStringLiteral("#616161"), tr("Dismiss this message"));
+            auto actions = QStringList{dismiss};
+            auto message = BannerHtml::withActions(text, actions);
+            displayBannerMessage(message, -1);
         }
-        displayBannerMessage(message, -1);
     });
 
     // Generate random UID - this is used for namking the backup file.
@@ -663,16 +717,75 @@ bool qmdiEditor::reloadClientContent() {
         return true;
     }
 
-    auto msgBox = QMessageBox(QMessageBox::Warning, mdiClientName,
-                              tr("The document has been modified.\nDo you want to reload it?"),
-                              QMessageBox::Yes | QMessageBox::Default, this);
-    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-    msgBox.setDefaultButton(QMessageBox::Yes);
-    auto ret = msgBox.exec();
-    if (ret == QMessageBox::Yes) {
-        reload();
+    return promptReload(tr("The document has been modified.\nDo you want to reload it?"));
+}
+
+bool qmdiEditor::isFocusedEditor() const {
+    auto const top = window();
+    if (!top || !top->isActiveWindow() || !isVisible()) {
+        return false;
     }
+
+    // The window can be active on a different tab. That editor is no more in
+    // focus than one in a background window, and a modal dialog there would
+    // interrupt work on a file the user is not looking at.
+    auto const current = mdiServer ? mdiServer->getCurrentClient() : nullptr;
+    return !current || current == static_cast<const qmdiClient *>(this);
+}
+
+bool qmdiEditor::promptReload(const QString &question) {
+    // Until the user decides, typing into a buffer that no longer matches the
+    // file on disk would only add more changes to throw away or reconcile.
+    lockForReloadPrompt();
+
+    if (isFocusedEditor()) {
+        auto msgBox = QMessageBox(QMessageBox::Warning, mdiClientName, question,
+                                  QMessageBox::Yes | QMessageBox::No, this);
+        msgBox.setDefaultButton(QMessageBox::Yes);
+        auto const reloadFile = msgBox.exec() == QMessageBox::Yes;
+        // Restore writability before reloading: loadContent() is then free to
+        // set the read-only state the file on disk actually calls for.
+        unlockAfterReloadPrompt();
+        if (reloadFile) {
+            reload();
+            return true;
+        }
+        return false;
+    }
+
+    // No modal dialog: the window may be behind another application, or this may
+    // be a background tab. The banner waits with the same two choices the dialog
+    // offered, and stays up until one is picked.
+    displayBannerMessage(
+        BannerHtml::withActions(
+            question,
+            {BannerHtml::renderAction(QStringLiteral(":reload"), QStringLiteral("&#8635;"),
+                                      tr("Reload"), QStringLiteral("#1565c0"),
+                                      tr("Revert all changes to this editor")),
+             BannerHtml::renderAction(QStringLiteral(":keep"), QStringLiteral("&#10003;"),
+                                      tr("Keep my changes"), QStringLiteral("#2e7d32"),
+                                      tr("Keep the changes in this editor and ignore the file "
+                                         "on disk"))},
+            QStringLiteral("&#9888;"), QStringLiteral("#ef6c00")),
+        -1);
     return false;
+}
+
+void qmdiEditor::lockForReloadPrompt() {
+    if (reloadPromptPending) {
+        return;
+    }
+    reloadPromptPending = true;
+    readOnlyBeforeReloadPrompt = textEditor->isReadOnly();
+    setReadOnly(true);
+}
+
+void qmdiEditor::unlockAfterReloadPrompt() {
+    if (!reloadPromptPending) {
+        return;
+    }
+    reloadPromptPending = false;
+    setReadOnly(readOnlyBeforeReloadPrompt);
 }
 
 bool qmdiEditor::canCloseClient(CloseReason reason) {
@@ -1072,7 +1185,11 @@ qmdiClientState qmdiEditor::getState() const {
     state[StateConstants::COLUMN] = col;
     state[StateConstants::ROW] = row;
     state[StateConstants::ZOOM] = zoom;
-    state[StateConstants::READ_ONLY] = textEditor->isReadOnly();
+    // A pending reload prompt locks the editor only while the user is deciding.
+    // That lock is not a property of the file, so do not persist it: a restored
+    // backup must come back writable.
+    state[StateConstants::READ_ONLY] =
+        reloadPromptPending ? readOnlyBeforeReloadPrompt : textEditor->isReadOnly();
     state[StateConstants::BASE_DIR] = diffMetadata.baseDir;
 
     if (!uid.isEmpty()) {
@@ -1129,7 +1246,7 @@ void qmdiEditor::setState(const qmdiClientState &state) {
     }
 
     if (state.contains(StateConstants::READ_ONLY)) {
-        textEditor->setReadOnly(state[StateConstants::READ_ONLY].toBool());
+        setReadOnly(state[StateConstants::READ_ONLY].toBool());
     }
     diffMetadata.baseDir = state[StateConstants::BASE_DIR].toString();
 }
@@ -1431,16 +1548,15 @@ void qmdiEditor::reload() {
 }
 
 void qmdiEditor::hideTimer_timeout() {
-    if (m_timerHideout != 0) {
-        QString s;
-        s.setNum(m_timerHideout);
-        m_timerHideout--;
-        ui_banner->timer->setText(s);
-        QTimer::singleShot(1000, this, SLOT(hideTimer_timeout()));
-    } else {
-        ui_banner->timer->clear();
-        banner->hide();
+    if (m_timerHideout > 0) {
+        ui_banner->countdown->setText(QString::number(m_timerHideout));
+        --m_timerHideout;
+        return;
     }
+
+    bannerTimer->stop();
+    ui_banner->countdown->clear();
+    banner->hide();
 }
 
 // FIXME: this is becoming a "on modified" function.
@@ -2328,14 +2444,22 @@ void qmdiEditor::displayBannerMessage(QString message, int time) {
     ui_banner->label->setText(message);
     m_timerHideout = time;
     if (time >= 0) {
-        QTimer::singleShot(1000, this, SLOT(hideTimer_timeout()));
+        bannerTimer->start();
+    } else {
+        bannerTimer->stop();
+        ui_banner->countdown->clear();
     }
 }
 
 void qmdiEditor::hideBannerMessage() {
     m_timerHideout = 0;
+    bannerTimer->stop();
+    ui_banner->countdown->clear();
     ui_banner->label->clear();
     banner->hide();
+    // Covers "keep", the banner's close button, and any other path that takes
+    // the message down: the editor is writable again once the question is gone.
+    unlockAfterReloadPrompt();
 }
 
 void qmdiEditor::newDocument() { loadFile(""); }
@@ -2523,6 +2647,25 @@ bool qmdiEditor::saveFile(const QString &newFileName, bool makeExecutable, bool 
 
 void qmdiEditor::setReadOnly(bool b) {
     textEditor->setReadOnly(b);
+
+    // Qutepart's editing actions are QActions with shortcuts. Qt delivers
+    // those before keyPressEvent(), so a read-only editor must also stop them
+    // from firing (Tab indent, Alt+Up/Down line moves, etc.).
+    const QList<QAction *> editActions = {
+        textEditor->increaseIndentAction(),   textEditor->decreaseIndentAction(),
+        textEditor->invokeCompletionAction(), textEditor->duplicateSelectionAction(),
+        textEditor->moveLineUpAction(),       textEditor->moveLineDownAction(),
+        textEditor->deleteLineAction(),       textEditor->cutLineAction(),
+        textEditor->pasteLineAction(),        textEditor->insertLineAboveAction(),
+        textEditor->insertLineBelowAction(),  textEditor->joinLinesAction(),
+        textEditor->toggleCommentAction(),
+    };
+    for (auto action : editActions) {
+        if (action) {
+            action->setEnabled(!b);
+        }
+    }
+
     actionCut->setEnabled(!b);
     actionPaste->setEnabled(!b);
     actionReplace->setEnabled(!b);
@@ -2595,7 +2738,14 @@ void qmdiEditor::transformBlockCase() {
 
 void qmdiEditor::fileMessage_clicked(const QString &s) {
     if (s == ":reload") {
+        // Restore writability first so loadContent() can decide from the file's
+        // permissions whether the reloaded buffer should be read-only.
+        unlockAfterReloadPrompt();
         reload();
+        hideBannerMessage();
+    } else if (s == ":keep" || s == ":dismiss") {
+        // The user chose the banner equivalent of the dialog's "No": leave the
+        // buffer alone and stop asking about this notification.
         hideBannerMessage();
     } else if (s == ":forcerw") {
         hideBannerMessage();
@@ -2711,12 +2861,20 @@ void qmdiEditor::loadContent(bool useBackup) {
     }
 
     fileName = QDir::toNativeSeparators(fileInfo.absoluteFilePath());
+    if (loadedFromBackup) {
+        // A restored buffer must not inherit a read-only flag that was saved
+        // while a reload prompt had it temporarily locked. The file on disk is
+        // the authority for a recovered buffer.
+        savedState[StateConstants::READ_ONLY] = fileInfo.exists() && !fileInfo.isWritable();
+    }
     if (fileInfo.exists() && !fileInfo.isWritable()) {
         setReadOnly(true);
-        displayBannerMessage(
-            tr("The file is readonly. Click <a href=':forcerw' title='Click here to try and "
-               "change the file attributes for write access'>here to force write access.</a>"),
-            60);
+        auto title = tr("The file is readonly.");
+        auto actionForceRW = BannerHtml::renderAction(
+            QStringLiteral(":forcerw"), QStringLiteral("&#9998;"), tr("Force write access"),
+            QStringLiteral("#ef6c00"), tr("Try to change the file attributes for write access"));
+        auto message = BannerHtml::withActions(title, {actionForceRW});
+        displayBannerMessage(message, 60);
     }
 
     textEditor->document()->setModified(loadedFromBackup);
