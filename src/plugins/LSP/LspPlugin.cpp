@@ -51,6 +51,8 @@
 // clang-format on
 #endif
 
+auto constexpr LSP_DEBUG = false;
+
 /// Guards against a promise being completed twice - the server callback and any
 /// future timeout path must be able to race safely. A QFuture that never finishes
 /// leaks the caller's QFutureWatcher, so exactly-once matters in both directions.
@@ -750,8 +752,10 @@ void LspPlugin::applyDiagnostics(const QString &fileName) {
         }
     }
     editor->update();
-    qDebug() << "LspPlugin:" << shown << "diagnostic(s) applied to"
-             << QFileInfo(fileName).fileName();
+    if (LSP_DEBUG) {
+        qDebug() << "LspPlugin:" << shown << "diagnostic(s) applied to"
+                 << QFileInfo(fileName).fileName();
+    }
 }
 
 void LspPlugin::syncOpenDocuments() {
@@ -816,7 +820,7 @@ void LspPlugin::flushDirtyDocuments() {
             sent++;
         }
     }
-    if (sent > 0) {
+    if (sent > 0 && LSP_DEBUG) {
         qDebug() << "LspPlugin: pushed" << sent << "changed document(s) after"
                  << DocumentSyncDebounceMs << "ms idle";
     }
@@ -880,7 +884,10 @@ void LspPlugin::updateEditorCompletionMode() {
         editors++;
         exclusive += owned ? 1 : 0;
     }
-    qDebug() << "LspPlugin: LSP-only completions on" << exclusive << "of" << editors << "editors";
+    if (LSP_DEBUG) {
+        qDebug() << "LspPlugin: LSP-only completions on" << exclusive << "of" << editors
+                 << "editors";
+    }
 }
 
 QList<QPair<QString, QString>> LspPlugin::capabilitiesFor(const QString &root,
