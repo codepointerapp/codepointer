@@ -1,8 +1,18 @@
+/**
+ * \file ProjectIssuesWidget.cpp
+ * \brief Issues widget for project UI
+ * \author Diego Iastrubni diegoiast@gmail.com
+ */
+
+// SPDX-License-Identifier: MIT
+
 #include <optional>
 
+#include <QApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QStyle>
 #include <QStyledItemDelegate>
 
 #include "ProjectIssuesWidget.h"
@@ -21,15 +31,15 @@ constexpr auto BuildOwner = "build";
 /// severity we recognise. Optional rather than a default: compiler output is
 /// arbitrary text, and inventing an error for every line we fail to parse would
 /// mark whole files wrong.
-auto typeToStatus(const QString &name) -> std::optional<Qutepart::DiagnosticSeverity> {
+auto typeToStatus(const QString &name) -> std::optional<CodeEditor::DiagnosticSeverity> {
     if (name.contains("error", Qt::CaseInsensitive)) {
-        return Qutepart::DiagnosticSeverity::Error;
+        return CodeEditor::DiagnosticSeverity::Error;
     }
     if (name.compare("warning", Qt::CaseInsensitive) == 0) {
-        return Qutepart::DiagnosticSeverity::Warning;
+        return CodeEditor::DiagnosticSeverity::Warning;
     }
     if (name.contains("info", Qt::CaseInsensitive) == 0) {
-        return Qutepart::DiagnosticSeverity::Information;
+        return CodeEditor::DiagnosticSeverity::Information;
     }
     return std::nullopt;
 }
@@ -59,14 +69,24 @@ QVariant CompileStatusModel::data(const QModelIndex &index, int role) const {
         if (!severity) {
             return {};
         }
-        // Keyed by the bit because that is what iconForStatus wants, and the bit
-        // is derived rather than stored - the severity is the real thing.
-        auto const iconType = Qutepart::diagnosticBit(*severity);
         auto static iconCache = QHash<int, QIcon>();
-        if (!iconCache.contains(iconType)) {
-            iconCache[iconType] = Qutepart::iconForStatus(iconType);
+        auto const key = static_cast<int>(*severity);
+        if (!iconCache.contains(key)) {
+            auto style = QApplication::style();
+            switch (*severity) {
+            case CodeEditor::DiagnosticSeverity::Error:
+                iconCache[key] = style->standardIcon(QStyle::SP_MessageBoxCritical);
+                break;
+            case CodeEditor::DiagnosticSeverity::Warning:
+                iconCache[key] = style->standardIcon(QStyle::SP_MessageBoxWarning);
+                break;
+            case CodeEditor::DiagnosticSeverity::Information:
+            case CodeEditor::DiagnosticSeverity::Hint:
+                iconCache[key] = style->standardIcon(QStyle::SP_MessageBoxInformation);
+                break;
+            }
         }
-        return iconCache.value(iconType);
+        return iconCache.value(key);
     }
 
     if (role == Qt::DisplayRole) {
@@ -268,7 +288,8 @@ auto static setEditorStatus(qmdiEditor *editor, const CompileStatus &status) {
     if (!severity) {
         return;
     }
-    editor->setDiagnostic(status.row, Qutepart::Diagnostic{BuildOwner, *severity, status.message});
+    editor->setDiagnostic(status.row,
+                          CodeEditor::Diagnostic{BuildOwner, *severity, status.message});
 }
 
 void ProjectIssuesWidget::processLine(const QString &rawLines, int lineNumber,

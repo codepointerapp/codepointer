@@ -28,6 +28,7 @@
 #include <QStandardPaths>
 #include <QStringList>
 #include <QStringListModel>
+#include <QTextBlock>
 #include <QTimer>
 #include <QWidgetAction>
 #include <cerrno>

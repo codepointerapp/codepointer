@@ -21,6 +21,7 @@
 #include "GlobalCommands.hpp"
 #include "plugins/texteditor/texteditor_plg.h"
 #include "ui_CommitForm.h"
+#include "widgets/codeeditorfactory.h"
 #include "widgets/qmdieditor.h"
 
 class PathElideDelegate : public QStyledItemDelegate {
@@ -296,8 +297,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
         auto manager = git->getManager();
         auto editorPlugin = manager->findPlugin("TextEditorPlugin");
         if (auto p = dynamic_cast<TextEditorPlugin *>(editorPlugin)) {
-
-            auto client = p->fileNewEditor();
+            auto client = p->fileNewEditor(QStringLiteral("git.diff"));
             client->mdiServer = git->mdiServer;
             if (auto e = dynamic_cast<qmdiEditor *>(client)) {
                 e->setLineNumbersVisible(false);
@@ -308,10 +308,11 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 e->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
                 replaceWidget(ui->diffPreview, e);
-                ui->diffPreview = e->getEditor();
+                ui->diffPreview = e;
+                diffPreviewEditor = e->getCodeEditor();
             }
 
-            auto client2 = p->fileNewEditor();
+            auto client2 = p->fileNewEditor(QStringLiteral("commit-message.md"));
             client2->mdiServer = git->mdiServer;
             if (auto e = dynamic_cast<qmdiEditor *>(client2)) {
                 e->setLineNumbersVisible(false);
@@ -319,36 +320,33 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 e->setFoldingAreaVisible(false);
                 e->setMinimapVisible(false);
                 e->setHighlighter("markdown.xml");
-                e->setIndentAlgorithm(Qutepart::INDENT_ALG_MARKDOWN);
+                e->setIndentAlgorithm(CodeEditor::IndentAlgorithm::Markdown);
                 e->setDrawSolidEdge(true);
                 e->setLineLengthEdge(72);
                 e->setSoftLineWrapping(true);
                 e->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
-                // FIXME: qutepart implementation leaking.
-                if (auto textEditor = qobject_cast<Qutepart::Qutepart *>(e->getEditor())) {
-                    textEditor->setCompletionCallback(
-                        [this](const QString &prefix, const QString &,
-                               const QString &) -> QFuture<QSet<Qutepart::CompletionItem>> {
-                            auto items = QSet<Qutepart::CompletionItem>();
-                            if (!prefix.isEmpty()) {
-                                for (auto row = 0; row < model->rowCount(); ++row) {
-                                    auto idx = model->index(row, 2);
-                                    auto name =
-                                        QFileInfo(model->data(idx, Qt::DisplayRole).toString())
-                                            .fileName();
-                                    if (name.startsWith(prefix, Qt::CaseInsensitive)) {
-                                        items.insert(
-                                            Qutepart::CompletionItem(name, tr("Changed file")));
-                                    }
+                commitMessageEditor = e->getCodeEditor();
+                commitMessageEditor->setCompletionCallback(
+                    [this](const QString &prefix, const QString &,
+                           const QString &) -> QFuture<QSet<CodeEditor::CompletionItem>> {
+                        auto items = QSet<CodeEditor::CompletionItem>();
+                        if (!prefix.isEmpty()) {
+                            for (auto row = 0; row < model->rowCount(); ++row) {
+                                auto idx = model->index(row, 2);
+                                auto name = QFileInfo(model->data(idx, Qt::DisplayRole).toString())
+                                                .fileName();
+                                if (name.startsWith(prefix, Qt::CaseInsensitive)) {
+                                    items.insert(
+                                        CodeEditor::CompletionItem(name, tr("Changed file")));
                                 }
                             }
-                            return QtFuture::makeReadyValueFuture(items);
-                        });
-                }
+                        }
+                        return QtFuture::makeReadyValueFuture(items);
+                    });
 
                 replaceWidget(ui->commitMessage, e);
-                ui->commitMessage = e->getEditor();
+                ui->commitMessage = e;
             }
         }
     }
@@ -425,7 +423,7 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
                 .then(this, [this](const std::tuple<QString, int> &res) {
                     auto [msg, exitCode] = res;
                     if (exitCode == 0) {
-                        ui->commitMessage->setPlainText(msg.trimmed());
+                        commitMessageEditor->setText(msg.trimmed());
                     }
                 });
         }
@@ -474,20 +472,22 @@ CommitForm::~CommitForm() { delete ui; }
 QString CommitForm::mdiClientFileName() { return QString("git:%1").arg(repoRoot); }
 
 qmdiClientState CommitForm::getState() const {
-    auto c = ui->commitMessage->textCursor();
-
     auto state = qmdiClientState();
-    state["COLUMN"] = c.positionInBlock();
-    state["ROW"] = c.blockNumber();
-    state["TEXT"] = ui->commitMessage->toPlainText();
-
+    if (commitMessageEditor) {
+        state["COLUMN"] = commitMessageEditor->cursorColumn();
+        state["ROW"] = commitMessageEditor->cursorLine();
+        state["TEXT"] = commitMessageEditor->text();
+    }
     return state;
 }
 
 void CommitForm::setState(const qmdiClientState &state) {
+    if (!commitMessageEditor) {
+        return;
+    }
+
     if (state.contains("TEXT")) {
-        auto t = state["TEXT"].toString();
-        ui->commitMessage->setPlainText(t);
+        commitMessageEditor->setText(state["TEXT"].toString());
     }
 
     auto col = 0;
@@ -498,18 +498,7 @@ void CommitForm::setState(const qmdiClientState &state) {
     if (state.contains("ROW")) {
         row = state["ROW"].toInt();
     }
-
-    auto block = ui->commitMessage->document()->findBlockByNumber(row);
-    auto cursor = QTextCursor(block);
-    if (col != 0) {
-        if (col < 0) {
-            col = 0;
-        } else if (col > cursor.block().length()) {
-            col = cursor.block().length() - 1;
-        }
-        cursor.setPosition(cursor.position() + col);
-    }
-    ui->commitMessage->setTextCursor(cursor);
+    commitMessageEditor->setCursorPosition(commitMessageEditor->positionAt(row, col));
 }
 
 bool CommitForm::event(QEvent *e) {
@@ -559,7 +548,7 @@ void CommitForm::updateGitStatus() {
 
 void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) {
     if (filename.isEmpty()) {
-        ui->diffPreview->setPlainText("");
+        diffPreviewEditor->setText(QString());
         return;
     }
 
@@ -568,18 +557,9 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
 
     auto updateEditor = [this](const QString &output, const QString &highlighter,
                                const QString &fileForMapping = {}) {
-        ui->diffPreview->setPlainText(output);
+        diffPreviewEditor->setText(output);
 
-        // FIXME: this looks way too ugly,
-        // Problem - the "editor" is not the correct widget
-        // The UI expects a QPlainTextEdit, and we have Widget that includes a
-        // QPlainTextEdit.
-        if (auto editor = dynamic_cast<qmdiEditor *>(ui->diffPreview->parent()->parent())) {
-            // FIXME: Note how we need to hijack the low level APIs of Qutepart
-            //        to set the syntax highlighter.
-            //        We need better abstractions, some IEditor, which can be an
-            //        interface with has implementation as Qutepart of QSCintilla or
-            //        something different completely.
+        if (auto editor = dynamic_cast<qmdiEditor *>(ui->diffPreview)) {
             editor->setHighlighter(highlighter);
             if (fileForMapping.isEmpty()) {
                 editor->updateInternalMappings(repoRoot);
@@ -631,7 +611,6 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         }
         auto score = p->canOpenFile(fullFilePath);
         if (score == 1) {
-            auto langInfo = ::Qutepart::chooseLanguage({}, {}, "filename.txt");
             updateEditor(tr("Not a text file"), highlighter);
             break;
         }
@@ -650,7 +629,7 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
         }
         file.close();
 
-        auto langInfo = ::Qutepart::chooseLanguage({}, {}, filename);
+        auto langInfo = p->languageForFile(filename);
         if (langInfo.isValid()) {
             highlighter = langInfo.id;
         }
@@ -714,7 +693,7 @@ void CommitForm::revertCurrentImpl() {
 }
 
 void CommitForm::revertSelectionImpl() {
-    ui->commitMessage->clear();
+    commitMessageEditor->clear();
     auto checked = model->checkedEntries();
     if (checked.isEmpty()) {
         return;
@@ -753,7 +732,7 @@ void CommitForm::commitImpl() {
     }
 
     auto doCommit = [this]() {
-        auto commitLogFileName = createTempFileWithContent(ui->commitMessage->toPlainText());
+        auto commitLogFileName = createTempFileWithContent(commitMessageEditor->text());
         auto commitArgs = QStringList{"-C", repoRoot, "commit"};
         if (ui->amendCheckbox->isChecked()) {
             commitArgs << "--amend";
@@ -768,7 +747,7 @@ void CommitForm::commitImpl() {
                 if (exitCode2 != 0) {
                     qDebug() << QString("ExitCode=%1, output=%2").arg(exitCode2).arg(output2);
                 } else {
-                    ui->commitMessage->clear();
+                    commitMessageEditor->clear();
                     ui->amendCheckbox->setChecked(false);
                 }
                 updateGitStatus();

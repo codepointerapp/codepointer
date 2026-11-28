@@ -4,7 +4,6 @@
 
 #include "SplitTabsPlugin.hpp"
 #include "plugins/texteditor/texteditor_plg.h"
-#include "widgets/SplitTabWidget.h"
 #include "widgets/qmdiSplitTab.h"
 
 static void SaveList(QSettings &settings, const QList<int> &list, const QString &name) {

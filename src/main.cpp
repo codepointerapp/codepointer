@@ -15,7 +15,9 @@
 #include "plugins/CTags/CTagsPlugin.hpp"
 #include "plugins/CodeFormat/CodeFormat.hpp"
 #include "plugins/LSP/LspPlugin.hpp"
+#include "plugins/PlainText/PlainTextEditorPlugin.h"
 #include "plugins/ProjectManager/ProjectManagerPlg.h"
+#include "plugins/QutepartEditor/QutepartEditorPlugin.h"
 #include "plugins/SplitTabsPlugin/SplitTabsPlugin.hpp"
 #include "plugins/Terminal/TerminalPlugin.hpp"
 #include "plugins/filesystem/filesystembrowser.h"
@@ -24,7 +26,6 @@
 #include "plugins/hexviewer/hexviewer_plg.h"
 #include "plugins/imageviewer/imageviewer_plg.h"
 #include "plugins/texteditor/texteditor_plg.h"
-#include "winui3style/winui3style.h"
 
 int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(qutepart_syntax_files);
@@ -76,9 +77,6 @@ int main(int argc, char *argv[]) {
     auto filePath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     auto iniFilePath = filePath + QString("/%1.ini").arg(CODEPOINTER_APP_NAME);
     auto windowIcon = QIcon(CODEPOINTER_ICON);
-    auto helpPlugin = new HelpPlugin;
-    auto textEditorPlugin = new TextEditorPlugin;
-    auto split = new SplitTabsPlugin(textEditorPlugin);
 
     QCommandLineParser parser;
     parser.addHelpOption();
@@ -90,9 +88,15 @@ int main(int argc, char *argv[]) {
     pluginManager.setWindowIcon(windowIcon);
     pluginManager.setFileSettingsManager(iniFilePath);
 
-    pluginManager.addPlugin(split);
+    auto textEditorPlugin = new TextEditorPlugin;
+    auto splitPlugin = new SplitTabsPlugin(textEditorPlugin);
+    auto helpPlugin = new HelpPlugin;
+
     pluginManager.addPlugin(textEditorPlugin);
+    pluginManager.addPlugin(splitPlugin);
     pluginManager.addPlugin(helpPlugin);
+    pluginManager.addPlugin(new QutepartEditorPlugin);
+    pluginManager.addPlugin(new PlainTextEditorPlugin);
     pluginManager.addPlugin(new CodeFormatPlugin);
     pluginManager.addPlugin(new CTagsPlugin);
     pluginManager.addPlugin(new LspPlugin);
@@ -102,16 +106,16 @@ int main(int argc, char *argv[]) {
     pluginManager.addPlugin(new ImageViewrPlugin);
     pluginManager.addPlugin(new HexViewrPlugin);
     pluginManager.addPlugin(new GitPlugin);
-    split->setLoadingFinished(false);
 
     // Those are defaults, restore will override them
+    splitPlugin->setLoadingFinished(false);
     pluginManager.hidePanels(Qt::BottomDockWidgetArea);
     pluginManager.hidePanels(Qt::LeftDockWidgetArea);
     pluginManager.hidePanels(Qt::RightDockWidgetArea);
     pluginManager.actionHideGUI->setChecked(true);
     pluginManager.restoreSettings();
     pluginManager.openFiles(parser.positionalArguments());
-    split->setLoadingFinished(true);
+    splitPlugin->setLoadingFinished(true);
     pluginManager.updateGUI();
 
     if (pluginManager.visibleTabs() == 0) {

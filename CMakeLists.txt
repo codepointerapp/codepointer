@@ -153,7 +153,7 @@ else()
     include(cmake/icons-breeze.cmake)
 
     CPMAddPackage("gh:diegoiast/qutepart-cpp#3ec324b4c5e2e83137f7b4417ed6c988a633f102")
-    CPMAddPackage("gh:diegoiast/qmdilib#17a534b77b4acd4a1d1ec03fdd7e46cb2fdb77cd")
+    CPMAddPackage("gh:diegoiast/qmdilib#5248103a072bc9effe8671e709e3c2ecfbe35b13")
     CPMAddPackage("gh:diegoiast/command-palette-widget#941f275b76cddb80a0e54e09095fe1150401b97d")
     CPMAddPackage("gh:diegoiast/KodoTerm#9d016815076a451ad639fa021d46602585e91247")
     CPMAddPackage("gh:palacaze/image-viewer#125ea784f93327b471cd9b6b156285e40e70280a")
@@ -216,6 +216,8 @@ set(codepointer_sources
     src/widgets/qmdiSplitTab.h
     src/widgets/qmdieditor.cpp
     src/widgets/qmdieditor.h
+    src/widgets/codeeditorinterface.h
+    src/widgets/codeeditorfactory.h
     src/widgets/SplitTabWidget.cpp
     src/widgets/SplitTabWidget.h
     src/widgets/qmdiSplitTab.cpp
@@ -229,6 +231,18 @@ set(codepointer_sources
 
     src/plugins/CodeFormat/CodeFormat.cpp
     src/plugins/CodeFormat/CodeFormat.hpp
+    src/plugins/texteditor/QutepartEditor/quteparteditor.cpp
+    src/plugins/texteditor/QutepartEditor/quteparteditor.h
+    src/plugins/PlainText/PlainTextEditorPlugin.cpp
+    src/plugins/PlainText/PlainTextEditorPlugin.h
+    src/plugins/QutepartEditor/QutepartEditorPlugin.cpp
+    src/plugins/QutepartEditor/QutepartEditorPlugin.h
+    src/plugins/texteditor/QutepartEditor/quteparteditorfactory.cpp
+    src/plugins/texteditor/QutepartEditor/quteparteditorfactory.h
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditor.cpp
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditor.h
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.cpp
+    src/plugins/texteditor/PlainTextEditor/PlainTextEditorFactory.h
     src/plugins/texteditor/texteditor_plg.cpp
     src/plugins/texteditor/texteditor_plg.h
     src/plugins/texteditor/thememanager.cpp

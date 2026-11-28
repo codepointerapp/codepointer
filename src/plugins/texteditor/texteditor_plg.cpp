@@ -5,8 +5,10 @@
 #include <QChar>
 #include <QCoreApplication>
 #include <QFile>
+#include <QFontDatabase>
 #include <QMainWindow>
 #include <QMessageBox>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 #include <QStringListModel>
@@ -20,8 +22,8 @@
 #include "AnsiToHTML.hpp"
 #include "GlobalCommands.hpp"
 #include "texteditor_plg.h"
-#include "thememanager.h"
 #include "widgets/HistoryLineEdit.h"
+#include "widgets/codeeditorfactory.h"
 #include "widgets/qmdieditor.h"
 
 TextEditorPlugin::TextEditorPlugin() {
@@ -31,16 +33,7 @@ TextEditorPlugin::TextEditorPlugin() {
     sVersion = "0.0.1";
     autoEnabled = true;
     alwaysEnabled = false;
-    themeManager = new Qutepart::ThemeManager();
     historyModel = new SharedHistoryModel(this);
-
-    /*
-    #if defined(WIN32)
-        auto installPrefix = QCoreApplication::applicationDirPath();
-    #else
-        auto installPrefix = QCoreApplication::applicationDirPath() + "/..";
-    #endif
-    */
 
     config.pluginName = tr("Text editor");
     config.description = tr("Default text editor, based on QutePart");
@@ -195,7 +188,117 @@ TextEditorPlugin::TextEditorPlugin() {
                                      .build());
 }
 
-TextEditorPlugin::~TextEditorPlugin() {}
+CodeEditorFactory *TextEditorPlugin::chooseFactory(const QString &fileName) const {
+    auto *manager = dynamic_cast<PluginManager *>(getManager());
+    if (!manager) {
+        return nullptr;
+    }
+
+    CodeEditorFactory *best = nullptr;
+    auto bestScore = 0;
+    for (auto plugin : manager->enabledPlugins()) {
+        auto factory = dynamic_cast<CodeEditorFactory *>(plugin);
+        if (!factory) {
+            continue;
+        }
+        if (auto score = factory->score(fileName); score > bestScore) {
+            best = factory;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+qmdiEditor *TextEditorPlugin::createEditor(CodeEditorFactory *factory) {
+    auto *editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), factory);
+    QPointer<qmdiEditor> safeEditor = editor;
+
+    connect(editor, &qmdiEditor::fileNameChanged, this, [this, safeEditor](const QString &newName) {
+        if (safeEditor) {
+            adviseReopen(safeEditor.data(), newName);
+        }
+    });
+    connect(editor, &qmdiEditor::reopenRequested, this, [this, safeEditor]() {
+        if (safeEditor) {
+            reopenWithBestPlugin(safeEditor.data());
+        }
+    });
+    return editor;
+}
+
+CodeEditor::LanguageInfo TextEditorPlugin::languageForFile(const QString &fileName) const {
+    auto *factory = chooseFactory(fileName);
+    if (!factory) {
+        return {};
+    }
+    return factory->languageForFile(fileName);
+}
+
+void TextEditorPlugin::adviseReopen(qmdiEditor *editor, const QString &fileName) {
+    auto *manager = dynamic_cast<PluginManager *>(getManager());
+    if (!manager || !editor) {
+        return;
+    }
+
+    auto *bestPlugin = manager->bestPluginForFile(fileName);
+    if (!bestPlugin) {
+        return;
+    }
+
+    if (bestPlugin != this) {
+        showReopenBanner(editor,
+                         tr("This file is handled better by %1.").arg(bestPlugin->getName()));
+        return;
+    }
+
+    auto *current = editor->factory();
+    auto *best = chooseFactory(fileName);
+    if (current && best && best != current && best->score(fileName) > current->score(fileName)) {
+        showReopenBanner(editor, tr("This file is handled better by %1.").arg(best->displayName()));
+    }
+}
+
+void TextEditorPlugin::showReopenBanner(qmdiEditor *editor, const QString &reason) {
+    auto message = QStringLiteral("%1 <a href=':reopen-here' title='%2'>%3</a>")
+                       .arg(reason, tr("Reopen this file with the suggested viewer"),
+                            tr("Click here to reopen"));
+    editor->displayBannerMessage(message, -1);
+}
+
+void TextEditorPlugin::reopenWithBestPlugin(qmdiEditor *editor) {
+    auto *manager = getManager();
+    if (!manager || !mdiServer || !editor) {
+        return;
+    }
+
+    if (!editor->doSave()) {
+        return;
+    }
+
+    auto state = editor->getState();
+    auto const fileName = editor->mdiClientFileName();
+    auto const oldIndex = mdiServer->getClientIndex(editor);
+    QPointer<qmdiEditor> safeEditor = editor;
+    mdiServer->tryCloseClient(oldIndex);
+    if (safeEditor) {
+        // Closing was vetoed, so there is nothing to reopen.
+        return;
+    }
+
+    auto *client = manager->openFile(fileName);
+    if (!client) {
+        return;
+    }
+
+    client->setState(state);
+    auto const newIndex = mdiServer->getClientIndex(client);
+    if (newIndex >= 0 && oldIndex >= 0 && newIndex != oldIndex) {
+        mdiServer->moveClient(newIndex, oldIndex);
+    }
+    if (oldIndex >= 0) {
+        mdiServer->setCurrentClientIndex(oldIndex);
+    }
+}
 
 void TextEditorPlugin::on_client_merged(qmdiHost *) {
     auto manager = getManager();
@@ -215,10 +318,11 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
 
         newThemeSelected = false;
         chooseTheme->setDisabled(true);
+
+        auto themeFiles = editor->themes();
         auto list = QStringList(tr("System colors"));
-        for (auto &t : themeManager->getLoadedFiles()) {
-            auto m = themeManager->getThemeMetaData(t);
-            list.append(m.name);
+        for (auto const &themeFile : std::as_const(themeFiles)) {
+            list.append(editor->themeDisplayName(themeFile));
         }
         list.sort(Qt::CaseSensitive);
 
@@ -227,21 +331,20 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
         p->setDataModel(model);
         p->show();
 
-        connect(p, &CommandPalette::didSelectItem, this, [editor, this](auto index, auto *) {
-            auto newTheme = const_cast<Qutepart::Theme *>(editor->getEditorTheme());
-            if (newTheme != this->theme) {
-                delete newTheme;
-            }
-            newTheme = nullptr;
-            auto themeDescription = index.data(Qt::DisplayRole).toString();
-            auto themeFileName = themeManager->getNameFromDesc(themeDescription);
-            auto themeMetaData = themeManager->getThemeMetaData(themeFileName);
-            if (!themeMetaData.name.isEmpty()) {
-                newTheme = new Qutepart::Theme();
-                const_cast<Qutepart::Theme *>(newTheme)->loadTheme(themeFileName);
-            }
-            editor->setEditorTheme(newTheme);
-        });
+        connect(p, &CommandPalette::didSelectItem, this,
+                [editor, this, themeFiles](auto index, auto *) {
+                    auto themeDescription = index.data(Qt::DisplayRole).toString();
+                    pendingThemeFile.clear();
+                    if (themeDescription != tr("System colors")) {
+                        for (auto const &themeFile : std::as_const(themeFiles)) {
+                            if (editor->themeDisplayName(themeFile) == themeDescription) {
+                                pendingThemeFile = themeFile;
+                                break;
+                            }
+                        }
+                    }
+                    editor->setEditorThemeFile(pendingThemeFile);
+                });
         connect(p, &CommandPalette::didChooseItem, this, [p, editor, this]() {
             // we do need to save it
             newThemeSelected = true;
@@ -249,12 +352,11 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
         connect(p, &CommandPalette::didHide, this, [p, this, editor]() {
             if (!newThemeSelected) {
                 // Restore current editor's theme from the Plugin's theme
-                editor->setEditorTheme(this->theme);
+                editor->setEditorThemeFile(this->currentThemeFile);
                 editor->setEditorHighlighter(editor->getSyntaxID());
             } else {
-                auto newTheme = const_cast<Qutepart::Theme *>(editor->getEditorTheme());
-                delete this->theme;
-                this->theme = newTheme;
+                this->currentThemeFile = this->pendingThemeFile;
+                getConfig().setTheme(this->currentThemeFile);
 
                 // Theme - apply it globally
                 for (auto i = 0; i < mdiServer->getClientsCount(); i++) {
@@ -263,14 +365,7 @@ void TextEditorPlugin::on_client_merged(qmdiHost *) {
                     if (!e) {
                         continue;
                     }
-                    e->setEditorTheme(this->theme);
-                }
-                if (newTheme) {
-                    auto themeFileName =
-                        themeManager->getNameFromDesc(newTheme->getMetaData().name);
-                    getConfig().setTheme(themeFileName);
-                } else {
-                    getConfig().setTheme("");
+                    e->setEditorThemeFile(this->currentThemeFile);
                 }
             }
             p->deleteLater();
@@ -287,18 +382,14 @@ void TextEditorPlugin::showAbout() {
 
 void TextEditorPlugin::loadConfig(QSettings &settings) {
     IPlugin::loadConfig(settings);
-    themeManager->loadFromDir(":/qutepart/themes/");
 
     auto themeFileName = getConfig().getTheme();
-    delete this->theme;
-    if (!themeFileName.isEmpty()) {
-        this->theme = new Qutepart::Theme();
-        if (!this->theme->loadTheme(themeFileName)) {
-            qDebug() << "Failed loading theme " << themeFileName;
-            delete this->theme;
-            this->theme = nullptr;
-        }
+    if (!themeFileName.isEmpty() && !QFile::exists(themeFileName)) {
+        qDebug() << "Failed loading theme " << themeFileName;
+        themeFileName.clear();
+        getConfig().setTheme(themeFileName);
     }
+    currentThemeFile = themeFileName;
     auto history = getConfig().getSeachHistory();
     historyModel->setHistory(history);
 }
@@ -333,8 +424,9 @@ QFuture<CommandArgs> TextEditorPlugin::handleCommandAsync(const QString &command
         clientPosition = -1;
     }
 
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), themeManager);
-    auto langInfo = ::Qutepart::chooseLanguage({}, {}, fileName);
+    auto *factory = chooseFactory(fileName);
+    auto editor = createEditor(factory);
+    auto langInfo = factory ? factory->languageForFile(fileName) : CodeEditor::LanguageInfo{};
     if (langInfo.isValid()) {
         editor->setEditorHighlighter(langInfo.id);
     }
@@ -472,7 +564,8 @@ int TextEditorPlugin::canOpenFile(const QString &fileName) {
 }
 
 qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, int zoom) {
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), themeManager);
+    auto *factory = chooseFactory(fileName);
+    auto editor = createEditor(factory);
 
     // In the future - the zoom, will be used to set state to the lines, if the value is really
     // large. I will assume that font size bigger than 500 is not really existent.
@@ -482,7 +575,7 @@ qmdiClient *TextEditorPlugin::openFile(const QString &fileName, int x, int y, in
         editor->setFont(f);
     }
 
-    auto langInfo = ::Qutepart::chooseLanguage({}, {}, fileName);
+    auto langInfo = factory ? factory->languageForFile(fileName) : CodeEditor::LanguageInfo{};
     if (langInfo.isValid()) {
         editor->setEditorHighlighter(langInfo.id);
     }
@@ -513,9 +606,9 @@ qmdiClient *TextEditorPlugin::navigateFile(qmdiClient *client, int x, int y, int
 
 void TextEditorPlugin::applySettings(qmdiEditor *editor) {
     if (getConfig().getWrapLines()) {
-        editor->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+        editor->setLineWrapMode(CodeEditor::WrapMode::WidgetWidth);
     } else {
-        editor->setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor->setLineWrapMode(CodeEditor::WrapMode::NoWrap);
     }
 
     auto newFont = QFont();
@@ -538,8 +631,8 @@ void TextEditorPlugin::applySettings(qmdiEditor *editor) {
     editor->setEditorFont(newFont);
     editor->repaint();
 
-    if (this->theme != editor->getEditorTheme()) {
-        editor->setEditorTheme(this->theme);
+    if (editor->editorThemeFile() != currentThemeFile) {
+        editor->setEditorThemeFile(currentThemeFile);
     }
 }
 
@@ -555,12 +648,13 @@ void TextEditorPlugin::configurationHasBeenModified() {
 }
 
 void TextEditorPlugin::fileNew() {
-    auto editor = fileNewEditor();
+    auto editor = fileNewEditor("");
     mdiServer->addClient(editor);
 }
 
-qmdiClient *TextEditorPlugin::fileNewEditor() {
-    auto editor = new qmdiEditor(dynamic_cast<QMainWindow *>(mdiServer), themeManager);
+/// Create an editor for a virtual file name; used to select a backend by score.
+qmdiClient *TextEditorPlugin::fileNewEditor(const QString &fileName) {
+    auto editor = createEditor(chooseFactory(fileName));
     editor->setHistoryModel(historyModel);
     applySettings(editor);
     return editor;
