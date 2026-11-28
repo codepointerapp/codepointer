@@ -34,7 +34,7 @@ Next phases:
 * git: commit will no longer ask for password - 6260f99990b29c9ab4575caf01a02acf0fa6bbb9, 45103ec0d1446411a177b7717f7ba736a0c463cf
 * git: push force - disable when finished - 9a9c685eb7ffe31c48bedb611b822bf2c9686639
 * ProjectManagerPlg.cpp: do not load already opened projects - b961cc7ce1642f59a804ade479a8cff13d8dd7c1
-* Qutepart: fix line numbers issues -
+* Qutepart: fix line numbers issues - https://github.com/diegoiast/qutepart-cpp/commit/7c2a463d9335c5db895202c2a50edcb3633ddc81
 * Qutepart: Dark themes shows some text in black, in CMakeLists.txt - https://github.com/diegoiast/qutepart-cpp/issues/81
 * kitdetector.cpp: add system and rust only kits (237) - 86e4764b167de721bfee567efe67fbb66fd17b38
 * ProjectBuildConfig.cpp : cargo fixes for windows - 68fd7304c23def53c365ae7d916672c2832423f8

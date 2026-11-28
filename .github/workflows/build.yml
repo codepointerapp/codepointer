@@ -121,7 +121,7 @@ jobs:
             cc: "clang"
             cxx: "clang++"
         qt_version:
-          - "6.11.3"
+          - "6.12.1"
         include:
           - generators: "Ninja"
           - build_type: "Release"
