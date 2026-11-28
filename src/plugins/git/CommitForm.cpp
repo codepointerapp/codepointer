@@ -309,6 +309,9 @@ CommitForm::CommitForm(const QString &dir, GitPlugin *plugin, QWidget *parent)
 
                 replaceWidget(ui->diffPreview, e);
                 ui->diffPreview = e->getEditor();
+                // The injected editor is a view only. Re-assert it on the real
+                // QPlainTextEdit after the swap, not just on the wrapper.
+                ui->diffPreview->setReadOnly(true);
             }
 
             auto client2 = p->fileNewEditor();
@@ -560,6 +563,7 @@ void CommitForm::updateGitStatus() {
 void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) {
     if (filename.isEmpty()) {
         ui->diffPreview->setPlainText("");
+        ui->diffPreview->setReadOnly(true);
         return;
     }
 
@@ -569,6 +573,9 @@ void CommitForm::newFileSelected(const QString &filename, GitFileStatus status) 
     auto updateEditor = [this](const QString &output, const QString &highlighter,
                                const QString &fileForMapping = {}) {
         ui->diffPreview->setPlainText(output);
+        // Diffs are read-only output. Anything that reloads or replaces the
+        // text must leave the view locked.
+        ui->diffPreview->setReadOnly(true);
 
         // FIXME: this looks way too ugly,
         // Problem - the "editor" is not the correct widget
