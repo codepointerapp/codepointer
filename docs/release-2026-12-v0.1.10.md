@@ -8,12 +8,18 @@ No major features, just a stability release.
 ![New theme for Codepointer - follows WinUI3 guidelines](codepointer-winui3.png)
 
 
+
+
 Major changes:
 
 * New theme, build specially for Windows. Follows the WinUI3 convention, but also
    available on Linux (default on Windows).
 * Follow symbol and reference got key shortcuts.
 * Small fixes for rust/cargo.
+* When the IDE is not in focus, and a file is modified, it will no longer popup
+  a dialog, but ask in a banner.
+
+![Code pointer asks for confirmation](codepointer-v0.1.10-savebanner.png)
 
 Next phases:
 
@@ -41,3 +47,4 @@ Next phases:
 * ProjectManagerPlg.cpp: fix running batch files (240) - 03c2d64528d819af632e41f1e6273b534840756d
 * cargo: fix display of exes (235) - 1247dba2b95c4ed69e649a6f69e740005f68c7ef
 * AppImage: process name is "AppRun" - https://github.com/codepointerapp/codepointer/issues/246
+* Readonly editors are not read only - https://github.com/diegoiast/qutepart-cpp/issues/82 https://github.com/codepointerapp/codepointer/commit/1dd84d0731b7f3dde33ab15fef8afa483be1f011

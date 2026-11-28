@@ -11,7 +11,7 @@
             "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.10-beta1",
             "latest-version": "0.1.10-beta1",
             "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.10-beta1/codepointer-v0.1.10-beta1-x86_64.exe",
-            "changelog": "New default theme, cargo fixes, dark theme fixes, system+rust kits",
+            "changelog": "New default theme, cargo fixes, dark theme fixes, system+rust kits, banner asks reload",
             "mandatory": true
         },
         "linux": {
@@ -25,7 +25,7 @@
             "open-url": "https://github.com/codepointerapp/codepointer/releases/tag/v0.1.10-beta1",
             "latest-version": "0.1.10-beta1",
             "download-url": "https://github.com/codepointerapp/codepointer/releases/download/v0.1.10-beta1/codepointer-v0.1.10-beta1-x86_64.AppImage",
-            "changelog": "New theme, cargo fixes, dark theme fixes, system+rust kits",
+            "changelog": "New theme, cargo fixes, dark theme fixes, system+rust kits, banner asks reload",
             "mandatory": true
         }
     }
