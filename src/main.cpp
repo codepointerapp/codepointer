@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(qutepart_theme_data);
 
     QCoreApplication::setApplicationName(CODEPOINTER_APP_NAME);
-    QCoreApplication::setApplicationVersion("0.1.10-alpha1");
+    QCoreApplication::setApplicationVersion("0.1.10-beta1");
     QApplication app(argc, argv);
 
     // File dialogs come up blank on some macOS setups - a virtualised machine, where

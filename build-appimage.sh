@@ -12,8 +12,8 @@ if [ "$1" = "--ce" ]; then
 fi
 
 APP_NAME="codepointer"
-APP_VERSION="0.1.10-alpha1"
-QT_VERSION="6.11.3"
+APP_VERSION="0.1.10-beta1"
+QT_VERSION="6.12.1"
 
 HOME="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
 
